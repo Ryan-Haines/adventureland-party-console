@@ -10624,7 +10624,7 @@ ${hook}`, was = errors.get(key3);
   }
   function ageOf(reader) {
     if (typeof reader === "string") return ages[AGE_SETTINGS[reader]];
-    return widens(reader) ? 2 * Number(reader.intervalMs) : ages.reportFreshMs;
+    return widens(reader) ? (reader.intervals ?? 2) * Number(reader.intervalMs) : ages.reportFreshMs;
   }
   function fresh(at4, now, reader = "report", aheadMs = 0, under = false) {
     const t = typeof at4 === "number" ? at4 : NaN, age = now - t, limit = ageOf(reader);

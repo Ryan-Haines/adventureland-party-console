@@ -30,8 +30,10 @@ const ages: Record<AgeSetting, number> = { ...REPORT_AGE_DEFAULTS, merchantHomeR
 
 // A walking member's report stays fresh for two of its own report intervals while
 // no attacker is known on it; with an attacker known, or before its first interval is known, the
-// `report` age applies. The reader passes its own attacker test, as each did before.
-export interface WalkReading { reading: 'walk'; attackerKnown: boolean; intervalMs: unknown }
+// `report` age applies. The reader passes its own attacker test, as each did before. `intervals`
+// names another count of intervals: one asks whether the member's next report is already due
+// (movement's walk, coordinator/walk.ts `letGo`).
+export interface WalkReading { reading: 'walk'; attackerKnown: boolean; intervalMs: unknown; intervals?: 1 | 2 }
 
 // Whether that rule widens the walk reading to two intervals; a reader that checks more while the
 // `report` age applies (an attacker observation) asks this.
@@ -41,7 +43,7 @@ export function widens(reader: WalkReading): boolean {
 // The age a reading allows; a signal the coordinator sends carries it as its validity.
 export function ageOf(reader: Reading | WalkReading): number {
   if (typeof reader === 'string') return ages[AGE_SETTINGS[reader]];
-  return widens(reader) ? 2 * Number(reader.intervalMs) : ages.reportFreshMs;
+  return widens(reader) ? (reader.intervals ?? 2) * Number(reader.intervalMs) : ages.reportFreshMs;
 }
 
 // `aheadMs` is the measured clock difference of the clock that stamped `at` (`reportClockError` for a

@@ -1784,6 +1784,45 @@ scenarioTable('a walk never waits on silence', () => {
   assert.equal(p.activeConvoy, null, 'at the stale bound the walk lets them go');
   assert.deepEqual(told.filter(n => n.change === 'left').map(n => n.member).sort(), [...all].sort());
  }],
+ // The end run on 367447e73 (live-hunt-lifecycle Boo Boo walking return): both report channels
+ // came back after the communication hold, the priest's report first, and the warrior leader left
+ // as one silent member among live ones, so the priest led and searched a new route.
+ ['members silent at once come back one report at a time, and the walk keeps them and its leader (red: the leader leaves)', ({ p, c, step }) => {
+  for (const n of c.participants) p.statuses[n].reportIntervalMs = 1000;
+  const all = [...c.participants], leader = c.leader;
+  step(1000); step(3500, all);
+  assert.ok(c.communicationHold, 'the silence holds the walk');
+  step(4000, [leader]);
+  assert.deepEqual(c.participants, all, 'the silent leader stays while 13 has not judged it lost');
+  assert.equal(c.leader, leader);
+  step(1000 + 20_000, [leader]);
+  assert.ok(!c.participants.includes(leader), 'at the stale bound the silent leader leaves');
+ }],
+ // The rerun of that row on this fix: the priest's last report came a second before the warrior's,
+ // so it fell silent first and left while the warrior's report was already a report late.
+ ['members whose reports stop one report apart are silent at once, and the first stays (red: it leaves)', ({ p, c, step }) => {
+  for (const n of c.participants) p.statuses[n].reportIntervalMs = 1000;
+  const all = [...c.participants], [first] = all;
+  step(1000); step(1800, [first]);
+  step(3100, all);
+  assert.deepEqual(c.participants, all, 'the first silent member stays while the others are a report late');
+  step(1800 + 20_000, all);
+  assert.equal(p.activeConvoy, null, 'at the stale bound the walk lets them go');
+ }],
+ // The end run on a699982a7: the hold began with the warrior alone, the priest fell silent a report
+ // later, and when the priest came back first the warrior leader left, so the priest led.
+ ['a member silent after the hold began joins it, and the leader still silent when the others come back stays (red: the leader leaves)', ({ p, c, step }) => {
+  for (const n of c.participants) p.statuses[n].reportIntervalMs = 1000;
+  const all = [...c.participants], leader = c.leader;
+  step(1000); step(1800, [leader]);
+  step(3100, all);
+  assert.deepEqual(c.communicationHold?.participants, [leader], 'the hold begins with the leader alone');
+  step(4000, all);
+  assert.deepEqual([...c.communicationHold.participants].sort(), [...all].sort(), 'the members silent since join the hold');
+  step(4500, [leader]);
+  assert.deepEqual(c.participants, all, 'the silent leader stays while 13 has not judged it lost');
+  assert.equal(c.leader, leader);
+ }],
  ['a member whose reports stopped is let go by T5 runtime-lost and the walk goes on (red: the walk waits on it)', ({ p, c, step, memberHolds, told }) => {
   p.statuses.F.reportIntervalMs = 1000; step(1000); step(2000, ['F']); told.length = 0; step(3500, ['F']);
   assert.deepEqual(c.participants, ['L', 'P']); assert.equal(p.commands.F, undefined);

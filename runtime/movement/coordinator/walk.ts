@@ -1080,16 +1080,26 @@ function letGo(state: SharedState, c: SharedConvoy, now: number): boolean {
   if (!leaving.length) return false;
   // Every member silent at once is the console's silence more than the members' (the user's decision
   // of 2026-11-17): the walk holds, its communication hold stops it, until 13 judges the members lost
-  // on its stale bound, and then lets them go to recovery. One silent member among live ones leaves.
-  const all = members(c);
-  if (leaving.length === all.length && leaving.every(entry => entry.lost) &&
+  // on its stale bound, and then lets them go to recovery. The members' reports keep their own
+  // phase, so they fall silent and come back one report apart: a silent member whose every other
+  // member is silent too or already a report late is silent with them, and while the hold covers
+  // every member, one still silent stays until 13 judges it lost, so the walk keeps its leader.
+  // One silent member among live ones leaves.
+  const all = members(c), hold = c.communicationHold;
+  const lost = (name: string) => leaving.some(entry => entry.member === name && entry.lost);
+  const late = (name: string) => { const s = state.statuses[name];
+    return !s || !fresh(s.seenAt, now, { reading: 'walk', attackerKnown: false, intervalMs: s.reportIntervalMs, intervals: 1 }); };
+  if (leaving.some(entry => entry.lost) && all.every(name => lost(name) || late(name)) &&
       !all.every(name => memberLost(state.statuses[name], now))) return false;
+  const together = !!hold && all.every(name => hold.participants.includes(name));
+  const going = together ? leaving.filter(entry => !entry.lost || memberLost(state.statuses[entry.member], now)) : leaving;
+  if (!going.length) return false;
   known(state, c);
-  const gone = leaving.map(entry => entry.member);
+  const gone = going.map(entry => entry.member);
   c.participants = c.participants.filter(name => !gone.includes(name));
   const last = told.get(state);
   if (last?.walk === c) last.participants = [...c.participants];
-  for (const { member, by, code, lost } of leaving) {
+  for (const { member, by, code, lost } of going) {
     if (state.commands[member]?.convoyId === c.id) delete state.commands[member];
     // A follower whose reports stopped on the player's walk catches up once its runtime is back: it
     // follows its leader, as a member that joins the group does (tasks/coordinator/groups.ts
@@ -1104,7 +1114,7 @@ function letGo(state: SharedState, c: SharedConvoy, now: number): boolean {
     }
     tell(state, 'walk.member', c, { member, change: 'left', ...code ? { code } : {}, by });
   }
-  if (!c.participants.length) walkEnds(state, 'cancelled', leaving[0]!.by);
+  if (!c.participants.length) walkEnds(state, 'cancelled', going[0]!.by);
   else if (gone.includes(c.leader)) c.leader = c.participants[0]!;
   return true;
 }

@@ -171,7 +171,13 @@ fresh for two of its own report intervals while no attacker is known on it, so t
 going through a late report; with an attacker known, the `reportFreshMs` age applies, 3 s by
 default. A member whose reports stop past that age is let go (`runtime-lost`); a gap that
 stays within it, such as a lost coordinator reply, holds the walk in `communication-hold` until
-fresh reports return.
+fresh reports return. Every member silent at once holds the walk the same way, until the
+lifecycle owner judges a member lost on its stale bound (`memberLost`). Each member reports on
+its own phase, so the members fall silent and come back one report apart: a silent member whose
+every other member is silent too or already a report late is silent with them. A member that
+falls silent after the hold began joins it, and while the hold covers every member, a member
+still silent after another reported stays. The walk keeps its leader and the leader's saved
+route.
 
 A lost realm, lost navigation ownership and stale reports hold travel; a member whose reports
 stopped leaves the walk. Explicit cancellation

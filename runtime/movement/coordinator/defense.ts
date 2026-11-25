@@ -675,6 +675,10 @@ export function createCommunicationRecovery(ports: Ports) {
       delete c.communicationHold;
       return ports.fail(state, 'Communication recovery superseded by newer navigation', 'owner-lost', now);
     }
+    // A member whose communication drops after the hold began joins it, so the walk reads every
+    // silent member as held (walk.ts `letGo`).
+    const joined = c.participants.filter(n => !c.communicationHold!.participants.includes(n) && affected(state, c, n, now));
+    if (joined.length) c.communicationHold.participants = [...c.communicationHold.participants, ...joined];
     if (rebind(state, c, now)) return true;
     return resume(state, c, now);
   };
