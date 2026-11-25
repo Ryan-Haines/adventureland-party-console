@@ -13,15 +13,24 @@ export default defineConfig({
       // A second high-FPS trace screencast adds hundreds of MB and can exhaust
       // Playwright's trace-merge deadline after all lifecycle assertions pass.
       use: { trace: { mode: 'on', snapshots: true, screenshots: false, sources: true } } },
-    { name: 'console', testMatch: ['**/native-graphics-diagnostic.spec.ts', '**/console.spec.ts', '**/console-image-stall.spec.ts', '**/console-october-events.spec.ts', '**/console-event-clock.spec.ts', '**/console-build*.spec.ts', '**/console-bank-automarks.spec.ts', '**/console-bankboi-offerings.spec.ts', '**/hunt.spec.ts', '**/lucky-slot-lock.spec.ts', '**/lucky-slot-elimination.spec.ts', '**/doll-markup.spec.ts', '**/merchant-bank-visit.spec.ts', '**/console-persistence.spec.ts', '**/console-field-registry.spec.ts', '**/console-reports.spec.ts', '**/console-coordinator.spec.ts', '**/console-requests.spec.ts'], testIgnore: ['**/console-build-addon.spec.ts'] },
+    { name: 'console', testMatch: ['**/native-graphics-diagnostic.spec.ts', '**/console.spec.ts', '**/console-image-stall.spec.ts', '**/console-october-events.spec.ts', '**/console-event-clock.spec.ts', '**/console-build*.spec.ts', '**/console-bank-automarks.spec.ts', '**/console-bankboi-offerings.spec.ts', '**/hunt.spec.ts', '**/lucky-slot-lock.spec.ts', '**/lucky-slot-elimination.spec.ts', '**/doll-markup.spec.ts', '**/merchant-bank-visit.spec.ts', '**/console-persistence.spec.ts', '**/console-field-registry.spec.ts', '**/console-reports.spec.ts', '**/console-coordinator.spec.ts', '**/console-requests.spec.ts', '**/live-settings-hooks.spec.ts'], testIgnore: ['**/console-build-addon.spec.ts'] },
     // On demand only: docs/state-field-registry.md § Speed, and the console's latency measures
     // (console-speed.spec.ts), whose bounds wait for a measured spread (QUESTIONS U8).
     { name: 'speed', testMatch: ['**/field-registry-speed.spec.ts', '**/console-speed.spec.ts'] },
     // The whole candidate build of a repo copy runs once, in the final gate's full `npm test`, not in
     // each console project run (QUESTIONS U9).
     { name: 'build', testMatch: ['**/console-build-addon.spec.ts'] },
-    { name: 'live', fullyParallel:true, testMatch: ['**/live-console-*.spec.ts', '**/live-halloween.spec.ts', '**/live-october-events.spec.ts', '**/live-october-additions.spec.ts', '**/live-event-pretravel.spec.ts', '**/live-event-runtime-recovery.spec.ts', '**/live-event-entry-failure.spec.ts', '**/live-cave.spec.ts', '**/live-planner-corner.spec.ts', '**/live-game.spec.ts', '**/live-monster-safety-reach.spec.ts', '**/live-economy.spec.ts', '**/live-exchange-collection.spec.ts', '**/live-bankboi.spec.ts', '**/live-bank-staging.spec.ts', '**/live-manual-upgrade.spec.ts', '**/live-bankboi-offerings.spec.ts', '**/live-catalog.spec.ts', '**/live-franky.spec.ts', '**/live-franky-party.spec.ts', '**/live-hunt-*.spec.ts', '**/live-solo-ranger.spec.ts', '**/live-merchant-config.spec.ts', '**/live-merchant-transporter-approach.spec.ts', '**/live-stale-merchant.spec.ts', '**/live-home-realm.spec.ts', '**/live-home-connect.spec.ts', '**/live-bank-npc-sales.spec.ts', '**/live-bank-collection.spec.ts', '**/live-merchant-realm-recovery.spec.ts', '**/live-navigation-supersession.spec.ts', '**/live-merchant-anniversary-availability.spec.ts', '**/live-combat-handoff.spec.ts', '**/live-farming-handoff.spec.ts', '**/live-equipment.spec.ts', '**/live-mailbox.spec.ts', '**/live-wtb-unconfirmed-purchase.spec.ts', '**/live-stat-scroll-bank.spec.ts', '**/live-gathering-cooldown.spec.ts', '**/live-exchange-reward-bank.spec.ts', '**/live-npc-sale-keep.spec.ts', '**/live-elixir-restock.spec.ts', '**/live-cave-headless.spec.ts', '**/live-cave-talk.spec.ts', '**/live-convoy-event-defense.spec.ts', '**/live-movement-owner.spec.ts', '**/live-farm-death-escape.spec.ts', '**/live-*-hooks.spec.ts'],
-      testIgnore: process.env.E2E_SKIP_CAVE === '1' ? ['**/live-cave.spec.ts'] : [],
+    // The windows (test-windows DESIGN.md section 2). E2E_SKIP_CAVE leaves out the Cave windows.
+    { name: 'live', fullyParallel:true, testMatch: ['**/windows/*.spec.ts'],
+      testIgnore: process.env.E2E_SKIP_CAVE === '1' ? ['**/windows/W41*.spec.ts', '**/windows/W42-*.spec.ts'] : [],
+      // The windows tagged @alone run in live-alone, once this project's two stacks are down.
+      grepInvert: /@alone/,
+      use: { trace: { mode: 'on', snapshots: false, screenshots: false, sources: true } } },
+    // W01 and W02 measure kill, attack and call rates that a second stack lowers (test-windows
+    // DESIGN.md 2.3 and 3.4), so they start only when every live worker has finished. e2e/game/setup.mjs
+    // starts the stacks of a run's busiest phase, so `--project=live-alone --no-deps` as its own run
+    // brings up one stack and a run with both phases keeps the second stack up through the alone phase.
+    { name: 'live-alone', fullyParallel: true, testMatch: ['**/windows/*.spec.ts'], grep: /@alone/, workers: 1, dependencies: ['live'],
       use: { trace: { mode: 'on', snapshots: false, screenshots: false, sources: true } } },
   ],
   fullyParallel: false,

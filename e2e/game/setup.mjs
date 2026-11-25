@@ -42,14 +42,16 @@ export default async function setup(config) {
   process.env.E2E_CLOCK_VIRTUAL_EPOCH=process.env.E2E_CLOCK_WALL_EPOCH;
   if (selectors.length && !selectors.some(name => name === 'live' || name.includes('*'))) return;
   if (!config.projects.some(project => project.name === 'live')) return;
+  const stacks=await stacksNeeded(config);
+  if(!stacks)return;
   const offset=Number(process.env.E2E_GAME_POOL_OFFSET||0);
   const prefix=process.env.E2E_GAME_PROJECT_PREFIX||'al-e2e-pr21';
-  if(!Number.isInteger(offset)||offset<0||offset+config.workers>gameHosts.length)
+  if(!Number.isInteger(offset)||offset<0||offset+stacks>gameHosts.length)
     throw Error(`Assigned pool range must fit within ${gameHosts.length} isolated gameplay hosts`);
   if(!/^[a-z0-9][a-z0-9_-]*$/.test(prefix))throw Error('Invalid isolated game project prefix');
   const pools=[],pending=[];
   try {
-    for(let index=0;index<config.workers;index++){
+    for(let index=0;index<stacks;index++){
       const clock=accelerated?await startNetworkClock(Number(process.env.E2E_CLOCK_RATE)):undefined;
       const environment={E2E_CLOCK_RATE:process.env.E2E_CLOCK_RATE,
         E2E_CLOCK_WALL_EPOCH:String(Date.now()),E2E_CLOCK_VIRTUAL_EPOCH:String(clock?.epoch||Date.now()),
@@ -58,7 +60,7 @@ export default async function setup(config) {
       const pool={project:`${prefix}-${index}`,host:gameHosts[offset+index],environment,clock};
       pools.push(pool);
       pending.push(pool);
-      if(pending.length===2||index===config.workers-1){
+      if(pending.length===2||index===stacks-1){
         const results=await Promise.allSettled(pending.map(item=>up(item)));
         pending.length=0;
         const errors=results.filter(result=>result.status==='rejected').map(result=>result.reason);
@@ -79,4 +81,30 @@ export default async function setup(config) {
     if(failures.length)throw new AggregateError(failures,'Isolated game cleanup failed');
   }
   return cleanup;
+}
+
+// Each game stack serves one parallel worker (live-fixtures.ts reads E2E_GAME_POOLS by
+// parallelIndex), so setup starts as many as the busiest phase of this run uses. A dependency
+// phase runs after the one before it ends, so its workers reuse the same indexes. Playwright's
+// FullConfig drops each project's own worker limit, so it comes from the config file, and only a
+// test list tells a project with no matching test (live under `--grep W01`) from a busy one.
+export async function stacksNeeded(config){
+  // Inside Playwright's own loader the config module arrives through its CommonJS transform, which
+  // nests the default export once more than a plain Node import does.
+  const loaded=await import(new URL('../../playwright.config.ts',import.meta.url).href);
+  const file=loaded.default?.projects?loaded.default:loaded.default.default;
+  const limits=Object.fromEntries(file.projects.map(project=>[project.name,project.workers]));
+  const args=process.argv.slice(process.argv.indexOf('test')+1).filter(argument=>!argument.startsWith('--reporter'));
+  const listed=JSON.parse(execFileSync(process.execPath,[path.join(root,'node_modules/@playwright/test/cli.js'),'test',...args,'--list','--reporter=json'],
+    {cwd:root,encoding:'utf8',maxBuffer:64*1024*1024,windowsHide:true}));
+  const tests={};
+  const walk=suite=>{for(const child of suite.suites||[])walk(child);
+    for(const spec of suite.specs||[])for(const test of spec.tests)tests[test.projectName]=(tests[test.projectName]||0)+1;};
+  listed.suites.forEach(walk);
+  const game=['live','live-alone'].filter(name=>tests[name]);
+  const projects=Object.fromEntries(config.projects.map(project=>[project.name,project]));
+  const phase=name=>Math.max(0,...projects[name].dependencies.filter(dependency=>tests[dependency]).map(dependency=>1+phase(dependency)));
+  const busy={};
+  for(const name of game)busy[phase(name)]=(busy[phase(name)]||0)+Math.min(tests[name],limits[name]||config.workers);
+  return Math.min(config.workers,Math.max(0,...Object.values(busy)));
 }

@@ -24,10 +24,7 @@ import { coordinatorSettings } from '../runtime/settings/coordinator/table';
 import { loadouts, seedLoadout, type NativeLoadout } from './game/loadouts';
 import { nativeEventSpawn, nativeMonsterInitialPosition } from './game/event-spawn';
 import {nativeNetworkIsolation} from './native-network-isolation';
-import { settleNavigation } from './movement-owner-helpers';
 import { fighters, partyNames } from './game/hunt-lifecycle';
-import { deathReset } from './event-death-rejoin-rows';
-import { cleanupEvents } from './game/hunt-events';
 import type {GameManifest} from '../tools/game/manifest';
 import {callMeasures,type CallSample,type BudgetRead} from './call-budget-cb1';
 export {callMeasures,type CallSample,type BudgetRead};
@@ -37,6 +34,9 @@ const require = createRequire(import.meta.url);
 const bootstrap = require('./game/bootstrap.cjs');
 export type LiveGame = {
   url: string;
+  /** The game server's clock just after the fixture's reset, before any character logs in: a play
+   *  window's reset proof bounds each character's walk since then (e2e/windows.ts). */
+  bootAt: number;
   coordinatorBinding:{port:number;occupiedPort:number|null};
   clients: Record<string, LiveClient>;
   // The fighters' native status observer, set when the spec opts in with nativeStatusObserver.
@@ -152,6 +152,7 @@ export const test = base.extend<{ live: LiveGame; occupyCoordinatorPort:boolean;
     const directory = path.join(root, '.build/e2e', `live-${randomUUID()}`);
     mkdirSync(directory, { recursive: true });
     const manifest = await game.reset();
+    const bootAt = await game.admin('output=Date.now()') as number;
     const names=[...partyNames,...(extraFighter?['E2EBankBoi']:[])];
     const equipment = await seedLoadout(game.admin, loadout, primaryClass, extraFighter);
     // The call budget's row A seeds 16 trade slots (e2e/call-budget-rows.ts); a run that stopped
@@ -237,6 +238,15 @@ export const test = base.extend<{ live: LiveGame; occupyCoordinatorPort:boolean;
     const pageOpened=(page:Page)=>nativePages.add(page);
     context.on('page', pageOpened);
     await context.addCookies([{ name: 'auth', value: manifest.auth, url: manifest.webUrl }]);
+    // The dashboard's image proxy (dashboard/lib/game-image.ts) fetches adventure.land, which the
+    // window's play does not own. The dashboard page takes each image from the disposable game
+    // server, which serves the same /images tree, as the browser blocks every other outside request
+    // (fixtures.ts `context`). console.spec.ts reads the proxy itself, and console-image-stall.spec.ts
+    // reads it with adventure.land stalled (REVIEW-QUEUE TW-D1).
+    await dashboardContext.route(/\/api\/(monster-sprite|map-image)\?/, async route => {
+      const source = new URL(new URL(route.request().url()).searchParams.get('url') || '/', 'https://adventure.land');
+      return route.fulfill({response: await route.fetch({url: manifest.webUrl + source.pathname})});
+    });
     const access = new Access(path.join(directory, 'access.json'));
     await access.load();
     const occupied=createHttpServer((_request,response)=>response.end('owned E2E port occupant'));
@@ -256,7 +266,8 @@ export const test = base.extend<{ live: LiveGame; occupyCoordinatorPort:boolean;
     const exchanges: unknown[] = [];
     // The ledger keeps a result of up to 4 KB whole and only the head of a larger one. A hook row's
     // heard poll answers every notice since the row began, once or twice a second for minutes, and
-    // whole copies of those answers ran the worker out of memory (live-items-hooks.spec.ts, step items.listed).
+    // whole copies of those answers ran the worker out of memory (live-items-hooks.spec.ts at 21fe30a2b,
+    // step items.listed).
     const ledgered = (result: unknown) => {
       const text = JSON.stringify(result) ?? 'undefined';
       return text.length <= 4096 ? result : { bytes: text.length, head: text.slice(0, 512) };
@@ -377,7 +388,7 @@ export const test = base.extend<{ live: LiveGame; occupyCoordinatorPort:boolean;
         await expect.poll(disagreements, { timeout: 15_000, message: "Each member's assignment is its group's live task" }).toEqual([]);
       };
       live = {
-        url, clients, coordinatorBinding:{port,occupiedPort}, status:null,
+        url, bootAt, clients, coordinatorBinding:{port,occupiedPort}, status:null,
         async tasks() {
           const response = await fetch(url + '/party-api/tasks', { signal: AbortSignal.timeout(15_000) });
           if (!response.ok) throw Error('Task diagnostics failed: ' + response.status);
@@ -825,162 +836,18 @@ export const test = base.extend<{ live: LiveGame; occupyCoordinatorPort:boolean;
 export { expect };
 export {waitForGameplay} from './network-clock';
 
-// The server's event lineup off, as peacefulWorld keeps it (event-death-helpers.ts), and every
-// event it started since the first reset ended the way endEvent ends one: its status entry goes
-// and its next round is held an hour out. What was live at the first reset stays (the second
-// merged run ended the Halloween season itself, and no fighter reached Mr. Green or the
-// Horseman), and so does an event a row seeds, which the row ends itself.
-export async function peacefulLineup(live:LiveGame){
-  await live.admin(`output=(()=>{if(!globalThis.__e2eLineup){globalThis.__e2eLineup=event_schedule_tick;event_schedule_tick=function(){};}
-    // The death rows' peacefulWorld can hold the lineup first, so the kept list is its own.
-    if(!globalThis.__e2eLineupKept)globalThis.__e2eLineupKept=Object.keys(E).filter(type=>E[type]&&E[type].live);
-    const kept=new Set([...globalThis.__e2eLineupKept,'mrgreen','horseman','icegolem']),ended=[];
-    for(const type of Object.keys(E))if(E[type]&&E[type].live&&!kept.has(type)){if(typeof timers!=='undefined')timers[type]=future_s(3600);delete E[type];ended.push(type);}
-    if(ended.length)broadcast_e();return ended;})()`);
-}
 
-
-// A Goobrawl row that fails while its event is live leaves the event running, and the next
-// Goobrawl row's seed refuses a live event ("Seed Goobrawl before activating it"). The reset
-// ends it the way the rows do, and the party's own event return takes it home. It goes before
-// deathReset, whose move to Main the live event's walk undoes: the end run on 367447e73 found
-// both fighters off Main 60 s after the finished Goobrawl row failed, and no row after it ran.
-async function endLeftGoobrawl(live:LiveGame){
-  await live.admin(`output=(()=>{if(events.goobrawl)timers.goobrawl=new Date(0);return true;})()`);
-  await expect.poll(()=>live.admin(`output=!events.goobrawl&&!E.goobrawl&&!Object.values(players).some(p=>p.map==='goobrawl')`),
-    {timeout:180_000,message:'A Goobrawl a row left must end before the next row'}).toBe(true);
-}
-
-// What the Hunt rows of the default fixture's table leave, put back by defaultFixtureReset:
-// their seeded rares and definitions (cleanupEvents), the formation with the priest following
-// and nobody on Manual, both fighters' mode and the merchant's stand, the passive rare rules the
-// table started with, the quests, the cargo slot and the Goobrawl seed.
-let huntStartRules: {rules: Record<string, any>; useFieldGenerators: boolean} | null = null;
-async function huntRowsReset(live:LiveGame){
-  const W='E2EWarrior',P='E2EPriest';
-  // A Goobrawl row ends once the party is back on Main, before its event return ends; the gate
-  // run's next Goobrawl row then started under that return.
-  await expect.poll(async()=>{const s=await live.state();return !s.eventReturn&&!Object.keys(s.deferredEventReturns??{}).length;},
-    {timeout:180_000,message:'The event return must end before the next row'}).toBe(true);
-  await cleanupEvents(live);
-  await live.post('/formation',{leader:W});
-  // A follower's events are the leader's, so only the warrior's selection clears.
-  await live.post('/formation',{character:W,handControl:{on:false},eventSelections:[]});
-  await live.post('/formation',{character:P,handControl:{on:false}});
-  await live.post('/formation',{character:P,follow:true});
-  // Each scope goes back to the table's start: target Farming, which ends a Hunt, and combat Auto.
-  // Since 11 step 6 a monster picked by hand keeps the combat mode, so a row that picks its
-  // monster farms in the mode this reset leaves; before, the pick reset it to Auto.
-  for(const name of [W,P])await live.post('/farming-mode',{character:name,combatMode:'auto',targetMode:'farming'});
-  await expect.poll(async()=>(await live.state()).farmingPolicy,{timeout:30_000,message:'Hunt mode must end before the next row'}).not.toBe('hunt');
-  await live.post('/merchant/force-stand',{enabled:false});
-  // No row before the rare rows sets a rare rule, so the first reset's rules are the table's
-  // start; later resets put back each rule a rare row changed and turn off each one it added.
-  // The route accepts only monsters in the coordinator's catalog, which a coordinator restart
-  // (the merchant's restart row) empties until the clients publish it again.
-  const passive=(await live.state()).passiveHunting??{},rules=passive.rules??{};
-  huntStartRules??={rules:structuredClone(rules),useFieldGenerators:!!passive.useFieldGenerators};
-  const start=huntStartRules;
-  const patch=Object.fromEntries(Object.keys(rules).flatMap(type=>type in start.rules
-    ? JSON.stringify(rules[type])===JSON.stringify(start.rules[type])?[]:[[type,start.rules[type]]]
-    : rules[type]?.enabled?[[type,{...rules[type],enabled:false}]]:[]));
-  if(Object.keys(patch).length||!!passive.useFieldGenerators!==start.useFieldGenerators){
-    await expect.poll(async()=>{const choices=(await live.state(true)).monsterChoices??[];return Object.keys(patch).every(type=>choices.some((m:any)=>m.id===type));},
-      {timeout:120_000,message:'The coordinator catalog must list every rule the reset puts back'}).toBe(true);
-    await live.post('/rare-hunting',{rules:patch,useFieldGenerators:start.useFieldGenerators});
-  }
-  await live.admin(`output=${JSON.stringify([W,P])}.map(name=>{const p=get_player(name);delete p.s.monsterhunt;resend(p,'u+cid+reopen');return true})`);
-  // The merchant rows seed their cargo in the warrior's slot 10 (seedCargo), which the fixture
-  // leaves empty and loot from earlier rows fills.
-  await live.admin(`output=(()=>{const p=get_player('${W}');if(p.items[10]){p.items[10]=null;cache_player_items(p);resend(p,'u+cid+reopen');}return true;})()`);
-  // The Goobrawl rows' seed (game/event-scenario.ts seedSmallGoobrawl) once per world: its
-  // survivors go and the goo definitions come back, as bootstrap.cjs does between scenarios.
-  await live.admin(`output=(()=>{for(const m of Object.values(instances.goobrawl?.monsters||{}))remove_monster(m,{silent:true});
-    if(globalThis.__e2eGoobrawlDefinitions){for(const type of ['bgoo','rgoo'])G.monsters[type].hp=globalThis.__e2eGoobrawlDefinitions[type];delete globalThis.__e2eGoobrawlDefinitions;}return true;})()`);
-}
-
-// The default fixture's scenario table (e2e/live-movement-owner.spec.ts) resets with this between
-// rows. Every row there starts from the default fixture, so all of them share one game run
-// (a separate check of 2026-10-29 found the four tables that held them kept apart with no state
-// named). The reset puts back what any row
-// leaves: the death rows' events end, both fighters stand alive with no party recovery, and
-// the party is back on Main (deathReset); Hunt mode ends; the farm focus is cleared; a party
-// travel to the square replaces any travel or farm a row left; a hold a row leaves on the
-// warrior is released; and both fighters settle. The server's own event lineup stays off from
-// the first reset, and an event it started meanwhile ends: in the first merged run it started a
-// Graveyard during the farming windows, and neither fighter then joined a seeded event. The
-// event death rows run first, in their earlier order: in the second merged run, after the
-// farming windows, neither fighter reached Mr. Green or the Horseman before the death, and the
-// row attaches its evidence only after that wait, so the run named no cause.
-export async function defaultFixtureReset(live:LiveGame){
-  const W='E2EWarrior';
-  await peacefulLineup(live);
-  await endLeftGoobrawl(live);
-  // The death rows' recovery ends first, as before the Hunt rows joined: with the Hunt cleanup
-  // first, the merged run's reset after cant_join still found a party recovery live.
-  await deathReset(live);
-  await huntRowsReset(live);
-  // The UP-3 Hunt row leaves the party in Hunt mode, which would walk it to the Hunt's monster.
-  const policy=(await live.state()).farmingPolicy;
-  if(policy==='hunt'){await live.post('/farming-mode',{character:W,combatMode:'auto',targetMode:'farming'});
-    await expect.poll(async()=>(await live.state()).farmingPolicy,{timeout:30_000}).not.toBe('hunt');}
-  await live.post('/focus',{monsterFocus:[]});
-  // A party travel to the town square replaces both the walk ladder row's travel that never
-  // arrives and the farm location a row picked, as the dashboard's Travel does (the tank table
-  // found the party walking back to a farm a row left behind).
-  await live.post('/formation',{leader:W});
-  await live.post('/travel',{map:'main',x:0,y:0});
-  // The convoy still live names what travels, for the failure's reading.
-  await expect.poll(async()=>!(await live.state()).activeConvoy,{timeout:180_000,message:'The party travel must end before the next row'}).toBe(true)
-    .catch(async error=>{console.log('RESET-CONVOY '+JSON.stringify((await live.state()).activeConvoy).slice(0,1500));throw error;});
-  // 01 step 4: the travel is the party's manual task, which ends one task tick after its walk
-  // arrives; a row that counts the party's task changes starts after it.
-  await expect.poll(async()=>(await live.tasks()).groups.find((g:any)=>g.id===`party:${W}`)?.live?.kind,{timeout:30_000,message:'The trip task must end before the next row'}).not.toBe('manual');
-  await live.clients[W].run(`(()=>{const m=__partyMovement,l=m.live();if(l&&!l.journey)m.release(l.owner);return true;})()`);
-  for(const name of fighters)await settleNavigation(live.clients[name],name);
-}
-
-// The Arena table (e2e/live-farm-death-escape.spec.ts, cases B and C) logs the fighters in on its
-// farm and resets with arenaReset between rows: the Arena's held skeletor respawns return
-// (restoreArena), both members stand alive with no escape or death recovery live, and both stand
-// on the farm again.
+// The Arena windows W43-W46 log the fighters in on its farm. Between rounds
+// e2e/escape-session-rows.ts `backToFarm` returns the Arena's held skeletor respawns (restoreArena),
+// waits until both members stand alive with no escape or death recovery live, and walks both back to
+// the farm.
 export const arenaFarm={map:'arena',x:384,y:-420};
 export const arenaPositions=(names:string[])=>({...Object.fromEntries(names.map((name,i)=>[name,{...arenaFarm,x:arenaFarm.x+20*i}])),E2EMerchant:{map:'main',x:-63,y:100}});
 export async function restoreArena(live:LiveGame){
   await live.admin(`output=(()=>{for(const i of Object.values(instances))for(const m of Object.values(i.monsters||{}))if(m.e2eHunt)remove_monster(m,{method:'disappear',nospawn:true});
     monster_respawns.push(...(globalThis.__e2eArenaRespawns||[]));delete globalThis.__e2eArenaRespawns;return true;})()`);
 }
-export async function arenaReset(live:LiveGame){
-  const W='E2EWarrior',P='E2EPriest';
-  await restoreArena(live);
-  // At rest includes the death recovery's farm return, which ends on its convoy's own end code
-  //, so the next case's walk to the farm never meets it.
-  await expect.poll(async()=>{const state=await live.state(),escape=await (await (await fetch(live.url+'/party-api/escape')).json()).escape;
-    return [W,P].every(n=>state.characters[n]&&!state.characters[n].rip)&&(!escape||['complete','home','released','failed-hold'].includes(escape.stage))&&
-      (!state.combatRecovery||['complete','cancelled'].includes(state.combatRecovery.phase));},
-    {timeout:240_000,message:'The party must be at rest before the next case'}).toBe(true);
-  // Back to the table's start, the fixture's farm positions. Case C leaves the priest in Main,
-  // and without this case B began as the party walked in: the warrior died with the priest on
-  // the Arena's spawn (151, 41), 36 units from it, so the survival ladder's relocation took
-  // the door (owner-ladder.ts relocate: Town only beyond 55 units) and the walk home took 162 s
-  // against the 143 s it takes from the farm.
-  const start=arenaPositions([W,P]) as Record<string,{map:string;x:number;y:number}>;
-  await live.admin(`output=(()=>{for(const [n,at] of Object.entries(${JSON.stringify({[W]:start[W],[P]:start[P]})})){const p=get_player(n);transport_player_to(p,at.map,[at.x,at.y]);}return true;})()`);
-  for(const name of [W,P])await expect.poll(async()=>live.clients[name].run(`character.map==='arena'&&Math.hypot(character.real_x-(${start[name].x}),character.real_y-(${start[name].y}))<=20`),
-    {timeout:60_000,message:'Both fighters must stand on the farm for the next case'}).toBe(true);
-}
 
-// The largest age of a character's tracker reply between `from` and `to` on its own clock: the
-// longest stretch with no `tracker` reply, from the native driver's incoming events.
-// A setting written for one character, then awaited until that character's page reads the written
-// value: a write reaches the character with its next report reply, so a row
-// that acts on the value starts once `read` answers it. Answers true, or the refused write's
-// message.
-export async function writeDelivered(live:LiveGame,field:string,character:string,value:unknown,read:string,label:string){
-  const written=await live.post('/settings',{changes:[{field,value,character}]}).then(()=>true,(error:Error)=>String(error.message).slice(0,200));
-  if(written===true)await expect.poll(()=>live.clients[character]!.run(read),{timeout:15_000,message:`${label}: ${character} reads ${JSON.stringify(value)}`}).toEqual(value);
-  return written;
-}
 export async function trackerReplyAge(live: LiveGame, name: string, from: number, to: number) {
   const arrivals = (await live.clients[name]!.events()).filter((e: any) => e.event === 'tracker-arrived').map((e: any) => Number(e.at));
   const inside = arrivals.filter(at => at >= from && at <= to), before = arrivals.filter(at => at < from).at(-1);

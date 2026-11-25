@@ -101,17 +101,6 @@ fixtureExpress.json = (...args) => {
       }) }); }
       catch (error) { return res.status(400).json({ error: String(error) }); }
     }
-    // The anchor fixture add-on (scripts/tests/fixtures/anchor-addon.ts) joins this coordinator's
-    // registry on a row's request, as e2e/coordinator.cjs registers the settings fixture: the
-    // coordinator answers `group.anchor` (runtime/coordinator/targeting/queue.ts `evaluateGroup`). The
-    // shipped tank-hold add-on answers it too, and holds it only while it is on (its default is off).
-    if (req.method === 'POST' && req.originalUrl.split('?')[0] === '/party-api/e2e-anchor-addon') {
-      const hooks = globalThis.__partyHooks;
-      if (!hooks) return res.status(503).json({ error: 'No hook registry in this coordinator' });
-      const { registration } = require('../scripts/tests/fixtures/anchor-addon.ts');
-      const registered = hooks.map().registrations.some(r => r.name === registration.name) ? { ok: true } : hooks.register(registration);
-      return registered.ok ? res.json({ ok: true, name: registration.name }) : res.status(400).json({ error: registered.message });
-    }
     // The hook fixture add-ons' coordinator halves (e2e/fixtures/*-hooks-addon.ts): one route,
     // `/party-api/e2e-<name>-hooks`, serves each fixture from HOOK_FIXTURES.
     const fixtureRoute = req.method === 'POST' && /^\/party-api\/e2e-([a-z]+)-hooks$/.exec(req.originalUrl.split('?')[0]);

@@ -10,6 +10,8 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { gateway } from '../tools/hosting/gateway';
 import { Access } from '../tools/hosting/access';
 import { DebugInstances } from '../tools/debug/service';
+import { stopTree } from '../tools/hosting/process-tree';
+import { lifecycleSavedFields } from '../runtime/lifecycle/fields';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
@@ -39,20 +41,23 @@ export function child(file: string, args: string[], cwd: string, env: NodeJS.Pro
   process.stderr!.on('data', bytes => appendFileSync(log, bytes));
   return process;
 }
+// stop() ends an owned child the way the host stops the console (tools/hosting/services.ts
+// stopHost): the stop gets hostExitGraceMs (runtime/lifecycle/fields.ts), and a stop still running
+// then ends with its whole tree through stopTree, since the coordinator's caracAL workers are its
+// own children. The wait after the tree kill ends on the child's exit; the test timeout bounds it.
 export async function stop(process: ChildProcess, graceful = false) {
   if (process.exitCode !== null || process.signalCode !== null) return;
+  const began = Date.now(), exited = new Promise<void>(resolve => process.once('exit', () => resolve()));
   if (graceful && process.connected) process.send({ type: 'coordinator_shutdown' });
   else process.kill('SIGTERM');
-  const began = Date.now(), deadline = began + 10_000;
-  while (process.exitCode === null && process.signalCode === null && Date.now() < deadline) await delay(50);
-  if (process.exitCode !== null || process.signalCode !== null) recordWait(graceful ? 'stop-graceful' : 'stop', began);
-  else {
-    await new Promise<void>((resolve, reject) => {
-      const timer = setTimeout(() => reject(new Error('Owned E2E child did not terminate')), 5000);
-      process.once('exit', () => { clearTimeout(timer); resolve(); });
-      process.kill('SIGKILL');
-    });
-  }
+  const grace = lifecycleSavedFields.settings.hostExitGraceMs.default;
+  let timer: NodeJS.Timeout | undefined;
+  const ended = await Promise.race([exited.then(() => true), new Promise<boolean>(resolve => { timer = setTimeout(() => resolve(false), grace); })]);
+  clearTimeout(timer);
+  if (ended) { recordWait(graceful ? 'stop-graceful' : 'stop', began); return; }
+  console.warn(`[bound] hostExitGraceMs (${grace} ms) ended the stop of owned E2E child pid ${process.pid}; its tree is killed`);
+  await stopTree(process.pid!);
+  await exited;
 }
 async function ready(process: ChildProcess, url: string, log: string) {
   const began = Date.now(), deadline = began + 90_000;

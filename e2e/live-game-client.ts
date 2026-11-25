@@ -142,7 +142,10 @@ export async function launchGameClient(context: BrowserContext, options: LiveCli
           }
           let independentRoute:any;
           try{const r=runner?.partyQueueClient?.independent?.report?.();independentRoute=r&&{id:r.id,target:r.target,direct:r.direct,level:r.level,phase:r.phase,point:r.point&&{x:r.point.x,y:r.point.y},prediction:r.prediction&&{at:r.prediction.at,target:{...r.prediction.target},destination:{...r.prediction.destination},targetSpeed:r.prediction.targetSpeed,own:{...r.prediction.own},ownSpeed:r.prediction.ownSpeed,reach:r.prediction.reach,horizon:r.prediction.horizon},ownSpeed:c.speed,nativeTarget:enemy&&{id:String(enemy.id),x:enemy.real_x??enemy.x,y:enemy.real_y??enemy.y,moving:!!enemy.moving,speed:enemy.speed,going_x:enemy.going_x,going_y:enemy.going_y,inRange:runner?.is_in_range?.(enemy)}};}catch(error){independentRoute={error:String(error)};}
-          game.__e2eEvents.push({sequence:++game.__e2eEventSequence,at:Date.now(),event:'move-issued',
+          // `codeAt` is the CODE frame's clock: each frame runs its own ChronAL clock, and the two
+          // differ by up to one clock window (W21 H49 in the final gate's closing run: the CODE
+          // frame's prediction read 2 ms after this frame's issue time).
+          game.__e2eEvents.push({sequence:++game.__e2eEventSequence,at:Date.now(),codeAt:runner?.Date?.now?.(),event:'move-issued',
             data:{x:p.x,y:p.y,going_x:p.going_x,going_y:p.going_y,m:p.m},
             motion:{parent:body(c),code:body(code),clear,approachGoal,independentRoute,owner:runner?.__partyMovement?.live()?.owner??null,
               recovery:runner?.__partyGroupedCombat?.formationRecovery&&{id:runner.__partyGroupedCombat.formationRecovery.id,

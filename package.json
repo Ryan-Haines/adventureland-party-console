@@ -42,7 +42,7 @@
     "pretest:unit:ci": "npm run build:shared && node tools/build-runtime.mts && node tools/game/build.mts",
     "test:unit:ci": "node --test --test-concurrency=4 --test-reporter=tap scripts/tests/*.test.cjs runtime/addons/*/tests/*.test.cjs tools/copy-check.test.mjs",
     "test:addon-neutral": "node runtime/hooks/fixtures/answer-all/run.mts",
-    "pretest:e2e": "npm run build:shared && node tools/build-runtime.mts && node tools/game/build.mts",
+    "pretest:e2e": "node tools/e2e-keep-results.mjs && npm run build:shared && node tools/build-runtime.mts && node tools/game/build.mts",
     "test:e2e": "playwright test",
     "test:e2e:console": "npm run test:e2e -- --project=console",
     "test:e2e:live": "npm run test:e2e -- --project=live",
