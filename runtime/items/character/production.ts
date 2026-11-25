@@ -1556,7 +1556,6 @@ export function createProduction(p: ProductionPorts) {
       if (versioned && p.job()?.commandId !== command.id) throw itemFailure('interrupted');
       try { await toNpc(destination, call); }
       catch (error: any) { error.commerceMovement = true; throw error; }
-      command._commerceMovementSucceeded = true;
     }
     async function checkpoint(state: any, cycleBoundary: boolean) {
       const active = p.job();
@@ -1569,8 +1568,7 @@ export function createProduction(p: ProductionPorts) {
         p.commerce(command.id, { commerceJournalKey: journalKey, commerceSequence: state.sequence });
       }
       const result = await p.request('/merchant/checkpoint', { method: 'POST', body: { jobId: command.jobId, commandId: command.id, state,
-        cycleBoundary, movementSucceeded: command._commerceMovementSucceeded === true } });
-      command._commerceMovementSucceeded = false;
+        cycleBoundary } });
       if (result?.yield) throw Object.assign(Error('merchant_yield'), { reason: 'merchant_yield', code: 'merchant_yield' });
     }
     async function liveMerchantActivity(entry: any) {

@@ -311,16 +311,13 @@ export function createALDataService(state: ALDataState, ports: ALDataServicePort
 
   async function refreshMerchants(): Promise<void> {
     readerAsks.delete('merchants');
-    let snapshot = await ports.request("/merchants");
-    // A snapshot with bids but no sales is unmistakably partial; try once before retaining prior sales.
-    if (!normalizeMarketSales(snapshot).length && normalizeMarketBids(snapshot).length) {
-      const retry = await ports.request("/merchants");
-      if (normalizeMarketSales(retry).length) snapshot = retry;
-    }
+    const snapshot = await ports.request("/merchants");
     // The refresh measures the sightings once, on the snapshot the refresh keeps.
     const merchants = currentMerchants(merchantSightings, snapshot),
       listings = normalizeMarketSales(merchants), buyOrders = normalizeMarketBids(merchants);
     state.merchants = merchants;
+    // A snapshot with bids but no sales is partial: the known sales stay until the next feed
+    // refresh brings sales again (REVIEW-QUEUE.md TW-U3).
     if (listings.length || !state.marketListings.length)
       state.marketListings = listings;
     if (buyOrders.length || !state.marketBuyOrders.length)
@@ -1850,8 +1847,8 @@ export interface NpcSale {
   error?: string | null;
   // The failure code of the block; `error` is its message.
   code?: string | null;
-  retryCount?: number;
-  retryAt?: number;
+  // The bag signature a failed sale waits to change (failNpcSales).
+  retryInventory?: string;
   blockedInventory?: string;
   auto?: boolean;
   autoRuleKey?: string;
@@ -1864,13 +1861,11 @@ const sameIgnoringLock = (a: Item, b: Item) =>
 export function inventorySignature(inventory: readonly ({ slot?: number; item?: Item | null } | null)[]): string {
   return JSON.stringify(inventory.map((entry) => entry && [entry.slot, entry.item]));
 }
-// A failed sale waits v1.5.0's backoff, 5 s after its first failure up to 60 s from its
-// fourth, whatever its source.
-// b9b5c91e:runtime/coordinator/merchant/npc-sales.ts:132; QUESTIONS.md U3 queues its progress rule
-// for owner 10 (REVIEW-QUEUE.md).
-export const NPC_SALE_RETRY_MS = [5000, 15000, 30000, 60000] as const;
-export const readyNpcSales = (marks: NpcSale[], now: number) =>
-  marks.filter((mark) => mark.source !== "character" && mark.state !== "blocked" && (mark.retryAt || 0) <= now);
+// A failed sale waits for the merchant's bag to change (`retryInventory`), the progress rule that
+// replaces b9b5c91e's 5, 15, 30 and 60 s backoff (REVIEW-QUEUE.md TW-U3): the same sale on the
+// same bag meets the same refusal.
+export const readyNpcSales = (marks: NpcSale[]) =>
+  marks.filter((mark) => mark.source !== "character" && mark.state !== "blocked" && mark.state !== "retrying");
 
 // One record and notice when a sale blocks and when it lifts; its subject is the character that
 // handed the copy over, else the merchant.
@@ -1932,7 +1927,6 @@ function reconcileMark(
   used: Map<number, number>,
   signature: string,
   running: boolean,
-  now: number,
 ): NpcSale | null {
   const mark = { ...original };
   if (mark.source === "character") return mark;
@@ -1941,12 +1935,14 @@ function reconcileMark(
     return mark;
   }
   if (mark.state === "blocked" && mark.blockedInventory === signature) return mark;
+  if (mark.state === "retrying" && mark.retryInventory === signature) return mark;
+  delete mark.retryInventory;
   if (mark.source === "merchant") {
     const result = reconcileInventory(mark, inventory, used, signature);
     if (result === "duplicate") return null;
     if (result === "blocked") return mark.code === 'marked_missing' && missingAgain(original) ? null : mark;
   } else clearBlocked(mark);
-  mark.state = (mark.retryAt || 0) > now ? "retrying" : "queued";
+  mark.state = "queued";
   return mark;
 }
 
@@ -1955,29 +1951,28 @@ export function reconcileNpcSales(
   marks: NpcSale[],
   inventory: Inventory,
   running: boolean,
-  now: number,
 ) {
   const signature = inventorySignature(inventory);
   const used = new Map<number, number>(),
     retained: NpcSale[] = [];
   for (const original of marks) {
-    const mark = reconcileMark(original, inventory, used, signature, running, now);
+    const mark = reconcileMark(original, inventory, used, signature, running);
     if (mark) retained.push(mark);
   }
   return {
     marks: retained,
     changed: JSON.stringify(marks) !== JSON.stringify(retained),
-    runnable: readyNpcSales(retained, now).length > 0,
+    runnable: readyNpcSales(retained).length > 0,
   };
 }
 
-/** A failed sale retries after NPC_SALE_RETRY_MS; `retryCount` picks the step. */
-export function failNpcSales(marks: NpcSale[], ids: readonly string[], error: string, now: number, code?: unknown) {
+/** A failed sale retries once the merchant's bag differs from `inventory`, the bag it failed on. */
+export function failNpcSales(marks: NpcSale[], ids: readonly string[], error: string,
+  inventory: readonly ({ slot?: number; item?: Item | null } | null)[], code?: unknown) {
+  const retryInventory = inventorySignature(inventory);
   return marks.map((mark) => {
     if (!ids.includes(mark.id)) return mark;
-    const retryCount = (mark.retryCount || 0) + 1;
-    return { ...mark, state: "retrying", error, code: typeof code === 'string' ? code : null, retryCount,
-      retryAt: now + NPC_SALE_RETRY_MS[Math.min(NPC_SALE_RETRY_MS.length, retryCount) - 1]! };
+    return { ...mark, state: "retrying", error, code: typeof code === 'string' ? code : null, retryInventory };
   });
 }
 
@@ -2492,13 +2487,13 @@ export function createAutomaticMerchantSales(state: SalesState, ports: SalesPort
       const reason = auto ? 'auto npc sales' : 'npc sales';
       if (auto && !routineEnabled({ reason }, played(state, 'merchantAutomations') ?? {})) continue;
       const queued = state.merchantQueue.some(job => job.reason === reason && job.target === state.merchantCharacter);
-      const runnable = readyNpcSales(marks, ports.now()).some(mark => Boolean(mark.auto) === auto);
+      const runnable = readyNpcSales(marks).some(mark => Boolean(mark.auto) === auto);
       if (runnable && !running && !queued) ports.queue([state.merchantCharacter], reason);
     }
   }
   function reconcileSales(items: readonly (SaleEntry | null)[]): boolean {
     const running = npcSaleRunning();
-    const sales = reconcileNpcSales(state.npcSaleMarks, items, running, ports.now());
+    const sales = reconcileNpcSales(state.npcSaleMarks, items, running);
     for (const mark of sales.marks) if (mark.auto && itemRuleConflicts(state,mark.item).length) {
       mark.state = "blocked"; mark.error = "Conflicting automatic rules; choose an action in merchant settings"; sales.changed = true;
     }

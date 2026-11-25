@@ -139,7 +139,7 @@ test('merchant logistics shows capacity blocked collection in red and clears whe
   await expect(page.locator('span[title="Mining · M"]')).toHaveCount(0);
 });
 
-test('uncertain merchant upgrade shows red diagnostics and authoritative UTC retry time',async({page,app},info)=>{
+test('uncertain merchant upgrade shows red diagnostics and its wait for a bag change',async({page,app},info)=>{
   const initial=await app.state();
   const enabled=Object.fromEntries(Object.keys(initial.merchantAutomations).map(name=>[name,false]));
   const configuration=await page.request.post('/party-api/merchant/routine-priorities',{headers:{Origin:app.url},data:{priorities:{},enabled}});
@@ -163,12 +163,12 @@ test('uncertain merchant upgrade shows red diagnostics and authoritative UTC ret
   await app.deliverMerchantCompletion({jobId:current.id,commandId:current.commandId,success:false,failureKind:'commerce_recovery',code:'upgrade_uncertain',error});
   await expect.poll(async()=>(await app.state()).merchantActivity.some((entry:any)=>entry.level==='error'&&JSON.stringify(entry.details).includes(error))).toBe(true);
   const state=await app.state(),retry=state.merchantQueue.find((job:any)=>job.resumedFrom===current.id);
-  expect(retry.retryAt).toBeGreaterThan(Date.now());
-  const timestamp=new Date(retry.retryAt).toISOString().replace('T',' ').replace(/\.\d{3}Z$/,' UTC');
+  // The order waits for a bag to change, with no clock (REVIEW-QUEUE.md TW-U3).
+  expect(retry.progressWait?.on).toBe('bag-change');
   await page.goto('/');
   const merchant=page.locator('article').filter({has:page.getByRole('heading',{name:'M',exact:true})});
   await merchant.locator('summary').filter({hasText:/^Activity$/}).click();
-  const line=page.locator('p').filter({hasText:`Retrying order at ${timestamp}`});
+  const line=page.locator('p').filter({hasText:"Retrying order when the merchant's or target's bag or the bank changes"});
   await expect(line).toBeVisible();
   await expect(line).toContainText(error);
   const {color,channels}=await line.evaluate(element=>{

@@ -6634,6 +6634,7 @@
     "interrupts J3": { at: "runtime/merchant-jobs/rules.ts#interruptOf", hook: "merchant.jobKind" },
     "endings J4": { at: "runtime/merchant-jobs/rules.ts#endingOf", hook: "retry.policy" },
     "retry waits J4": { at: "runtime/merchant-jobs/rules.ts#endingWaitMs", hook: "retry.policy" },
+    "a progress wait has lifted J2": { at: "runtime/merchant-jobs/rules.ts#progressLifted", hook: "group.questions" },
     "gathering mode": { at: "runtime/merchant-jobs/rules.ts#gatheringCandidates", hook: "settings.overlay" },
     "routine priorities": { at: "runtime/merchant-jobs/rules.ts#merchantRoutinePriority", hook: "settings.overlay" },
     "a routine is on": { at: "runtime/merchant-jobs/rules.ts#routineEnabled", hook: "settings.overlay" },
@@ -6679,6 +6680,7 @@
     normalizePickupJob: "migration",
     stampMerchantJob: "format",
     coordinatorMerchantCapacitySignature: "format",
+    progressWait: "format",
     validStandLocation: "validator",
     jsonWhole: "validator"
   };
@@ -23222,7 +23224,6 @@ ${hook}`, was = errors.get(key3);
     AT_STAND: () => AT_STAND,
     BACKGROUND_REFUSED: () => BACKGROUND_REFUSED,
     COMMERCE_PROGRESS_VERSION: () => COMMERCE_PROGRESS_VERSION,
-    COMMERCE_RETRY_MS: () => COMMERCE_RETRY_MS,
     ENDINGS: () => ENDINGS,
     GATHERING_MODES: () => GATHERING_MODES,
     HANDOFF: () => HANDOFF,
@@ -23235,6 +23236,7 @@ ${hook}`, was = errors.get(key3);
     MERCHANT_LUCK: () => MERCHANT_LUCK,
     MERCHANT_PAUSE_DEADLINE_MS: () => MERCHANT_PAUSE_DEADLINE_MS,
     NEARBY_RADIUS: () => NEARBY_RADIUS,
+    PROGRESS_WAITS: () => PROGRESS_WAITS,
     READY: () => READY,
     ROUTINE_DIALOG_LABELS: () => ROUTINE_DIALOG_LABELS,
     ROUTINE_PRIORITY: () => ROUTINE_PRIORITY,
@@ -23281,6 +23283,8 @@ ${hook}`, was = errors.get(key3);
     normalizePickupJob: () => normalizePickupJob,
     pickOrder: () => pickOrder,
     pickupReason: () => pickupReason,
+    progressLifted: () => progressLifted,
+    progressWait: () => progressWait,
     realmRetry: () => realmRetry,
     routineEnabled: () => routineEnabled,
     routineFor: () => routineFor,
@@ -23597,6 +23601,7 @@ ${hook}`, was = errors.get(key3);
     { rule: "its target's task allows the visit", ready: (job2, f) => !f.waits?.(job2) },
     { rule: "the realm owner has not blocked it", ready: (job2) => !job2.realmBlockedReason },
     { rule: "its retry time has passed", ready: (job2, f) => Number(job2.retryAt || 0) <= f.now },
+    { rule: "its progress wait has lifted", ready: (job2, f) => !job2.progressWait || f.progressed(job2) },
     { rule: "it is not held on Bankboi", ready: (job2) => !job2.blockedOnBankboi },
     { rule: "the merchant has room for it", ready: (job2, f) => !f.capacityBlocked(job2) },
     { rule: "its collection is ready", ready: (job2, f) => f.collectionReady(job2) }
@@ -23625,7 +23630,7 @@ ${hook}`, was = errors.get(key3);
       queuedAt: "keep",
       retryAt: "none",
       ladder: null,
-      orderWait: "commerce",
+      orderWait: "bag-change",
       counts: false,
       message: "Merchant work deferred until Hunt releases movement"
     },
@@ -23635,7 +23640,7 @@ ${hook}`, was = errors.get(key3);
       when: (f) => f.movement,
       id: "new",
       queuedAt: "now",
-      retryAt: "movement-streak",
+      retryAt: "route-change",
       ladder: "job-interrupted",
       counts: true,
       message: "Merchant work queued for movement retry; progress preserved"
@@ -23647,7 +23652,7 @@ ${hook}`, was = errors.get(key3);
       id: "new",
       queuedAt: "now",
       retryAt: "none",
-      orderWait: "commerce",
+      orderWait: "bag-change",
       ladder: null,
       counts: false,
       message: "Merchant paused for anniversary; preserving job"
@@ -23670,7 +23675,7 @@ ${hook}`, was = errors.get(key3);
       id: "new",
       queuedAt: "now",
       retryAt: "ten-seconds",
-      orderWait: "commerce",
+      orderWait: "bag-change",
       ladder: "rendezvous-timeout",
       counts: false,
       message: "Merchant rendezvous stalled; retrying in ten seconds"
@@ -23682,7 +23687,7 @@ ${hook}`, was = errors.get(key3);
       id: "keep",
       queuedAt: "now",
       retryAt: "none",
-      orderWait: "commerce",
+      orderWait: "bag-change",
       ladder: null,
       counts: false,
       message: "Merchant paused for Bankboi storage; preserving job"
@@ -23704,7 +23709,7 @@ ${hook}`, was = errors.get(key3);
       when: (f) => f.interruptedOrder,
       id: "new",
       queuedAt: "now",
-      retryAt: "commerce",
+      retryAt: "bag-change",
       ladder: "job-interrupted",
       counts: true,
       message: "Merchant commerce interrupted; preserving it for retry"
@@ -23738,14 +23743,29 @@ ${hook}`, was = errors.get(key3);
     return facts.interruptedOrder && row4.orderWait ? { ...row4, retryAt: row4.orderWait } : row4;
   }
   var ENDING_RETRY_MS = 1e4;
-  var COMMERCE_RETRY_MS = [1e4, 3e4, 6e4, 3e5];
   var RECOVERY_RETRY_MS = 2e4;
   var RECOVERY_RETRY_CAP_MS = 3e5;
   function endingWaitMs(wait, attempt = 1) {
-    if (wait === "none") return 0;
-    if (wait === "commerce" || wait === "movement-streak") return COMMERCE_RETRY_MS[Math.min(3, Math.max(0, attempt - 1))];
+    if (wait === "none" || wait in PROGRESS_WAITS) return 0;
     if (wait === "recovery") return Math.min(RECOVERY_RETRY_CAP_MS, RECOVERY_RETRY_MS * 2 ** Math.min(4, attempt - 1));
     return ENDING_RETRY_MS;
+  }
+  var PROGRESS_WAITS = {
+    "bag-change": { signature: coordinatorMerchantCapacitySignature, waits: "the merchant's or target's bag or the bank changes" },
+    "route-change": {
+      signature: (state, target) => {
+        const merchant7 = state.statuses[String(state.merchantCharacter)], there = state.statuses[String(target)];
+        return JSON.stringify([merchant7?.map, merchant7?.in, merchant7?.x, merchant7?.y, there?.map, there?.in]);
+      },
+      waits: "the merchant moves or the target changes map"
+    }
+  };
+  function progressWait(on, state, target) {
+    return { on, signature: PROGRESS_WAITS[on].signature(state, target) };
+  }
+  function progressLifted(job2, state) {
+    const wait = job2.progressWait;
+    return !wait || PROGRESS_WAITS[wait.on].signature(state, job2.target ?? null) !== wait.signature;
   }
   var REALM_ENDING = ENDINGS.find((row4) => row4.ending === "wrong realm");
   function realmRetry(attempts, now) {
@@ -25561,7 +25581,6 @@ ${hook}`, was = errors.get(key3);
           error.commerceMovement = true;
           throw error;
         }
-        command._commerceMovementSucceeded = true;
       }
       async function checkpoint(state, cycleBoundary) {
         const active = p.job();
@@ -25577,10 +25596,8 @@ ${hook}`, was = errors.get(key3);
           jobId: command.jobId,
           commandId: command.id,
           state,
-          cycleBoundary,
-          movementSucceeded: command._commerceMovementSucceeded === true
+          cycleBoundary
         } });
-        command._commerceMovementSucceeded = false;
         if (result?.yield) throw Object.assign(Error("merchant_yield"), { reason: "merchant_yield", code: "merchant_yield" });
       }
       async function liveMerchantActivity(entry) {

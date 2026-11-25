@@ -781,8 +781,8 @@ export const InventoryPanel = memo(function InventoryPanel({
                 ? [
                     `NPC sale: ${npcSaleStatus}`,
                     npcSale.error,
-                    npcSale.retryAt
-                      ? `Retry after ${new Date(npcSale.retryAt).toLocaleTimeString()}`
+                    npcSale.state === 'retrying'
+                      ? 'Retries when the merchant bag changes'
                       : null,
                   ]
                     .filter(Boolean)

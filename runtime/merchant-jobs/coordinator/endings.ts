@@ -6,8 +6,7 @@ import { partyHooks } from '../../hooks/index.ts';
 import { writeIntents, receiveBankUpgrades, upgradeOfferingReady, upgradeRecoverySignature, type UpgradeMark, type DeconstructionMark, resolveNpcSales, items, type NpcSale, receiveBankDeconstruction, recordBankReceipts, recordClaimBanked, type ClaimBanked } from '../../items/coordinator/api.ts';
 import { failureClass } from '../../items/api.ts';
 import type { InventoryEntry, Item } from '../../coordinator/contracts/item.ts';
-import { merchantKind, endingOf, endingWaitMs, realmRetry, type EndingFacts, type EndingRow, COMMERCE_PROGRESS_VERSION, type JobReason } from '../rules.ts';
-import { boundFired } from '../../status/coordinator/api.ts';
+import { merchantKind, endingOf, endingWaitMs, realmRetry, progressWait, PROGRESS_WAITS, type ProgressState, type EndingFacts, type EndingRow, COMMERCE_PROGRESS_VERSION, type JobReason } from '../rules.ts';
 import { watchReports } from './report-wait.ts';
 import { requestObject, requestText } from '../../lifecycle/api.ts';
 import { communicationReason } from '../../movement/api/coordinator.ts';
@@ -211,7 +210,7 @@ export function createCompletionRetries(state: CompletionState, ports: Completio
       retryAt: 0,
       queuedAt: row.queuedAt === 'keep' ? job.queuedAt : now,
     };
-    waitFor(row, job, retry, now, state.merchantCharacter);
+    waitFor(row, job, retry, now, state);
     // An add-on may wait longer, count the retry or give the job up; core's wait stays the floor.
     const wait = Math.max(0, Number(retry.retryAt) - now), asked = partyHooks().retry.policy(
       { owner: 'merchant-jobs', subject: job.reason, failure: row.ending, attempt: Number(job.retryCount) || 0 }, { wait, giveUp: false, counts: row.counts });
@@ -240,11 +239,15 @@ export function createCompletionRetries(state: CompletionState, ports: Completio
   }
   function logOrderRetry(retry: CompletionJob): void {
     if (retry.reason !== 'merchant commerce') return;
+    const level = failureClass(retry.lastErrorCode) === 'uncertain' ? 'error' : 'info', error = retry.lastError || null;
+    if (retry.progressWait) {
+      ports.log('Retrying order when ' + PROGRESS_WAITS[retry.progressWait.on].waits, level,
+        { jobId: retry.id, resumedFrom: retry.resumedFrom, waits: retry.progressWait.on, error });
+      return;
+    }
     const retryAt = Number(retry.retryAt) || ports.now();
     const retryAtUTC = new Date(retryAt).toISOString().replace('T', ' ').replace(/\.\d{3}Z$/, ' UTC');
-    ports.log('Retrying order at ' + retryAtUTC, failureClass(retry.lastErrorCode) === 'uncertain' ? 'error' : 'info', {
-      jobId: retry.id, resumedFrom: retry.resumedFrom, retryAt, retryAtUTC, error: retry.lastError || null,
-    });
+    ports.log('Retrying order at ' + retryAtUTC, level, { jobId: retry.id, resumedFrom: retry.resumedFrom, retryAt, retryAtUTC, error });
   }
   function logLuckRetry(job: CompletionJob): void {
     if (merchantKind(job.reason).luck)
@@ -259,26 +262,22 @@ export function createCompletionRetries(state: CompletionState, ports: Completio
 
 // The member whose next report runs a retry, and whether that report must show it alive.
 export interface RetryOn { character: string; living: boolean }
-// The waits, whose values rules.ts holds (endingWaitMs), and the fields each one writes on the retry.
-// A death or a missed rendezvous and a realm change wait for a member's report (`retryOn`); the
-// commerce and movement backoffs are bounds against an outside failure, and each one booked goes to
-// The status owner's bound record under COMMERCE_RETRY_MS.
-function waitFor(row: EndingRow, job: CompletionJob, retry: CompletionJob, now: number, merchant: string | null): void {
+// The waits, whose values rules.ts holds (endingWaitMs, PROGRESS_WAITS), and the fields each one
+// writes on the retry. A death or a missed rendezvous and a realm change wait for a member's report
+// (`retryOn`). A failed walk waits for its route to change and a failed order for a bag to change
+// (`progressWait`); the pause reason names the failure and the wait.
+function waitFor(row: EndingRow, job: CompletionJob, retry: CompletionJob, now: number, state: ProgressState): void {
   const wait = row.retryAt;
   if (wait === 'ten-seconds') {
     retry.retryAt = now + endingWaitMs(wait);
     const died = row.ending === 'died on rendezvous';
-    const character = died ? merchant : job.target;
+    const character = died ? state.merchantCharacter : job.target;
     if (character) retry.retryOn = { character, living: died };
-  } else if (wait === 'movement-streak') {
-    retry.movementRetryCount = Number(job.movementRetryCount || 0) + 1;
-    retry.retryAt = now + endingWaitMs(wait, Number(retry.movementRetryCount));
-    retry.pauseReason = 'Movement retry: ' + requestText(job.lastMovementError || 'route unavailable');
-    boundFired({ bound: 'COMMERCE_RETRY_MS', owner: '08', subject: String(job.target), state: { jobId: job.id, ending: row.ending, attempt: retry.movementRetryCount } });
-  } else if (wait === 'commerce') {
-    retry.retryAt = now + endingWaitMs(wait, Number(job.retryCount || 0) + 1);
-    retry.pauseReason = requestText(job.lastError || 'Production interrupted; progress preserved');
-    boundFired({ bound: 'COMMERCE_RETRY_MS', owner: '08', subject: String(job.target), state: { jobId: job.id, ending: row.ending, attempt: Number(job.retryCount || 0) + 1 } });
+  } else if (wait === 'route-change' || wait === 'bag-change') {
+    retry.progressWait = progressWait(wait, state, job.target ?? null);
+    const failure = wait === 'route-change' ? 'Movement retry: ' + requestText(job.lastMovementError || 'route unavailable')
+      : requestText(job.lastError || 'Production interrupted; progress preserved');
+    retry.pauseReason = failure + '; retries when ' + PROGRESS_WAITS[wait].waits;
   } else if (wait === 'realm') {
     Object.assign(retry, realmRetry(job.realmAttempts, now));
     if (job.target) retry.retryOn = { character: job.target, living: false };

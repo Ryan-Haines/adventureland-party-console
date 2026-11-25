@@ -6,7 +6,7 @@ import { played } from '../../settings/api.ts';
 import { craftProtection, localBankUpgrades, sharedCompoundRules, upgradeOfferingReady, type BankImprovementState, type ProductionState, batchMarketplaceVisits, activeStandSales, type DeconstructionMark, readyNpcSales, items, type BankboiInventory, workingGold, visitWithdrawals, goldTarget, type NativeStandState } from '../../items/coordinator/api.ts';
 import { protectedSlotsOf, freeSlots, luckySlotOf, type LuckySlots, ruleOwner, hasMarkedWithdrawals } from '../../items/api.ts';
 import type { InventoryEntry, ItemMark } from '../../coordinator/contracts/item.ts';
-import { ADDON_STEPS, addonStepRefusal, jsonWhole, type AddonKind, pickOrder, routineEnabled, splitLegacyWork, admitAddonKinds, addonKind, kindRow, type AddonKindRow, addonReason, merchantKind, holdOf, type HoldRow, jobReady, gatheringCandidates, type HoldFacts, type ReadyFacts, mergePickupJobs, COMMERCE_PROGRESS_VERSION, VISIBILITY_RANGE, type MerchantEventState } from '../rules.ts';
+import { ADDON_STEPS, addonStepRefusal, jsonWhole, type AddonKind, pickOrder, routineEnabled, splitLegacyWork, admitAddonKinds, addonKind, kindRow, type AddonKindRow, addonReason, merchantKind, holdOf, type HoldRow, jobReady, gatheringCandidates, type HoldFacts, type ReadyFacts, progressLifted, mergePickupJobs, COMMERCE_PROGRESS_VERSION, VISIBILITY_RANGE, type MerchantEventState } from '../rules.ts';
 import { partyHooks } from '../../hooks/index.ts';
 import type { MerchantJobAsk, MerchantJobView, MerchantKindAsk, MerchantRoutineAnswer, MerchantRoutineView } from '../../hooks/registry.ts';
 import { createPartyRealmCheck, normalizedRealm, type RealmRequest } from '../../merchant-realm/api.ts';
@@ -102,7 +102,10 @@ export interface DispatchPorts {
 // the same answer. A routine switched off, a target a Cave visit owns (the hunting owner's `cave.state`), a target
 // or commerce source whose task refuses the visit (the tasks owner's `allows`) or a job the items owner's needs
 // block (short of gold above the reserve, postage or free slots) keeps the job waiting.
-interface ReadyState extends RealmState { merchantAutomations?: Record<string, boolean | undefined> }
+interface ReadyState extends RealmState {
+  merchantAutomations?: Record<string, boolean | undefined>;
+  bankSnapshot?: { packs?: unknown } | null;
+}
 export interface ReadyPorts {
   now(): number;
   visitAllowed?(name: string): boolean;
@@ -117,6 +120,7 @@ export function coordinatorReadyFacts(state: ReadyState, ports: ReadyPorts): Rea
     waits: job => merchantVisitRefused(job, ports.visitAllowed) || !!partyHooks().ask('items.needs', { ...job }).blockedBy,
     capacityBlocked: job => ports.capacityBlocked?.(job as MerchantWork) ?? false,
     collectionReady: job => ports.collectionReady?.(job as MerchantWork) !== false,
+    progressed: job => progressLifted(job, { merchantCharacter: state.merchantCharacter ?? null, statuses: state.statuses || {}, bankSnapshot: state.bankSnapshot }),
     here: job => {
       const live = reportedRealm(state, state.merchantCharacter);
       return !!live && jobRealm(state, job as MerchantWork) === live;
@@ -336,7 +340,7 @@ export function createMerchantDispatcher(state: DispatchState, ports: DispatchPo
     // A job a pause or a retry put back resumes: `jobs.pause` marks it `pausedBy`, a retry names
     // its `pauseReason`.
     if (job.pauseReason || job.pausedBy) recordMerchant({ subject: String(merchant), decision: 'resumed', owner, kind: job.reason });
-    delete job.pauseReason; delete job.pausedBy;
+    delete job.pauseReason; delete job.pausedBy; delete job.progressWait;
     state.current = { ...job, commandId, phase: "assigned", startedAt: ports.now(), heartbeatAt: null, handoff: null };
     recordMerchant({ subject: String(merchant), decision: 'claimed', owner, kind: job.reason });
     if (merchantKind(job.reason).command === ADDON_STEPS) {
@@ -508,7 +512,7 @@ function commandInputs(state: DispatchCoordinatorState, ports: DispatchCompositi
     gatheringModes: played(state, 'gatheringModes'),
     cargo: state.merchantCargo,
     deconstructionMarks: (state.deconstructionMarks || []).filter(mark => mark.owner === state.merchantCharacter && mark.state === "ready"),
-    npcSales: readyNpcSales(state.npcSaleMarks || [], ports.now()),
+    npcSales: readyNpcSales(state.npcSaleMarks || []),
     standListings: activeStandSales(state.standListings || []),
     workingGold: workingGold(state),
     visitWithdrawals: job => visitWithdrawals(state, job),

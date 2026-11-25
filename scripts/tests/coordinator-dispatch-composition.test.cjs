@@ -195,9 +195,22 @@ test('marketplace batching retains other sellers and tags each listing with its 
 
 test('new merchant commands carry only runnable NPC sale reservations', () => {
   const f = fixture();
-  Object.assign(f.state, { merchantQueue: [sampleJob('npc sales')], npcSaleMarks: [{ id: 'ready', retryAt: 99 }, { id: 'future', retryAt: 101 }, { id: 'blocked', state: 'blocked' }] });
+  Object.assign(f.state, { merchantQueue: [sampleJob('npc sales')], npcSaleMarks: [{ id: 'ready' }, { id: 'failed', state: 'retrying' }, { id: 'blocked', state: 'blocked' }] });
   composed(f).dispatch();
   assert.deepEqual(f.state.commands.M.npcSales.map(mark => mark.id), ['ready']);
+});
+
+// The pass's ready facts read a progress wait on the coordinator's records (REVIEW-QUEUE.md TW-U3):
+// a retry that waits on its route stays in line until the merchant has moved.
+test('a retry waiting on its route is ready once the merchant has moved', () => {
+  const { coordinatorReadyFacts } = require('../../runtime/merchant-jobs/coordinator/dispatch.ts');
+  const { jobReady, progressWait } = require('../../runtime/merchant-jobs/rules.ts');
+  const f = fixture();
+  Object.assign(f.state.statuses.M, { map: 'main', x: 0, y: 0 });
+  const job = { id: 'retry', target: 'M', reason: 'restock', progressWait: progressWait('route-change', f.state, 'M') };
+  assert.equal(jobReady(job, coordinatorReadyFacts(f.state, f.ports)), false);
+  f.state.statuses.M.x = 40;
+  assert.equal(jobReady(job, coordinatorReadyFacts(f.state, f.ports)), true);
 });
 
 test('legacy and already-split empty manual compound jobs never dispatch a merchant visit', () => {

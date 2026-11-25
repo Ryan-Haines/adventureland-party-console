@@ -94,11 +94,11 @@ test('J1, J3 and J4 rows give the dispatcher, checkpoint and classifier decision
   assert.deepEqual(pick({ interrupted: true, death: true }), ['new', 'now', 'ten-seconds', true]);
   assert.equal(pick({ interrupted: true, kind: merchantKind('npc sales') }), null);
   assert.equal(pick({}), null);
-  // A failed buy-upgrade order waits the commerce delay at every row but a death, a movement failure
+  // A failed buy-upgrade order waits for a bag change at every row but a death, a movement failure
   // and a realm failure.
   const order = changes => pick({ interruptedOrder: true, ...changes })[2];
-  for (const ending of ['movementOwned', 'anniversaryYield', 'rendezvous', 'storageYield']) assert.equal(order({ [ending]: true }), 'commerce', ending);
-  assert.deepEqual([order({ death: true }), order({ movement: true }), order({ realm: true })], ['ten-seconds', 'movement-streak', 'realm']);
+  for (const ending of ['movementOwned', 'anniversaryYield', 'rendezvous', 'storageYield']) assert.equal(order({ [ending]: true }), 'bag-change', ending);
+  assert.deepEqual([order({ death: true }), order({ movement: true }), order({ realm: true })], ['ten-seconds', 'route-change', 'realm']);
   // 08-1's cause 7 named row 8's ladder `realm-switch`.
   assert.equal(ENDINGS.every(row => row.ladder === null || ['job-interrupted', 'rendezvous-timeout', 'realm-switch'].includes(row.ladder)), true);
   // The rung a booked failure climbs from follows the job's own count.

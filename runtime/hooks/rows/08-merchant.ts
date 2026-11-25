@@ -194,6 +194,7 @@ export const DECISIONS = {
   'interrupts J3': { at: 'runtime/merchant-jobs/rules.ts#interruptOf', hook: 'merchant.jobKind' },
   'endings J4': { at: 'runtime/merchant-jobs/rules.ts#endingOf', hook: 'retry.policy' },
   'retry waits J4': { at: 'runtime/merchant-jobs/rules.ts#endingWaitMs', hook: 'retry.policy' },
+  'a progress wait has lifted J2': { at: 'runtime/merchant-jobs/rules.ts#progressLifted', hook: 'group.questions' },
   'gathering mode': { at: 'runtime/merchant-jobs/rules.ts#gatheringCandidates', hook: 'settings.overlay' },
   'routine priorities': { at: 'runtime/merchant-jobs/rules.ts#merchantRoutinePriority', hook: 'settings.overlay' },
   'a routine is on': { at: 'runtime/merchant-jobs/rules.ts#routineEnabled', hook: 'settings.overlay' },
@@ -221,6 +222,6 @@ export const PLAIN = {
   pickupReason: 'label', merchantLine: 'label',
   migrateRoutinePriorities: 'migration', migrateExchangeAutomations: 'migration', splitLegacyWork: 'migration',
   movedRoutinePriorities: 'migration', normalizePickupJob: 'migration',
-  stampMerchantJob: 'format', coordinatorMerchantCapacitySignature: 'format',
+  stampMerchantJob: 'format', coordinatorMerchantCapacitySignature: 'format', progressWait: 'format',
   validStandLocation: 'validator', jsonWhole: 'validator',
 } satisfies Record<string, PlainKind>;

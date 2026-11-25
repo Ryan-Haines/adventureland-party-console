@@ -1,7 +1,7 @@
 const test=require('node:test'),assert=require('node:assert/strict');
 const {createMerchantCompletionRoute}=require('../../runtime/merchant-jobs/coordinator/routes.ts');
 const {fixture}=require('./helpers/coordinator-completion.cjs');
-const {COMMERCE_RETRY_MS}=require('../../runtime/merchant-jobs/rules.ts');
+const {progressLifted}=require('../../runtime/merchant-jobs/rules.ts');
 
 test('unresolved upgrade ambiguity installs an inventory recovery block rather than immediate retry',()=>{
  const f=fixture({job:{reason:'manual upgrades'}});
@@ -11,16 +11,20 @@ test('unresolved upgrade ambiguity installs an inventory recovery block rather t
 });
 
 
-test('upgrade and compound communication failures preserve work with escalating durable delays',()=>{
+// A communication failure on the walk waits for the route to change (REVIEW-QUEUE.md TW-U3); the
+// wait survives the save, as the queue's JSON round trip shows.
+test('upgrade and compound communication failures preserve work until the route changes',()=>{
  const {createCompletionRetries}=require('../../runtime/merchant-jobs/coordinator/endings.ts');
  for(const reason of ['upgrades and compounds','manual upgrades','auto upgrade','manual compounds','auto compound']) {
   const f=fixture({job:{reason}}),retries=createCompletionRetries(f.state,f.ports);
   let job=f.state.merchantCurrent;
-  for(const delay of [...COMMERCE_RETRY_MS,COMMERCE_RETRY_MS.at(-1)]) {
+  for(const map of ['halloween','winterland']) {
    const body={success:false,error:'POST /movement-plan · timeout'};
    const decision=retries.decide(job,body);assert.equal(decision.retry,true);
    retries.enqueue(job,decision);job=f.state.merchantQueue.shift();
-   assert.equal(job.retryAt,f.ports.now()+delay);
+   assert.equal(job.retryAt,0);assert.equal(job.progressWait.on,'route-change');
+   assert.equal(progressLifted(job,f.state),false);f.state.statuses[job.target]={...f.state.statuses[job.target],map};
+   assert.equal(progressLifted(job,f.state),true);
    assert.equal(job.reason,reason);assert.equal(job.commandId,undefined);
    job=JSON.parse(JSON.stringify(job));
   }

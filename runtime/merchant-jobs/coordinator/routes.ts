@@ -844,7 +844,6 @@ export function createMerchantProgressRoutes(state: ProgressState, ports: Progre
   function saveProgress(current: MerchantWork, body: Record<string, unknown>): void {
     if (body.eventOnly !== true)
       current.resumeState = body.state && typeof body.state === "object" ? body.state : {};
-    if (body.movementSucceeded === true) current.movementRetryCount = 0;
   }
   function checkpointWork(current: MerchantWork, body: Record<string, unknown>, res: HttpResponse): unknown {
     const eventReserved = reserved();

@@ -2,26 +2,26 @@ const { createMovementContext } = require('./fixtures/movement-owner-callers.cjs
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const vm = require('node:vm');
-const {reconcileNpcSales, readyNpcSales, failNpcSales, blockNpcSales, NPC_SALE_RETRY_MS} = require('../../runtime/items/coordinator/market.ts');
+const {reconcileNpcSales, readyNpcSales, failNpcSales, blockNpcSales} = require('../../runtime/items/coordinator/market.ts');
 const mark = (id='sale') => ({id,source:'merchant',slot:18,item:{name:'hpamulet',level:0},quantity:1,state:'queued'});
 const inventory = [{slot:18,item:{name:'hpamulet',level:0}}];
 test('durable orphan sale is runnable without a new automatic mark', () => {
- const result=reconcileNpcSales([mark()],inventory,false,1000);
+ const result=reconcileNpcSales([mark()],inventory,false);
  assert.equal(result.runnable,true); assert.equal(result.marks.length,1);
- assert.equal(reconcileNpcSales(result.marks,inventory,false,1000).changed,false);
+ assert.equal(reconcileNpcSales(result.marks,inventory,false).changed,false);
 });
-// The sale retry restores v1.5.0's backoff (NPC_SALE_RETRY_MS), its last step repeating, with the bag
-// unchanged; a bank-sourced sale retries as a bag-sourced one does.
-test('sale retries back off indefinitely and survive reconciliation', () => {
- // The schedule, then its last step twice more: the retries never stop.
- const BACKOFF_MS=[...NPC_SALE_RETRY_MS,NPC_SALE_RETRY_MS.at(-1),NPC_SALE_RETRY_MS.at(-1)];
- let marks=[mark(),{...mark('bank'),source:'bank'}]; let now=1;
- for(const delay of BACKOFF_MS){
-  marks=failNpcSales(marks,['sale','bank'],'interrupted',now);
-  assert.deepEqual(marks.map(m=>m.retryAt),[now+delay,now+delay]);
-  const pending=reconcileNpcSales(marks,inventory,false,now+delay-1);
+// A failed sale waits for the merchant's bag to change, with no clock (REVIEW-QUEUE.md TW-U3); a
+// bank-sourced sale waits as a bag-sourced one does, and every failure waits again.
+test('a failed sale waits for the merchant bag to change, every time it fails', () => {
+ const moved=[{slot:7,item:inventory[0].item}];
+ let marks=[mark(),{...mark('bank'),source:'bank'}];
+ for(const [failedOn,changed] of [[inventory,moved],[moved,inventory]]){
+  marks=failNpcSales(marks,['sale','bank'],'interrupted',failedOn);
+  assert.equal(readyNpcSales(marks).length,0);
+  const pending=reconcileNpcSales(marks,failedOn,false);
   assert.equal(pending.runnable,false);assert.deepEqual(pending.marks.map(m=>[m.state,m.error]),[['retrying','interrupted'],['retrying','interrupted']]);
-  assert.equal(readyNpcSales(marks,now+delay).length,2);now+=delay;
+  const lifted=reconcileNpcSales(pending.marks,changed,false);
+  assert.equal(lifted.runnable,true);assert.equal(readyNpcSales(lifted.marks).length,2);marks=lifted.marks;
  }
 });
 // A completion's blocked sale waits under the items owner's one block rule until the bag
@@ -29,19 +29,19 @@ test('sale retries back off indefinitely and survive reconciliation', () => {
 test('a reported block holds the sale until the merchant bag changes', () => {
  const marks=[mark()];blockNpcSales(marks,[{id:'sale',error:'Item reserved for queued order',code:'reserved'}],inventory);
  assert.deepEqual([marks[0].state,marks[0].error,marks[0].code],['blocked','Item reserved for queued order','reserved']);
- assert.equal(reconcileNpcSales(marks,inventory,false,1).marks[0].state,'blocked');
- assert.notEqual(reconcileNpcSales(marks,[{slot:7,item:inventory[0].item}],false,1).marks[0].state,'blocked');
+ assert.equal(reconcileNpcSales(marks,inventory,false).marks[0].state,'blocked');
+ assert.notEqual(reconcileNpcSales(marks,[{slot:7,item:inventory[0].item}],false).marks[0].state,'blocked');
 });
 test('moved items are found and duplicate reservations do not sell twice', () => {
- const result=reconcileNpcSales([mark(),mark('duplicate')],[{slot:7,item:inventory[0].item}],false,1);
+ const result=reconcileNpcSales([mark(),mark('duplicate')],[{slot:7,item:inventory[0].item}],false);
  assert.equal(result.marks.length,1);assert.equal(result.marks[0].slot,7);
 });
 test('missing and locked items block until inventory changes', () => {
  for(const items of [[],[{slot:18,item:{...inventory[0].item,l:'l'}}]]){
-  const result=reconcileNpcSales([mark()],items,false,1);
+  const result=reconcileNpcSales([mark()],items,false);
   assert.equal(result.runnable,false);assert.equal(result.marks[0].state,'blocked');
-  assert.equal(reconcileNpcSales(result.marks,items,false,2).changed,false);
-  assert.equal(reconcileNpcSales(result.marks,inventory,false,3).runnable,true);
+  assert.equal(reconcileNpcSales(result.marks,items,false).changed,false);
+  assert.equal(reconcileNpcSales(result.marks,inventory,false).runnable,true);
  }
 });
 // The sale rows run the items owner's merchantNpcSale (runtime/items/character/market.ts) on the items

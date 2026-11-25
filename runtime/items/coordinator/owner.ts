@@ -185,10 +185,10 @@ export function jobAnswers(state: ItemsState, ports: Pick<ItemsPorts, 'storage' 
       recovery.sent = nextCommand();
       return {id: recovery.sent, type: 'merchant-production-recover'};
     },
-    // The `failsSales` rule: the sales a failed command attempted wait their
-    // backoff.
+    // The `failsSales` rule: the sales a failed command attempted wait for the merchant's bag
+    // to change.
     failNpcSales(ids: readonly string[], error: string, code?: unknown): void {
-      state.npcSaleMarks = failNpcSales(state.npcSaleMarks, ids, error, Date.now(), code);
+      state.npcSaleMarks = failNpcSales(state.npcSaleMarks, ids, error, state.statuses[String(state.merchantCharacter)]?.items || [], code);
     },
     // The sales a completion reports blocked (`npcSalesBlocked`) wait until the merchant's bag
     // changes, by the one block rule market.ts's reconcile reads.

@@ -104,12 +104,12 @@ test("only the lifecycle owner's offline answer recovers a silent job, and a sal
   const sale=fixture({id:'sale',target:'M',reason:'ALData marketplace sales',phase:'processing',startedAt:1});
   sale.ports.offline=()=>true;sale.expire('M');assert.deepEqual(sale.effects,['sale']);assert.equal(sale.state.queue.length,0);
 });
-// Every ending's wait holds v1.5.0's values (252, commerce-progress.ts:21,
-// recovery.ts:96), and the stopped job's requeue reads its wait from it.
+// Every timed ending wait holds v1.5.0's values (252, recovery.ts:96), a progress wait takes no
+// time, and the stopped job's requeue reads its wait from it.
 test('J4 answers each ending wait and the stopped job requeue reads row 9 from it',()=>{
- const {ENDINGS,endingWaitMs,COMMERCE_RETRY_MS}=require('../../runtime/merchant-jobs/rules.ts');
+ const {ENDINGS,endingWaitMs}=require('../../runtime/merchant-jobs/rules.ts');
  for(const row of ENDINGS)assert.equal(typeof endingWaitMs(row.retryAt,1),'number',row.ending);
- assert.deepEqual([1,2,3,4,5].map(n=>endingWaitMs('commerce',n)),[...COMMERCE_RETRY_MS,COMMERCE_RETRY_MS.at(-1)]);
+ assert.deepEqual([1,4,5].flatMap(n=>[endingWaitMs('bag-change',n),endingWaitMs('route-change',n)]),[0,0,0,0,0,0]);
  assert.deepEqual([1,2,5,6].map(n=>endingWaitMs('recovery',n)),[20000,40000,300000,300000]);
  assert.equal(endingWaitMs('ten-seconds'),10000);assert.equal(endingWaitMs('realm'),10000);assert.equal(endingWaitMs('none'),0);
  const f=fixture({id:'quiet',target:'M',reason:'upgrades and compounds',phase:'processing',heartbeatAt:79999,startedAt:70000,recoveryAttempts:2});

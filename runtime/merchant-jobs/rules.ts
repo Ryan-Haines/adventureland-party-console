@@ -361,12 +361,15 @@ export interface ReadyFacts {
   collectionReady(job: PrioritizedJob): boolean;
   // The realm term: whether the job runs on the realm the merchant stands on.
   here?(job: PrioritizedJob): boolean;
+  // Whether the fact a progress wait read has changed (progressLifted).
+  progressed(job: PrioritizedJob): boolean;
 }
 export const READY: readonly { rule: string; ready: (job: PrioritizedJob, facts: ReadyFacts) => boolean }[] = [
   { rule: 'its routine is on', ready: (job, f) => f.enabled?.(job) !== false },
   { rule: "its target's task allows the visit", ready: (job, f) => !f.waits?.(job) },
   { rule: 'the realm owner has not blocked it', ready: job => !job.realmBlockedReason },
   { rule: 'its retry time has passed', ready: (job, f) => Number(job.retryAt || 0) <= f.now },
+  { rule: 'its progress wait has lifted', ready: (job, f) => !job.progressWait || f.progressed(job) },
   { rule: 'it is not held on Bankboi', ready: job => !job.blockedOnBankboi },
   { rule: 'the merchant has room for it', ready: (job, f) => !f.capacityBlocked(job) },
   { rule: 'its collection is ready', ready: (job, f) => f.collectionReady(job) },
@@ -399,36 +402,37 @@ export function interruptOf(facts: CheckpointFacts) {
 
 // The endings: every way a job ends and what its retry keeps. `id` keeps the job's id or
 // gives the retry a new one that names the old (`resumedFrom`); `queuedAt` keeps its place in line
-// or puts it at now; `retryAt` is v1.5.0's wait; `ladder` is the failure the next
+// or puts it at now; `retryAt` is the wait, timed or a progress wait; `ladder` is the failure the next
 // claim books on the tasks owner's merchant-job ladder. The rows sit in the order the
 // completion classifier tested them. `orderWait` is the wait a failed buy-upgrade order takes at
 // that row instead: v1.5.0 gave any failed buy order the commerce delay after the
-// death and movement checks, and:207 gave a realm failure its 10 s after that.
+// death and movement checks, now the bag-change wait, and :207 gave a realm failure its 10 s after
+// that.
 export interface EndingFacts {
   movementOwned: boolean; movement: boolean; anniversaryYield: boolean; realm: boolean; rendezvous: boolean;
   storageYield: boolean; death: boolean; interrupted: boolean; interruptedOrder: boolean; commerce: boolean; kind: JobKind;
 }
-export type EndingWait = 'none' | 'ten-seconds' | 'commerce' | 'movement-streak' | 'realm';
+export type EndingWait = 'none' | 'ten-seconds' | ProgressWait | 'realm';
 export interface EndingRow {
   row: number; ending: string; when: (facts: EndingFacts) => boolean; id: 'keep' | 'new'; queuedAt: 'keep' | 'now';
   retryAt: EndingWait; ladder: string | null; counts: boolean; message: string; orderWait?: EndingWait;
 }
 export const ENDINGS: readonly EndingRow[] = [
   { row: 2, ending: 'hunt_movement_owned', when: f => f.movementOwned, id: 'keep', queuedAt: 'keep', retryAt: 'none', ladder: null,
-    orderWait: 'commerce', counts: false, message: 'Merchant work deferred until Hunt releases movement' },
-  { row: 7, ending: 'movement', when: f => f.movement, id: 'new', queuedAt: 'now', retryAt: 'movement-streak', ladder: 'job-interrupted',
+    orderWait: 'bag-change', counts: false, message: 'Merchant work deferred until Hunt releases movement' },
+  { row: 7, ending: 'movement', when: f => f.movement, id: 'new', queuedAt: 'now', retryAt: 'route-change', ladder: 'job-interrupted',
     counts: true, message: 'Merchant work queued for movement retry; progress preserved' },
   { row: 3, ending: 'merchant_anniversary_reserved', when: f => f.anniversaryYield && f.kind.retry !== 'never', id: 'new', queuedAt: 'now',
-    retryAt: 'none', orderWait: 'commerce', ladder: null, counts: false, message: 'Merchant paused for anniversary; preserving job' },
+    retryAt: 'none', orderWait: 'bag-change', ladder: null, counts: false, message: 'Merchant paused for anniversary; preserving job' },
   { row: 8, ending: 'wrong realm', when: f => f.realm, id: 'new', queuedAt: 'now', retryAt: 'realm', ladder: 'realm-switch',
     counts: true, message: 'Merchant target changed realm; preserving unfinished work' },
   { row: 6, ending: 'rendezvous-timeout', when: f => f.rendezvous && f.kind.retry !== 'never', id: 'new', queuedAt: 'now',
-    retryAt: 'ten-seconds', orderWait: 'commerce', ladder: 'rendezvous-timeout', counts: false, message: 'Merchant rendezvous stalled; retrying in ten seconds' },
+    retryAt: 'ten-seconds', orderWait: 'bag-change', ladder: 'rendezvous-timeout', counts: false, message: 'Merchant rendezvous stalled; retrying in ten seconds' },
   { row: 2, ending: 'bankboi_pending', when: f => f.storageYield && f.kind.retry !== 'never', id: 'keep', queuedAt: 'now', retryAt: 'none',
-    orderWait: 'commerce', ladder: null, counts: false, message: 'Merchant paused for Bankboi storage; preserving job' },
+    orderWait: 'bag-change', ladder: null, counts: false, message: 'Merchant paused for Bankboi storage; preserving job' },
   { row: 5, ending: 'died on rendezvous', when: f => f.death && f.kind.retry !== 'never', id: 'new', queuedAt: 'now', retryAt: 'ten-seconds',
     ladder: 'job-interrupted', counts: true, message: 'Merchant job interrupted; preserving it for retry' },
-  { row: 4, ending: 'order interrupted', when: f => f.interruptedOrder, id: 'new', queuedAt: 'now', retryAt: 'commerce', ladder: 'job-interrupted',
+  { row: 4, ending: 'order interrupted', when: f => f.interruptedOrder, id: 'new', queuedAt: 'now', retryAt: 'bag-change', ladder: 'job-interrupted',
     counts: true, message: 'Merchant commerce interrupted; preserving it for retry' },
   { row: 4, ending: 'commerce interrupted', when: f => f.interrupted && f.commerce, id: 'new', queuedAt: 'now', retryAt: 'none',
     ladder: 'job-interrupted', counts: true, message: 'Merchant commerce interrupted; preserving it for retry' },
@@ -440,21 +444,47 @@ export function endingOf(facts: EndingFacts): EndingRow | null {
   if (!row) return null;
   return facts.interruptedOrder && row.orderWait ? { ...row, retryAt: row.orderWait } : row;
 }
-// The endings' waits, v1.5.0's numbers. `ten-seconds` follows a rendezvous or a death and
+// The endings' timed waits, v1.5.0's numbers. `ten-seconds` follows a rendezvous or a death and
 // `realm` a realm retry: each runs at the member's next report (endings.ts `waitFor`), and
-// ENDING_RETRY_MS bounds a member that never reports. `commerce` and `movement-streak` climb the
-// commerce delay by the order's count or the movement failure streak; `recovery` is row 9's stopped
-// job, doubling to its cap. Both backoffs are bounds against an outside failure, and each one booked
-// goes to the status owner's bound record. `cleanout-repeat` is a partial cleanout's next pickup.
+// ENDING_RETRY_MS bounds a member that never reports. `recovery` is row 9's stopped job, doubling
+// to its cap, a bound against an outside failure. `cleanout-repeat` is a partial cleanout's next
+// pickup. The progress waits take no time: PROGRESS_WAITS holds them.
 const ENDING_RETRY_MS = 10_000;
-// b9b5c91e's schedule; QUESTIONS.md U3 queues its progress rule for owner 08 (REVIEW-QUEUE.md).
-export const COMMERCE_RETRY_MS = [10_000, 30_000, 60_000, 300_000] as const;
 const RECOVERY_RETRY_MS = 20_000, RECOVERY_RETRY_CAP_MS = 300_000;
 export function endingWaitMs(wait: EndingWait | 'recovery' | 'cleanout-repeat', attempt = 1): number {
-  if (wait === 'none') return 0;
-  if (wait === 'commerce' || wait === 'movement-streak') return COMMERCE_RETRY_MS[Math.min(3, Math.max(0, attempt - 1))]!;
+  if (wait === 'none' || wait in PROGRESS_WAITS) return 0;
   if (wait === 'recovery') return Math.min(RECOVERY_RETRY_CAP_MS, RECOVERY_RETRY_MS * 2 ** Math.min(4, attempt - 1));
   return ENDING_RETRY_MS;
+}
+// The progress waits (REVIEW-QUEUE.md TW-U3): a failed order and a failed walk retry once the
+// fact they failed on has changed. They replace b9b5c91e's commerce delay of 10, 30, 60 and 300 s,
+// which retried the same order and the same walk on a clock. `bag-change` reads the capacity
+// signature, the bags the job moves items between. `route-change` reads the two ends of the
+// merchant's walk: where the merchant stands and which map the target is on. The job keeps the
+// signature its ending read, and the pick takes it once the signature differs (READY).
+export type ProgressWait = 'bag-change' | 'route-change';
+type Spot = { map?: unknown; in?: unknown; x?: unknown; y?: unknown; items?: unknown } | undefined;
+export interface ProgressState {
+  merchantCharacter: string | null;
+  statuses: Record<string, unknown>;
+  bankSnapshot?: { packs?: unknown } | null;
+}
+export const PROGRESS_WAITS: Readonly<Record<ProgressWait, { signature(state: ProgressState, target: string | null): string; waits: string }>> = {
+  'bag-change': { signature: coordinatorMerchantCapacitySignature, waits: "the merchant's or target's bag or the bank changes" },
+  'route-change': {
+    signature: (state, target) => {
+      const merchant = state.statuses[String(state.merchantCharacter)] as Spot, there = state.statuses[String(target)] as Spot;
+      return JSON.stringify([merchant?.map, merchant?.in, merchant?.x, merchant?.y, there?.map, there?.in]);
+    },
+    waits: 'the merchant moves or the target changes map',
+  },
+};
+export function progressWait(on: ProgressWait, state: ProgressState, target: string | null): { on: ProgressWait; signature: string } {
+  return { on, signature: PROGRESS_WAITS[on].signature(state, target) };
+}
+export function progressLifted(job: PrioritizedJob, state: ProgressState): boolean {
+  const wait = job.progressWait;
+  return !wait || PROGRESS_WAITS[wait.on].signature(state, job.target ?? null) !== wait.signature;
 }
 // The realm ending's retry, which the completion's realm ending and the party visit's failed switch both
 // book (realm half): no count blocks the job, its realm attempts climb, and the row's ladder
@@ -650,6 +680,8 @@ export interface PrioritizedJob {
   retryAt?: number;
   // The member whose next report runs the retry before retryAt (endings.ts `waitFor`).
   retryOn?: { character: string; living: boolean };
+  // The fact a commerce or movement ending waits on to change (PROGRESS_WAITS).
+  progressWait?: { on: ProgressWait; signature: string };
   blockedOnBankboi?: boolean;
   // The retry state a merge keeps (mergeTiming) and the ladder failure the next claim books (3.6).
   retryCount?: number;
@@ -823,12 +855,12 @@ export function coordinatorMerchantTransferBlocked(
 
 /** Movement, gold and heartbeat timestamps must not retry a job whose storage capacity is unchanged. */
 export function coordinatorMerchantCapacitySignature(
-  state: InventoryCapacity,
+  state: ProgressState,
   name: string | null,
 ): string {
   return JSON.stringify([
-    state.statuses[String(state.merchantCharacter)]?.items || [],
-    state.statuses[String(name)]?.items || [],
+    (state.statuses[String(state.merchantCharacter)] as Spot)?.items || [],
+    (state.statuses[String(name)] as Spot)?.items || [],
     state.bankSnapshot?.packs || {},
   ]);
 }

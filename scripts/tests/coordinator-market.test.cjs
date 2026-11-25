@@ -41,11 +41,16 @@ function fixture(responses){
   persistAuthentication:()=>calls.push(['auth']),owner:()=> 'owner',merchant:()=> 'M',publishedListings:()=>[{name:'wcap',level:8,wtb:{price:500}}]};
  return {state,calls,service:createALDataService(state,ports)};
 }
-test('partial market snapshots retry once and preserve known sales when the retry is also partial',async()=>{
- const bid=[merchant({trade1:{name:'wcap',b:true,price:50}})],f=fixture([bid,bid]);f.state.marketListings=[{key:'old'}];
- await f.service.refresh('merchants');assert.equal(f.calls.filter(entry=>entry[0]==='/merchants').length,2);
+// A partial snapshot (bids, no sales) is asked once: the known sales stay until the next feed
+// refresh brings sales (REVIEW-QUEUE.md TW-U3).
+test('a partial market snapshot keeps the known sales until the next feed refresh brings sales',async()=>{
+ const bid=[merchant({trade1:{name:'wcap',b:true,price:50}})],sale=[{...merchant({trade1:{name:'coat',price:70}}),lastSeen:'2026-09-12T12:05:00Z'}];
+ const f=fixture([bid,sale]),asks=()=>f.calls.filter(entry=>entry[0]==='/merchants').length;f.state.marketListings=[{key:'old'}];
+ await f.service.refresh('merchants');assert.equal(asks(),1);
  assert.equal(f.state.marketListings[0].key,'old');assert.equal(f.state.marketBuyOrders.length,1);assert.equal(f.state.refreshing,false);
  assert.equal(f.service.snapshot().key,undefined);
+ await f.service.refresh('merchants');assert.equal(asks(),2);
+ assert.deepEqual(f.state.marketListings.map(listing=>listing.item?.name),['coat']);
 });
 test('market failures release the refresh latch; authenticated publication sends the selected level',async()=>{
  const f=fixture([new Error('offline'),null]);await f.service.refresh();assert.equal(f.state.error,'offline');assert.equal(f.state.refreshing,false);

@@ -8,7 +8,7 @@ const test = require('node:test'), assert = require('node:assert/strict');
 const {createMerchantProgressRoutes} = require('../../runtime/merchant-jobs/coordinator/routes.ts');
 const {createCompletionRetries} = require('../../runtime/merchant-jobs/coordinator/endings.ts');
 const {currentMerchantReport} = require('../../runtime/merchant-jobs/coordinator/endings.ts');
-const {COMMERCE_PROGRESS_VERSION, COMMERCE_RETRY_MS} = require('../../runtime/merchant-jobs/rules.ts');
+const {COMMERCE_PROGRESS_VERSION, progressLifted} = require('../../runtime/merchant-jobs/rules.ts');
 const {craftProtection} = require('../../runtime/items/coordinator/production.ts');
 const {availableCraftStock, PROTECTED_FREE_SLOTS_DEFAULT} = require('../../runtime/items/rules.ts');
 const {publishTasks} = require('../../runtime/tasks/api.ts');
@@ -134,13 +134,17 @@ test('blocked and equal priority work cannot cause a yield loop',()=>{
   f.state.merchantQueue.push({reason:'x',priority:51});
   assert.equal(f.invoke({jobId:'j',commandId:7,state:{},cycleBoundary:true}).value.yield,true);
 });
-test('movement retries retain allowances, grow backoff, and leave invalid orders terminal',()=>{
-  const state={merchantQueue:[],merchantJobBlocks:{},statuses:{M:{}},merchantCharacter:'M',npcSaleMarks:[],commands:{}};
+// A failed walk waits for its route to change, with no clock (REVIEW-QUEUE.md TW-U3), and waits
+// again at every failure.
+test('movement retries retain allowances, wait for the route to change, and leave invalid orders terminal',()=>{
+  const state={merchantQueue:[],merchantJobBlocks:{},statuses:{M:{map:'main',x:0,y:0}},merchantCharacter:'M',npcSaleMarks:[],commands:{}};
   const retries=createCompletionRetries(state,{now:()=>1000,nextCommand:()=>1,stamp:j=>j,log(){}});
   let job={id:'j',target:'M',reason:'merchant commerce',order:{buys:[{level:8}]},resumeState:{spent:42,attempts:9}};
-  for(const delay of [...COMMERCE_RETRY_MS,COMMERCE_RETRY_MS.at(-1)]){
+  for(const x of [10,20]){
     retries.enqueue(job,retries.decide(job,{success:false,error:'ALClient found no route',failureKind:'commerce_movement'}));
-    job=state.merchantQueue.shift();assert.equal(job.retryAt,1000+delay);assert.deepEqual(job.resumeState,{spent:42,attempts:9});
+    job=state.merchantQueue.shift();assert.equal(job.retryAt,0);assert.deepEqual(job.resumeState,{spent:42,attempts:9});
+    assert.equal(job.progressWait.on,'route-change');assert.match(job.pauseReason,/ALClient found no route; retries when the merchant moves/);
+    assert.equal(progressLifted(job,state),false);state.statuses.M.x=x;assert.equal(progressLifted(job,state),true);
   }
   assert.equal(retries.decide(job,{success:false,error:'90% estimated budget exhausted'}).retry,true);
   assert.equal(retries.decide({...job,order:{buys:[{level:0}]}},{success:false,error:'Invalid order'}).retry,false);
@@ -175,10 +179,9 @@ test('buy command releases an idle stand operation and closes the stand before s
   assert.equal(calls.find(Array.isArray)[1].commandId,8);assert.equal(root.__merchantHolder,null);
 });
 
-test('movement checkpoint resets only the movement failure streak and preserves financial counters',()=>{
-  const f=progressFixture();f.state.merchantCurrent.movementRetryCount=4;
-  f.invoke({jobId:'j',commandId:7,state:{spent:90,attempts:7},cycleBoundary:false,movementSucceeded:true});
-  assert.equal(f.state.merchantCurrent.movementRetryCount,0);
+test('a checkpoint preserves the financial counters',()=>{
+  const f=progressFixture();
+  f.invoke({jobId:'j',commandId:7,state:{spent:90,attempts:7},cycleBoundary:false});
   assert.deepEqual(f.state.merchantCurrent.resumeState,{spent:90,attempts:7});
 });
 

@@ -43,7 +43,7 @@ test('player sale waits for its receipt, preserves quantity, then queues merchan
   assert.equal(f.state.merchantMarked.P[0].quantity,2);
   assert.equal(f.queues[0].reason,'npc sale pickup');
   f.state.statuses.M.items=[{slot:8,item}];f.sales.reconcile(f.state.statuses.M);
-  assert.equal(readyNpcSales(f.state.npcSaleMarks,20000).length,0);
+  assert.equal(readyNpcSales(f.state.npcSaleMarks).length,0);
   receivePlayerSales(f.state,'Other',[{npcSaleId:mark.id,quantity:2}],20000);
   assert.equal(mark.source,'character');
   receivePlayerSales(f.state,'P',[{npcSaleId:mark.id,quantity:2}],20000);
@@ -93,10 +93,10 @@ test('manual removal releases pickup reservations and requires matching characte
 });
 test('sales from separate players survive merging into one merchant stack',()=>{
   const marks=['P','Q'].map(character=>({id:character,character,source:'merchant',slot:-1,item,quantity:2,state:'queued'}));
-  const result=reconcileNpcSales(marks,[{slot:4,item:{...item,q:4}}],false,20000);
+  const result=reconcileNpcSales(marks,[{slot:4,item:{...item,q:4}}],false);
   assert.equal(result.marks.length,2);assert.ok(result.marks.every(mark=>mark.slot===4 && mark.state==='queued'));
-  const stale=reconcileNpcSales(marks,[{slot:4,item:{...item,q:2}}],false,20000);
+  const stale=reconcileNpcSales(marks,[{slot:4,item:{...item,q:2}}],false);
   assert.equal(stale.marks.length,2);assert.equal(stale.marks[1].state,'blocked');
-  const fresh=reconcileNpcSales(stale.marks,[{slot:4,item:{...item,q:4}}],false,21000);
-  assert.equal(readyNpcSales(fresh.marks,21000).length,2);
+  const fresh=reconcileNpcSales(stale.marks,[{slot:4,item:{...item,q:4}}],false);
+  assert.equal(readyNpcSales(fresh.marks).length,2);
 });

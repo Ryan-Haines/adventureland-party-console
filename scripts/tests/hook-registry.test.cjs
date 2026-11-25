@@ -1511,10 +1511,10 @@ scenarioTable("the items owner's hooks and notices, each row on a registry of it
  ['items.saleBlocked: a failed sale blocks and lifts at the bag change',()=>{
    const market=require('../../runtime/items/coordinator/market.ts'),since=itemsSince('merchant');
    const mark={id:'s1',source:'merchant',slot:4,item:{name:'ring'},quantity:1,state:'queued'};
-   const [blocked]=market.reconcileNpcSales([mark],[],false,0).marks;
-   market.reconcileNpcSales([blocked],[],false,0);
+   const [blocked]=market.reconcileNpcSales([mark],[],false).marks;
+   market.reconcileNpcSales([blocked],[],false);
    assert.deepEqual(since().map(e=>e.phase),['blocked'],'the same bag keeps it blocked');
-   market.reconcileNpcSales([blocked],[{slot:4,item:{name:'ring'}}],false,0);
+   market.reconcileNpcSales([blocked],[{slot:4,item:{name:'ring'}}],false);
    assert.deepEqual(since().map(e=>[e.phase,e.code]),[['blocked','marked_missing'],['lifted',undefined]]);
  }],
  ['items.sortLease: a sort lease taken, retried and settled',()=>{
