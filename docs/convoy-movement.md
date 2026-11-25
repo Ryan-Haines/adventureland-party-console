@@ -78,8 +78,12 @@ and the member's departure gate and the coordinator's readiness both read it.
   target and the event exit.
 - `now`: the walk leaves fight and chests at once. The escape alone.
 
-The executor's own loot wait at a map change reads the same column, so only the escape skips it
-(walk-client.ts `sharedMovementOptions`, `skipLootWait`). Each wait judges
+The executor's own loot wait at a map change and its Town wait read the same column
+(walk-client.ts `sharedMovementOptions`, executor.ts `readyTown`): the loot wait runs for a departure
+that waits for its chests, and the departure gate (walk-client.ts `departureGate` `townReady`) holds
+a Town cast on the fight and the chests its departure waits for. The escape's own
+walk home is a journey, not a walk, and takes the escape request row's `now` (rules.ts
+`journeyDeparture`). Each wait judges
 progress from the member's own reports (rules.ts `departureStep`): its attackers' summed HP or its
 chest count falling. A member whose chest count stops falling is left to follow the party; a fight
 that stops falling climbs the walk's ladder.

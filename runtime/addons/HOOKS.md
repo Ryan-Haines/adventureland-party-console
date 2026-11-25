@@ -781,6 +781,7 @@ An add-on reads one with `ctx.read(name, ...args)` or `read(name, ...args)` (REA
 | `movement.townGoal` | 02 | both | SafeGoal \| null |
 | `movement.departureWaitsFight` | 02 | both | boolean |
 | `movement.departureWaitsLoot` | 02 | both | boolean |
+| `movement.journeyDeparture` | 02 | both | Departure |
 | `turns.health` | 03 | character | a combatant's HP share |
 | `turns.hitsAroundCaster` | 03 | character | the monsters an area cast would hit |
 | `turns.healFirstBelow` | 03 | character | number |

@@ -646,11 +646,11 @@ scenarioTable('the departure gate waits on the departure fight and the chests, a
   return { world, gate: departureGate({ chests: () => world.chests, attackers: () => [], windowMs: () => 0, now: () => 0 }, hooks) };
 }, [
  ['no fight and no chest lets both go; a chest holds both; a pending fight holds the Town cast only', ({ world, gate }) => {
-  assert.deepEqual([gate.townReady(), gate.transitionReady()], [true, true]);
+  assert.deepEqual([gate.townReady('after-loot'), gate.transitionReady()], [true, true]);
   world.chests = ['c1'];
-  assert.deepEqual([gate.townReady(), gate.transitionReady()], [false, false]);
+  assert.deepEqual([gate.townReady('after-loot'), gate.transitionReady()], [false, false]);
   world.chests = []; world.pending = true;
-  assert.deepEqual([gate.townReady(), gate.transitionReady()], [false, true]);
+  assert.deepEqual([gate.townReady('after-loot'), gate.transitionReady()], [false, true]);
  }],
 ]);
 

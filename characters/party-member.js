@@ -2360,6 +2360,7 @@
     townGoal: "read",
     departureWaitsFight: "read",
     departureWaitsLoot: "read",
+    journeyDeparture: "read",
     goesToFarm: "label",
     clickLabel: "label",
     climbLabel: "label",
@@ -2433,7 +2434,8 @@
     "movement.groupWalkActive": { side: "both", type: "boolean", door: `${RULES}#groupWalkActive` },
     "movement.townGoal": { side: "both", type: "SafeGoal | null", door: `${RULES}#townGoal` },
     "movement.departureWaitsFight": { side: "both", type: "boolean", door: `${RULES}#departureWaitsFight` },
-    "movement.departureWaitsLoot": { side: "both", type: "boolean", door: `${RULES}#departureWaitsLoot` }
+    "movement.departureWaitsLoot": { side: "both", type: "boolean", door: `${RULES}#departureWaitsLoot` },
+    "movement.journeyDeparture": { side: "both", type: "Departure", door: `${RULES}#journeyDeparture` }
   };
   var DOOR_ONLY2 = {
     "runtime/movement/api/character.ts#confirmIndependentApproach": { kind: "port", cite: "the movement.confirmIndependentApproach hook answer, which issues a confirmation round" },
@@ -10735,6 +10737,7 @@ ${hook}`, was = errors.get(key3);
     handsCombatOver: () => handsCombatOver,
     heldLabel: () => heldLabel,
     isSafeAt: () => isSafeAt,
+    journeyDeparture: () => journeyDeparture,
     judgeStop: () => judgeStop,
     ownerOfTier: () => ownerOfTier,
     partyTravelLabel: () => partyTravelLabel,
@@ -12194,7 +12197,7 @@ ${hook}`, was = errors.get(key3);
   // runtime/movement/rules.ts
   var TASK_TIERS = ["event-attendance", "hunt-turn-in", "event-return", "rare", "hunt-mission", "addon-task", "farming"];
   var rows = {
-    escape: { tier: "escape", stoppedBySameKind: true, steps: "no", band: "survival" },
+    escape: { tier: "escape", stoppedBySameKind: true, steps: "no", band: "survival", departure: "now" },
     "death-recovery": { tier: "death-recovery", steps: "yes" },
     cave: { tier: "cave", stoppedBySameKind: true, steps: "yes" },
     lifecycle: { tier: "lifecycle", stoppedBySameKind: true, steps: "no" },
@@ -12374,6 +12377,9 @@ ${hook}`, was = errors.get(key3);
   }
   var departureWaitsFight = (departure) => departure === "after-loot" || departure === "fight";
   var departureWaitsLoot = (departure) => departure === "loot" || departure === "after-loot";
+  function journeyDeparture(options) {
+    return options.departure ?? (options.request && row3(options.request.kind)?.departure) ?? "after-loot";
+  }
   function departureWindow(attackPeriodMs, reportIntervalMs) {
     return Math.max(Number(attackPeriodMs) || 0, 2 * (Number(reportIntervalMs) || 0));
   }
@@ -28953,7 +28959,7 @@ ${hook}`, was = errors.get(key3);
     }
     function dispatch13(current, options) {
       if (current.error) throw current.error instanceof Error ? current.error : Error(current.step.method === "leave" ? "Leave transition failed: " + current.error : String(current.error));
-      if ((options.departure === void 0 || departureWaitsLoot(options.departure)) && !lootReady(current.step)) return;
+      if (departureWaitsLoot(journeyDeparture(options)) && !lootReady(current.step)) return;
       if (!readyTown(current, options)) return;
       if (isTransition(current.step) && !barrier(options, current.step, false)) return;
       const captured = current, at4 = now();
@@ -29076,12 +29082,13 @@ ${hook}`, was = errors.get(key3);
       if (isTransition(current.step)) options.transitionComplete?.(current.step);
     }
     function readyTown(current, options) {
-      if (!current.step.town || gate.townReady(lootLeft) && host4.can_use("use_town")) {
+      const departure = journeyDeparture(options);
+      if (!current.step.town || gate.townReady(departure, lootLeft) && host4.can_use("use_town")) {
         townWait = void 0;
         return true;
       }
       if (!options.townAttempt) throw Error("Town warp currently unavailable");
-      townWait ??= gate.judge(true);
+      townWait ??= gate.judge(departureWaitsFight(departure));
       const verdict = townWait();
       if (verdict === "waiting" || verdict === "progress") return false;
       townWait = void 0;
@@ -30496,8 +30503,9 @@ ${hook}`, was = errors.get(key3);
   // runtime/movement/character/walk-client.ts
   function departureGate(reads, hooks) {
     return {
-      // `lootLeft`: the executor's loot wait left the chests, so only the fight holds the cast.
-      townReady: (lootLeft = false) => !hooks.ask("targeting.departurePending") && (lootLeft || reads.chests().length === 0),
+      // The departure column decides what holds the cast: its fight (`departureWaitsFight`) and its
+      // chests (`departureWaitsLoot`). `lootLeft`: the executor's loot wait left the chests.
+      townReady: (departure, lootLeft = false) => (!departureWaitsFight(departure) || !hooks.ask("targeting.departurePending")) && (!departureWaitsLoot(departure) || lootLeft || reads.chests().length === 0),
       transitionReady: () => reads.chests().length === 0,
       judge(fight) {
         let from;

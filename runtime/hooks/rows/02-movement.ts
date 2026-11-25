@@ -393,7 +393,7 @@ export const PLAIN = {
   // Facts the game fixes, which the console reads; an add-on's answer cannot change them.
   departureWindow: 'read', departureStep: 'read', isSafeAt: 'read', cruisePaced: 'read', reportSlowed: 'read',
   ownerOfTier: 'read', tierOf: 'read', walkRequester: 'read', returnWorkflowSuperseded: 'read', attackersHp: 'read',
-  groupWalkActive: 'read', townGoal: 'read', departureWaitsFight: 'read', departureWaitsLoot: 'read',
+  groupWalkActive: 'read', townGoal: 'read', departureWaitsFight: 'read', departureWaitsLoot: 'read', journeyDeparture: 'read',
   goesToFarm: 'label', clickLabel: 'label', climbLabel: 'label', partyTravelLabel: 'label', heldLabel: 'label',
   walkLabel: 'label', farmWalk: 'label',
 } satisfies Record<string, PlainKind>;
@@ -465,6 +465,7 @@ export const READS = {
   'movement.townGoal': { side: 'both', type: 'SafeGoal | null', door: `${RULES}#townGoal` },
   'movement.departureWaitsFight': { side: 'both', type: 'boolean', door: `${RULES}#departureWaitsFight` },
   'movement.departureWaitsLoot': { side: 'both', type: 'boolean', door: `${RULES}#departureWaitsLoot` },
+  'movement.journeyDeparture': { side: 'both', type: 'Departure', door: `${RULES}#journeyDeparture` },
 } as const satisfies Record<string, ReadRow>;
 // The door exports that are no read: a write to movement's state, a port that the composition root
 // or a core hook answer wires, or a command.

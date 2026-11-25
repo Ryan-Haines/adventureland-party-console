@@ -28,11 +28,14 @@ interface Row {
   click?: Click | Partial<Record<Tier, Click>>;
   // The band its sends ask the call budget: an escape's sends never wait behind jobs.
   band?: 'survival';
+  // The departure column for the row's own journeys (`journeyDeparture`); a group walk names its
+  // own (`walkDeparture`).
+  departure?: Departure;
 }
 type Click = 'replaces' | 'waits' | 'ranks';
 const TASK_TIERS = ['event-attendance', 'hunt-turn-in', 'event-return', 'rare', 'hunt-mission', 'addon-task', 'farming'] as const;
 const rows: Record<string, Row> = {
-  escape: { tier: 'escape', stoppedBySameKind: true, steps: 'no', band: 'survival' },
+  escape: { tier: 'escape', stoppedBySameKind: true, steps: 'no', band: 'survival', departure: 'now' },
   'death-recovery': { tier: 'death-recovery', steps: 'yes' },
   cave: { tier: 'cave', stoppedBySameKind: true, steps: 'yes' },
   lifecycle: { tier: 'lifecycle', stoppedBySameKind: true, steps: 'no' },
@@ -392,6 +395,12 @@ export type DepartureVerdict = 'clear' | 'progress' | 'waiting' | 'stalled';
 // Whether a departure waits for the member's fight, and for its chests.
 export const departureWaitsFight = (departure: Departure): boolean => departure === 'after-loot' || departure === 'fight';
 export const departureWaitsLoot = (departure: Departure): boolean => departure === 'loot' || departure === 'after-loot';
+// A journey's departure: the group walk's own (walk-client.ts `sharedMovementOptions`), else its
+// request row's. The escape's row departs `now`, so its Town cast and map changes leave the fight
+// that started the escape; a row that names none waits for its fight and chests.
+export function journeyDeparture(options: { departure?: Departure; request?: Requester }): Departure {
+  return options.departure ?? (options.request && row(options.request.kind)?.departure) ?? 'after-loot';
+}
 export function departureWindow(attackPeriodMs: unknown, reportIntervalMs: unknown): number {
   return Math.max(Number(attackPeriodMs) || 0, 2 * (Number(reportIntervalMs) || 0));
 }

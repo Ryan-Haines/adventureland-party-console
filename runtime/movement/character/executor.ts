@@ -10,7 +10,7 @@ import { partyHooks } from '../../hooks/index.ts';
 import { boundFired } from '../../status/api.ts';
 import type { CallBand } from '../../hooks/registry.ts';
 import type { DepartureGate } from './walk-client.ts';
-import { departureWaitsLoot, REPORT_STALL_DISTANCE, STOP_AND_STEP_BAND, type DepartureVerdict } from '../rules.ts';
+import { departureWaitsFight, departureWaitsLoot, journeyDeparture, REPORT_STALL_DISTANCE, STOP_AND_STEP_BAND, type DepartureVerdict } from '../rules.ts';
 function transitionLabel(step: Step): string {
   return step.method === 'leave' ? 'leave transition' : step.town ? 'town warp' : 'map transition';
 }
@@ -279,7 +279,7 @@ export function createMovementExecutor(host: MovementHost, state: MoveState, val
   }
   function dispatch(current: Issued, options: MovementOptions) {
       if (current.error) throw current.error instanceof Error ? current.error : Error(current.step.method === "leave" ? "Leave transition failed: " + current.error : String(current.error));
-      if ((options.departure === undefined || departureWaitsLoot(options.departure)) && !lootReady(current.step)) return;
+      if (departureWaitsLoot(journeyDeparture(options)) && !lootReady(current.step)) return;
       if(!readyTown(current,options))return;
       if ((isTransition(current.step)) && !barrier(options, current.step, false)) return;
       // A step the budget holds is not issued: it stays finished, so the next pass dispatches it
@@ -386,11 +386,13 @@ export function createMovementExecutor(host: MovementHost, state: MoveState, val
   }
   // A Town cast waits while the departure gate's fight or loot falls (R2F6 N-R5, Recheck 3 R3-S2); a
   // gate that stops falling across the walk phase table window, or a game that refuses the cast with the gate
-  // clear, ends the try, and the request's ladder climbs.
+  // clear, ends the try, and the request's ladder climbs. The gate holds the cast on what the journey's
+  // departure waits for, so the escape (`now`) casts with its fight and chests left.
   function readyTown(current:Issued,options:MovementOptions):boolean {
-    if(!current.step.town || gate.townReady(lootLeft) && host.can_use('use_town')){townWait=undefined;return true;}
+    const departure=journeyDeparture(options);
+    if(!current.step.town || gate.townReady(departure,lootLeft) && host.can_use('use_town')){townWait=undefined;return true;}
     if(!options.townAttempt)throw Error('Town warp currently unavailable');
-    townWait ??= gate.judge(true);
+    townWait ??= gate.judge(departureWaitsFight(departure));
     const verdict = townWait();
     if(verdict==='waiting' || verdict==='progress')return false;
     townWait=undefined;

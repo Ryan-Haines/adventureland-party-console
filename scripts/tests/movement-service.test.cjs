@@ -492,6 +492,26 @@ scenarioTable('a departure wait lasts while its fight or loot falls and ends whe
  r.now+=1000;assert.throws(()=>r.executor.tick(r.options),/Town unavailable: the departure fight and loot stopped falling/);
  assert.deepEqual(r.town,['unavailable']);r.f.dispose();
  }],
+ // Observed live on 2026-11-22 at 10:30 and 17:29: a Water Spirit killed the priest, the
+ // survivors' escape walked home to Main with a Town step, and each refused it ("Town warp
+ // currently unavailable") because the fight that started the escape was pending. They walked
+ // across Winterland under attack instead. The escape's request row departs `now`.
+ ['an escape casts its Town with the fight pending and a chest left', ()=>{
+ const r=departureExecutor({map:'main',x:0,y:0,town:true},{pending:true,chests:[1],attackers:[{hp:900}]});
+ const options={request:{kind:'escape',owner:'escape:e1'}};
+ assert.equal(r.executor.tick(options),false);
+ assert.deepEqual(r.f.calls,[['town']]);r.f.dispose();
+ }],
+ // A departure holds the Town cast on what its column waits for: `loot` (the Hunt's return)
+ // leaves the fight, and `fight` (an add-on's `go`) leaves the chests.
+ ['a loot departure casts its Town with the fight pending; a fight departure casts it with a chest left', ()=>{
+ const loot=departureExecutor({map:'main',x:0,y:0,town:true},{pending:true,attackers:[{hp:900}]});
+ assert.equal(loot.executor.tick({departure:'loot'}),false);
+ assert.deepEqual(loot.f.calls,[['town']],'loot');loot.f.dispose();
+ const fight=departureExecutor({map:'main',x:0,y:0,town:true},{chests:[1]});
+ assert.equal(fight.executor.tick({departure:'fight'}),false);
+ assert.deepEqual(fight.f.calls,[['town']],'fight');fight.f.dispose();
+ }],
 ]);
 
 scenarioTable('an exhausted owned route waits for settlement and keeps its declared tolerance', fixture, [

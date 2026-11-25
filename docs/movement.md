@@ -221,7 +221,12 @@ The executor uses game move, town and transport primitives. A transition needs
 acknowledgement and an observed arrival. Server arrivals can be scattered around
 the advertised spawn: a separately collision-checked walking segment reconnects
 to the exact route point before the party is released. Town cannot start while
-the existing combat or nearby-loot checks report outstanding work.
+the existing combat or nearby-loot checks report outstanding work that the
+journey's departure waits for (rules.ts `journeyDeparture`, walk-client.ts
+`departureGate` `townReady`). A group
+walk names its departure, and any other journey takes its request row's: the escape
+row departs `now`, so the survivors' walk home casts Town with the fight that started
+the escape still on, and every other row waits for its fight and its chests.
 
 An ALClient plan has a budget of `movementAlclientPlanMs` (2 s by default) and a
 native search one of `movementPlanningMs` (30 s by default, a setting the player

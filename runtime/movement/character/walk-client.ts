@@ -10,7 +10,7 @@ import type { SharedCommand, WalkRequester } from '../../protocol/walk.ts';
 import type { ScopeHandle } from '../../lifecycle/api.ts';
 import { movementError, retryableMovementRequest } from './records.ts';
 import { NOT_NOW, sendCruise } from './executor.ts';
-import { attackersHp, cancelEnds, cruisePaced, defensePauses, departureStep, departureWaitsFight, departureWaitsLoot, eventTravelHeld, groupWalkActive, handsCombatOver, ownerOfTier, sendBand, tierOf, walkDeparture, type DepartureSample, type WalkFlags, type DepartureVerdict } from '../rules.ts';
+import { attackersHp, cancelEnds, cruisePaced, defensePauses, departureStep, departureWaitsFight, departureWaitsLoot, eventTravelHeld, groupWalkActive, handsCombatOver, ownerOfTier, sendBand, tierOf, walkDeparture, type Departure, type DepartureSample, type WalkFlags, type DepartureVerdict } from '../rules.ts';
 import type { SharedRouteRemainder } from './planner.ts';
 import { RENDEZVOUS_RANGE } from '../../protocol/ladder.ts';
 import { WALK_PROTOCOL, currentQueue } from '../../protocol/reports.ts';
@@ -24,8 +24,10 @@ import type { NavigationIntent } from '../saved-fields.ts';
 export interface DepartureReads { chests(): readonly unknown[]; attackers(): readonly { hp?: unknown }[]; windowMs(): number; now(): number }
 export function departureGate(reads: DepartureReads, hooks: Pick<HookRegistry, 'ask'>) {
   return {
-    // `lootLeft`: the executor's loot wait left the chests, so only the fight holds the cast.
-    townReady: (lootLeft = false) => !hooks.ask('targeting.departurePending') && (lootLeft || reads.chests().length === 0),
+    // The departure column decides what holds the cast: its fight (`departureWaitsFight`) and its
+    // chests (`departureWaitsLoot`). `lootLeft`: the executor's loot wait left the chests.
+    townReady: (departure: Departure, lootLeft = false) => (!departureWaitsFight(departure) || !hooks.ask('targeting.departurePending')) &&
+      (!departureWaitsLoot(departure) || lootLeft || reads.chests().length === 0),
     transitionReady: () => reads.chests().length === 0,
     judge(fight: boolean): () => DepartureVerdict {
       let from: DepartureSample | undefined;
