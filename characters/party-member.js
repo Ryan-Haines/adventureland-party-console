@@ -24569,8 +24569,7 @@ ${hook}`, was = errors.get(key3);
           if (scrollSlot < 0) {
             const remaining = command.upgrades.slice(i);
             remaining[0] = { ...mark3, item: fingerprint(me().items[slot]), tiers: targetLevel - (Number(me().items[slot].level) || 0) };
-            const refill = manualImprovementScrollNeeds({ upgrades: remaining });
-            await ensureOwnedItemQuantity(scrollName, refill[scrollName] || 1, command, activity);
+            await prepareManualImprovementScrolls(command, activity, { upgrades: remaining, compounds: command.compounds });
             scrollSlot = p.reads.findInventoryItemByName(scrollName);
           }
           await p.move(p.findNpc("newupgrade"));
@@ -24615,7 +24614,9 @@ ${hook}`, was = errors.get(key3);
           if (mark3.equipped && typeof mark3.slot === "string") command._upgradeReturns.push({ slot: mark3.slot, item: fingerprint(me().items[slot]) });
         }
       }
-      for (const group of command.compounds || []) {
+      const groups = command.compounds || [];
+      for (let groupIndex = 0; groupIndex < groups.length; groupIndex += 1) {
+        const group = groups[groupIndex];
         if (!group.items || group.items.length !== COMPOUND_INPUTS) continue;
         const localUsed = {};
         const slots = group.items.map((mark3) => {
@@ -24630,7 +24631,7 @@ ${hook}`, was = errors.get(key3);
         const cscroll = "cscroll" + p.grade(me().items[slots[0]]);
         let cscrollSlot = p.reads.findInventoryItemByName(cscroll);
         if (cscrollSlot < 0) {
-          await ensureOwnedItemQuantity(cscroll, 1, command, activity);
+          await prepareManualImprovementScrolls(command, activity, { compounds: groups.slice(groupIndex) });
           cscrollSlot = p.reads.findInventoryItemByName(cscroll);
         }
         await p.move(p.findNpc("newupgrade"));
@@ -24722,8 +24723,8 @@ ${hook}`, was = errors.get(key3);
       command._autoCompoundBankItems = stock.map((entry) => entry.item);
       const matches = compoundAvailableStock(command, stock).slice(me().items.length).filter((entry) => entry && !entry.item.l && entry.item.name === name2 && (entry.item.level || 0) === level3);
       if (matches.length < needed) return;
-      const reserve2 = p.reads.findInventoryItemByName("cscroll" + p.grade({ name: name2, level: level3 })) < 0 ? 1 : 0;
-      if (freeSlots(me().items, luckySlot, p.protectedSlots()) < needed + reserve2) throw itemFailure("inventory_full");
+      const scrollPile = p.reads.findInventoryItemByName("cscroll" + p.grade({ name: name2, level: level3 })) < 0 ? 1 : 0;
+      requireRoomForNewPiles(needed + scrollPile);
       for (let index = 0; index < needed; index += 1) {
         await refreshCompoundProtection(command);
         if (!autoCompoundLevelAllowed(command, name2, level3)) return;
@@ -24756,23 +24757,26 @@ ${hook}`, was = errors.get(key3);
       if (!autoCompoundLevelAllowed(command, name2, level3)) return [];
       return compoundAvailableStock(command).slice(0, me().items.length).filter((entry) => entry && !entry.item.l && entry.item.name === name2 && (entry.item.level || 0) === level3).map((entry) => entry.slot);
     }
+    function scrollPlan(upgrades, compounds) {
+      const needs = {};
+      const add = (scroll) => {
+        needs[scroll] = (needs[scroll] || 0) + 1;
+      };
+      for (const { item: item2, tiers } of upgrades) for (let tier = 0; tier < tiers; tier += 1) add("scroll" + p.grade({ name: item2.name, level: (Number(item2.level) || 0) + tier }));
+      for (const item2 of compounds) add("cscroll" + p.grade(item2));
+      return needs;
+    }
     function manualImprovementScrollNeeds(command) {
-      const needs = {}, staged = {}, used2 = {};
+      const upgrades = [], compounds = [], used2 = {};
       for (const mark3 of command.upgrades || []) {
         if (!mark3?.item) continue;
         const slot = findUpgradeMarkSlot(mark3, used2);
         if (slot < 0) continue;
         used2[slot] = true;
-        const live2 = me().items[slot], start = Number(live2.level) || 0;
+        const live2 = me().items[slot];
         const target = Math.min(p.reads.maximumItemLevel(G2().items[live2.name]), (Number(mark3.item.level) || 0) + Math.max(1, Number(mark3.tiers) || 1));
-        const starting = "scroll" + p.grade(live2);
-        for (let tier = 0; tier < Math.max(0, target - start); tier += 1) {
-          const scroll = "scroll" + p.grade({ name: live2.name, level: start + tier });
-          if (scroll === starting) needs[scroll] = (needs[scroll] || 0) + 1;
-          else staged[scroll] = 1;
-        }
+        upgrades.push({ item: live2, tiers: Math.max(0, target - (Number(live2.level) || 0)) });
       }
-      for (const scroll of Object.keys(staged)) needs[scroll] = Math.max(needs[scroll] || 0, staged[scroll]);
       for (const group of command.compounds || []) {
         if (group?.items?.length !== COMPOUND_INPUTS || !group.items[0].item) continue;
         const groupUsed = {};
@@ -24783,10 +24787,9 @@ ${hook}`, was = errors.get(key3);
         });
         if (slots.some((slot) => slot < 0)) continue;
         for (const slot of slots) used2[slot] = true;
-        const scroll = "cscroll" + p.grade(me().items[slots[0]]);
-        needs[scroll] = Math.max(needs[scroll] || 0, 1);
+        compounds.push(me().items[slots[0]]);
       }
-      return needs;
+      return scrollPlan(upgrades, compounds);
     }
     async function ensureOwnedItemQuantity(name2, requiredOnPlayer, command, activity) {
       let availability = p.reads.itemAvailability(name2);
@@ -24805,9 +24808,13 @@ ${hook}`, was = errors.get(key3);
       await p.buyConfirmed(name2, missing);
       return p.reads.itemAvailability(name2);
     }
-    async function prepareManualImprovementScrolls(command, activity) {
-      const needs = manualImprovementScrollNeeds(command), names2 = Object.keys(needs);
+    function requireRoomForNewPiles(count) {
+      if (freeSlots(me().items, luckySlot, p.protectedSlots()) < count) throw itemFailure("inventory_full");
+    }
+    async function prepareManualImprovementScrolls(command, activity, work = command) {
+      const needs = manualImprovementScrollNeeds(work), names2 = Object.keys(needs);
       if (!names2.length) return needs;
+      requireRoomForNewPiles(names2.filter((name2) => !p.reads.itemAvailability(name2).onPlayer).length);
       if (names2.some((name2) => p.reads.itemAvailability(name2).onPlayer < needs[name2])) await p.bank.merchantVisitBank(command, activity);
       for (const name2 of names2) await p.bank.retrieveFromBankUntil(name2, needs[name2]);
       const missing = {};
@@ -24997,6 +25004,19 @@ ${hook}`, was = errors.get(key3);
       }
       activity.push({ level: "info", message: "Withdrew reserved bank compound triplets" });
     }
+    async function receiveWithdrawnUpgrades(command, activity) {
+      if (!(command.upgrades || []).some((mark3) => mark3?.storage)) return;
+      await p.bank.merchantVisitBank(command, activity);
+      command.upgrades = command.upgrades.filter((mark3) => {
+        const source2 = mark3?.storage;
+        if (!source2) return true;
+        const landed = (command._merchantWithdrawalsLanded || []).find((entry) => entry.pack === source2.pack && entry.slot === source2.slot);
+        if (!landed || !sameItemState(me().items[landed.inventorySlot], mark3.item)) return false;
+        mark3.slot = landed.inventorySlot;
+        mark3.storageReceived = true;
+        return true;
+      });
+    }
     async function prepareBankUpgrades(command, activity) {
       if (!(command.bankUpgradeRules || []).length) return;
       await p.bank.merchantVisitBank(command, activity);
@@ -25075,6 +25095,7 @@ ${hook}`, was = errors.get(key3);
           if (typeof mark3.slot === "string" && sameItemState(me().slots[mark3.slot], mark3.item)) await takeOff2(mark3.slot, mark3.item);
         }
         await prepareBankCompounds(command, activity);
+        await receiveWithdrawnUpgrades(command, activity);
         await prepareBankUpgrades(command, activity);
         await preloadUpgradeOfferings(command, activity);
         await preloadStatScrolls(command, activity);
@@ -25719,14 +25740,6 @@ ${hook}`, was = errors.get(key3);
           }
           work.push({ mark: mark3, tiers: Math.max(1, Math.min(Number(mark3.tiers) || 1, remaining)) });
         }
-        const required = {};
-        for (const entry of work) {
-          const item2 = me().items[r.findMarkedItem(entry.mark)];
-          for (let tier = 0; tier < entry.tiers; tier += 1) {
-            const scroll = "scroll" + p.grade({ name: item2.name, level: (item2.level || 0) + tier });
-            required[scroll] = (required[scroll] || 0) + 1;
-          }
-        }
         const compoundWork = [];
         for (const group of compoundGroups || []) {
           if (!Array.isArray(group?.items) || group.items.length !== COMPOUND_INPUTS) continue;
@@ -25735,10 +25748,12 @@ ${hook}`, was = errors.get(key3);
           const items2 = slots.map((slot) => me().items[slot]);
           const definition = G2().items[items2[0].name];
           if (!definition?.compound || items2.some((item2) => item2.name !== items2[0].name || (item2.level || 0) !== (items2[0].level || 0))) continue;
-          const scroll = "cscroll" + p.grade(items2[0]);
-          required[scroll] = (required[scroll] || 0) + 1;
-          compoundWork.push({ group, scroll });
+          compoundWork.push({ group, scroll: "cscroll" + p.grade(items2[0]) });
         }
+        const required = scrollPlan(
+          work.map((entry) => ({ item: me().items[r.findMarkedItem(entry.mark)], tiers: entry.tiers })),
+          compoundWork.map((entry) => me().items[groupSlots(entry.group)[0]])
+        );
         for (const scroll of Object.keys(required)) {
           const owned = Math.min(required[scroll], r.inventoryQuantity(scroll));
           if (owned) p.log("Using " + owned + " existing " + G2().items[scroll].name + " from inventory slot " + r.findInventoryItemByName(scroll), "#51D2E1");

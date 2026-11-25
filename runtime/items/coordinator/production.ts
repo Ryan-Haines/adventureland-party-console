@@ -148,14 +148,19 @@ function considerUpgrade(entry: InventoryEntry | null, rules: UpgradeRules, stat
 function activeRule(rule: UpgradeRule | undefined, tiers: number): boolean {
   return ruleQuota(rule) !== 0 && ruleTiers(rule) === Number(tiers);
 }
-/** A bank-sourced intent becomes a bag intent once its withdrawal's copy is in the bag. */
+/** A bank-sourced intent becomes a bag intent once its withdrawal's copy is in the bag. The job that
+ *  withdrew the copy can upgrade it before a failure, so the intent takes its continuation's copy
+ *  (liveSlot) up to its target, or else an unfinished copy of its identity. */
 function received(mark: UpgradeMark, items: Inventory, claimed: Set<unknown>): UpgradeMark {
   if (!mark.storage || !mark.storageReceived) return mark;
-  const entry = items.find(entry => entry?.item && !claimed.has(entry.slot) && markKey(entry.item) === markKey(mark.item));
+  type Copy = InventoryEntry & { item: Item };
+  const free = (entry: InventoryEntry | null): entry is Copy => !!entry?.item && !claimed.has(entry.slot);
+  const entry = items.find((entry): entry is Copy => free(entry) && entry.slot === mark.liveSlot && copyLevel(mark, entry.item, true)) ||
+    items.find((entry): entry is Copy => free(entry) && copyLevel(mark, entry.item, false));
   if (!entry) return mark;
   claimed.add(entry.slot);
   const { storage: _storage, storageReceived: _received, ...ready } = mark;
-  return { ...ready, slot: entry.slot };
+  return { ...ready, slot: entry.slot, ...(ready.liveSlot !== undefined ? { liveSlot: entry.slot, liveItem: entry.item } : {}) };
 }
 /** An equipped intent reads its equipment slot; with no equipment read it stays. */
 function equippedKept(mark: UpgradeMark, equipped: EquippedSlots | undefined): boolean {

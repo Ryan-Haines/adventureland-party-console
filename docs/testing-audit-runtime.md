@@ -253,7 +253,7 @@ The browser E2E suite cannot yet replace game movement/geometry, multi-character
 | `upgrade-offerings-client.test.cjs` | Retain | Coverage absent from console E2E: auto +9 stops at +8 without required primling and preserves unfinished work. |
 | `upgrade-offerings.test.cjs` | Retain | Coverage absent from console E2E: stock counts merchant and bank only, excluding locked and reserved quantities. |
 | `upgrade-preview.test.cjs` | Retain | Coverage absent from console E2E: all four previews use calculate=true and preserve items, quantities and item grace. |
-| `upgrade-scroll-batch.test.cjs` | Retain | Coverage absent from console E2E: three requested +8 shoes stock 21 normal and one high, not all five inventory shoes. |
+| `upgrade-scroll-batch.test.cjs` | Retain | Coverage absent from console E2E: three requested +8 shoes stock 21 normal and three high, not all five inventory shoes; five queued compounds and a mixed upgrade queue each run in one trip; a plan that needs a protected cell stops before any walk. |
 | `warrior-porcupine.test.cjs` | Retain | Coverage absent from console E2E: Porcupine pull respects ownership, mana, cooldown, and Taunt range. |
 | `warrior-stomp.test.cjs` | Retain | Coverage absent from console E2E: cooldown, insufficient MP, unusable skill, scatter, stale/distant party and empty range do not cast. |
 | `worker-lifecycle.test.cjs` | Retain | Coverage absent from console E2E: old worker exit cannot mark the replacement offline or destroy its monitor. |

@@ -481,7 +481,9 @@ function bankMarks(state: DispatchCoordinatorState, name: string): ItemMark[] {
 function characterWork(state: DispatchCoordinatorState, name: string | null): CharacterWork {
   return {
     marked: bankMarks(state, String(name)),
-    upgrades: (state.upgrades[String(name)] || []).filter(mark => upgradeOfferingReady(state, mark)),
+    // A mark on a bank copy rides with its withdrawal; the merchant runs it only when the visit
+    // lands the copy (production.ts `receiveWithdrawnUpgrades`).
+    upgrades: (state.upgrades[String(name)] || []).filter(mark => (mark as { storage?: unknown }).storage || upgradeOfferingReady(state, mark)),
     purchases: state.purchases[String(name)] || [],
     compounds: state.compounds[String(name)] || [],
     autoCompounds: state.autoCompounds[ruleOwner(state, String(name))] || [],

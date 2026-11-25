@@ -730,11 +730,11 @@ export function createProduction(p: ProductionPorts) {
         const scrollName = 'scroll' + p.grade(me().items[slot]);
         let scrollSlot = p.reads.findInventoryItemByName(scrollName);
         if (scrollSlot < 0) {
-          // Only the unfinished work is planned again from the item's live level; no one-scroll trips.
+          // A failed attempt the item survived used a step's scroll twice. The unfinished work, this
+          // item from its live level and the marks and groups after it, is stocked again in one trip.
           const remaining = command.upgrades.slice(i);
           remaining[0] = { ...mark, item: fingerprint(me().items[slot]), tiers: targetLevel - (Number(me().items[slot].level) || 0) };
-          const refill = manualImprovementScrollNeeds({ upgrades: remaining });
-          await ensureOwnedItemQuantity(scrollName, refill[scrollName] || 1, command, activity);
+          await prepareManualImprovementScrolls(command, activity, { upgrades: remaining, compounds: command.compounds });
           scrollSlot = p.reads.findInventoryItemByName(scrollName);
         }
         await p.move(p.findNpc('newupgrade'));
@@ -771,7 +771,9 @@ export function createProduction(p: ProductionPorts) {
         if (mark.equipped && typeof mark.slot === 'string') command._upgradeReturns.push({ slot: mark.slot, item: fingerprint(me().items[slot]) });
       }
     }
-    for (const group of command.compounds || []) {
+    const groups: any[] = command.compounds || [];
+    for (let groupIndex = 0; groupIndex < groups.length; groupIndex += 1) {
+      const group = groups[groupIndex];
       if (!group.items || group.items.length !== COMPOUND_INPUTS) continue;
       const localUsed: Record<number, boolean> = {};
       const slots: number[] = group.items.map((mark: any) => {
@@ -787,7 +789,8 @@ export function createProduction(p: ProductionPorts) {
       const cscroll = 'cscroll' + p.grade(me().items[slots[0]]);
       let cscrollSlot = p.reads.findInventoryItemByName(cscroll);
       if (cscrollSlot < 0) {
-        await ensureOwnedItemQuantity(cscroll, 1, command, activity);
+        // The plan's scroll for this group is missing; the groups left restock in one trip.
+        await prepareManualImprovementScrolls(command, activity, { compounds: groups.slice(groupIndex) });
         cscrollSlot = p.reads.findInventoryItemByName(cscroll);
       }
       await p.move(p.findNpc('newupgrade'));
@@ -884,8 +887,8 @@ export function createProduction(p: ProductionPorts) {
     const matches = compoundAvailableStock(command, stock).slice(me().items.length)
       .filter(entry => entry && !entry.item.l && entry.item.name === name && (entry.item.level || 0) === level);
     if (matches.length < needed) return;
-    const reserve = p.reads.findInventoryItemByName('cscroll' + p.grade({ name, level })) < 0 ? 1 : 0;
-    if (freeSlots(me().items, luckySlot, p.protectedSlots()) < needed + reserve) throw itemFailure('inventory_full');
+    const scrollPile = p.reads.findInventoryItemByName('cscroll' + p.grade({ name, level })) < 0 ? 1 : 0;
+    requireRoomForNewPiles(needed + scrollPile);
     for (let index = 0; index < needed; index += 1) {
       await refreshCompoundProtection(command);
       if (!autoCompoundLevelAllowed(command, name, level)) return;
@@ -924,26 +927,29 @@ export function createProduction(p: ProductionPorts) {
       .filter(entry => entry && !entry.item.l && entry.item.name === name && (entry.item.level || 0) === level).map(entry => entry.slot);
   }
 
-  // The scrolls a manual improve needs. Steps within an item's starting grade are bought together
-  // across the queued items; later grades and compound groups stage one at a time, since the supply
-  // is checked again after each operation.
+  // The scrolls a queue uses when every attempt succeeds: one per upgrade step at that step's
+  // grade, and one per compound group at its inputs' grade. The merchant's job and a character's own
+  // marked run both stock this plan in one trip before the first attempt.
+  function scrollPlan(upgrades: { item: ItemCopy; tiers: number }[], compounds: ItemCopy[]): Record<string, number> {
+    const needs: Record<string, number> = {};
+    const add = (scroll: string) => { needs[scroll] = (needs[scroll] || 0) + 1; };
+    for (const { item, tiers } of upgrades) for (let tier = 0; tier < tiers; tier += 1) add('scroll' + p.grade({ name: item.name, level: (Number(item.level) || 0) + tier }));
+    for (const item of compounds) add('cscroll' + p.grade(item));
+    return needs;
+  }
+  // The merchant's plan for a job's upgrade marks and compound groups, each read at its live copy.
+  // A mark or group whose copy is gone takes no scroll.
   function manualImprovementScrollNeeds(command: any): Record<string, number> {
-    const needs: Record<string, number> = {}, staged: Record<string, number> = {}, used: Record<number, boolean> = {};
+    const upgrades: { item: ItemCopy; tiers: number }[] = [], compounds: ItemCopy[] = [], used: Record<number, boolean> = {};
     for (const mark of command.upgrades || []) {
       if (!mark?.item) continue;
       const slot = findUpgradeMarkSlot(mark, used);
       if (slot < 0) continue;
       used[slot] = true;
-      const live = me().items[slot], start = Number(live.level) || 0;
+      const live = me().items[slot];
       const target = Math.min(p.reads.maximumItemLevel(G().items[live.name]), (Number(mark.item.level) || 0) + Math.max(1, Number(mark.tiers) || 1));
-      const starting = 'scroll' + p.grade(live);
-      for (let tier = 0; tier < Math.max(0, target - start); tier += 1) {
-        const scroll = 'scroll' + p.grade({ name: live.name, level: start + tier });
-        if (scroll === starting) needs[scroll] = (needs[scroll] || 0) + 1;
-        else staged[scroll] = 1;
-      }
+      upgrades.push({ item: live, tiers: Math.max(0, target - (Number(live.level) || 0)) });
     }
-    for (const scroll of Object.keys(staged)) needs[scroll] = Math.max(needs[scroll] || 0, staged[scroll]);
     for (const group of command.compounds || []) {
       if (group?.items?.length !== COMPOUND_INPUTS || !group.items[0].item) continue;
       const groupUsed: Record<number, boolean> = {};
@@ -954,10 +960,9 @@ export function createProduction(p: ProductionPorts) {
       });
       if (slots.some((slot: number) => slot < 0)) continue;
       for (const slot of slots) used[slot] = true;
-      const scroll = 'cscroll' + p.grade(me().items[slots[0]]);
-      needs[scroll] = Math.max(needs[scroll] || 0, 1);
+      compounds.push(me().items[slots[0]]);
     }
-    return needs;
+    return scrollPlan(upgrades, compounds);
   }
   // A count on the bag: the bank's copies first, then the scroll seller, with the gold from the bank.
   async function ensureOwnedItemQuantity(name: string, requiredOnPlayer: number, command: any, activity: any[]) {
@@ -977,9 +982,18 @@ export function createProduction(p: ProductionPorts) {
     await p.buyConfirmed(name, missing);
     return p.reads.itemAvailability(name);
   }
-  async function prepareManualImprovementScrolls(command: any, activity: any[]) {
-    const needs = manualImprovementScrollNeeds(command), names = Object.keys(needs);
+  // Each new pile a job brings into the bag (a withdrawn copy, or a scroll the bag does not carry
+  // yet) takes a cell past the protected free slots. A job short of cells fails as inventory_full
+  // before its first walk.
+  function requireRoomForNewPiles(count: number) {
+    if (freeSlots(me().items, luckySlot, p.protectedSlots()) < count) throw itemFailure('inventory_full');
+  }
+  // The plan's stock: the bank's copies, then one visit to the scroll seller for the rest. The
+  // room check runs before any walk, and the whole purchase's gold is checked before the first buy.
+  async function prepareManualImprovementScrolls(command: any, activity: any[], work: { upgrades?: unknown[]; compounds?: unknown[] } = command) {
+    const needs = manualImprovementScrollNeeds(work), names = Object.keys(needs);
     if (!names.length) return needs;
+    requireRoomForNewPiles(names.filter(name => !p.reads.itemAvailability(name).onPlayer).length);
     if (names.some(name => p.reads.itemAvailability(name).onPlayer < needs[name])) await p.bank.merchantVisitBank(command, activity);
     for (const name of names) await p.bank.retrieveFromBankUntil(name, needs[name]);
     const missing: Record<string, number> = {};
@@ -1178,6 +1192,23 @@ export function createProduction(p: ProductionPorts) {
     }
     activity.push({ level: 'info', message: 'Withdrew reserved bank compound triplets' });
   }
+  // A manual mark on a bank copy (the withdraw command's upgradeTiers) rides the job with its
+  // withdrawal. The visit's errands withdraw the copy and the mark takes the bag cell it landed
+  // in, so the scroll plan counts it with the job's other marks. A mark whose withdrawal the visit
+  // deferred sits out this run, and the coordinator keeps it for a later job.
+  async function receiveWithdrawnUpgrades(command: any, activity: any[]) {
+    if (!(command.upgrades || []).some((mark: any) => mark?.storage)) return;
+    await p.bank.merchantVisitBank(command, activity);
+    command.upgrades = command.upgrades.filter((mark: any) => {
+      const source = mark?.storage;
+      if (!source) return true;
+      const landed = (command._merchantWithdrawalsLanded || []).find((entry: any) => entry.pack === source.pack && entry.slot === source.slot);
+      if (!landed || !sameItemState(me().items[landed.inventorySlot], mark.item)) return false;
+      mark.slot = landed.inventorySlot;
+      mark.storageReceived = true;
+      return true;
+    });
+  }
   // A pass marks every bag copy a rule still has room for, and withdraws bank copies while the bag
   // keeps a free cell past the player's protected free slots; quantity -1 takes every copy
   // those cells hold.
@@ -1263,6 +1294,7 @@ export function createProduction(p: ProductionPorts) {
         if (typeof mark.slot === 'string' && sameItemState(me().slots[mark.slot], mark.item)) await takeOff(mark.slot, mark.item);
       }
       await prepareBankCompounds(command, activity);
+      await receiveWithdrawnUpgrades(command, activity);
       await prepareBankUpgrades(command, activity);
       await preloadUpgradeOfferings(command, activity);
       await preloadStatScrolls(command, activity);
@@ -1873,14 +1905,6 @@ export function createProduction(p: ProductionPorts) {
         if (remaining <= 0) { completed.push(mark); continue; }
         work.push({ mark, tiers: Math.max(1, Math.min(Number(mark.tiers) || 1, remaining)) });
       }
-      const required: Record<string, number> = {};
-      for (const entry of work) {
-        const item = me().items[r.findMarkedItem(entry.mark)];
-        for (let tier = 0; tier < entry.tiers; tier += 1) {
-          const scroll = 'scroll' + p.grade({ name: item.name, level: (item.level || 0) + tier });
-          required[scroll] = (required[scroll] || 0) + 1;
-        }
-      }
       const compoundWork: { group: any; scroll: string }[] = [];
       for (const group of compoundGroups || []) {
         if (!Array.isArray(group?.items) || group.items.length !== COMPOUND_INPUTS) continue;
@@ -1889,10 +1913,10 @@ export function createProduction(p: ProductionPorts) {
         const items = slots.map((slot: number) => me().items[slot]);
         const definition = G().items[items[0].name];
         if (!definition?.compound || items.some((item: ItemCopy) => item.name !== items[0].name || (item.level || 0) !== (items[0].level || 0))) continue;
-        const scroll = 'cscroll' + p.grade(items[0]);
-        required[scroll] = (required[scroll] || 0) + 1;
-        compoundWork.push({ group, scroll });
+        compoundWork.push({ group, scroll: 'cscroll' + p.grade(items[0]) });
       }
+      const required = scrollPlan(work.map(entry => ({ item: me().items[r.findMarkedItem(entry.mark)], tiers: entry.tiers })),
+        compoundWork.map(entry => me().items[groupSlots(entry.group)[0]]));
       for (const scroll of Object.keys(required)) {
         const owned = Math.min(required[scroll], r.inventoryQuantity(scroll));
         if (owned) p.log('Using ' + owned + ' existing ' + G().items[scroll].name + ' from inventory slot ' + r.findInventoryItemByName(scroll), '#51D2E1');

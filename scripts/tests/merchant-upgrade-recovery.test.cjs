@@ -226,3 +226,20 @@ test('intents follow their copies by identity and end at their target or when th
   result = reconcileUpgradeMarks([manual('a', 3)], {}, bag([3, 1]));
   assert.deepEqual(result.marks.map(mark => mark.slot), [3]);
 });
+
+// A withdrawn manual mark rides the job that withdraws its copy (upgrade-scroll-batch.test.cjs, the
+// live mixed shield row), so a job that fails after an attempt leaves the copy above its starting
+// level. The received intent takes the copy its continuation saved, and else an unfinished copy.
+test('a received bank intent follows the copy its job upgraded before failing', () => {
+  const {reconcileUpgradeMarks} = require('../../runtime/items/coordinator/production.ts');
+  const bag = (...entries) => entries.map(([slot, level]) => ({slot, item: {name: 'sshield', level}, meta: {upgradeable: true}}));
+  const withdrawn = extra => ({requestId: 'w', slot: -1, item: {name: 'sshield', level: 0}, tiers: 4,
+    storage: {pack: 'items0', slot: 0}, storageReceived: true, ...extra});
+  let result = reconcileUpgradeMarks([withdrawn({liveSlot: 12, liveItem: {name: 'sshield', level: 2}})], {}, bag([12, 2]));
+  assert.deepEqual(result.marks.map(mark => [mark.slot, mark.liveSlot, mark.storage]), [[12, 12, undefined]]);
+  result = reconcileUpgradeMarks([withdrawn()], {}, bag([12, 2]));
+  assert.deepEqual(result.marks.map(mark => [mark.slot, mark.storage]), [[12, undefined]]);
+  // The continuation's copy at its target converts, and the bag pass then ends the request there.
+  result = reconcileUpgradeMarks([withdrawn({liveSlot: 12, liveItem: {name: 'sshield', level: 3}})], {}, bag([12, 4]));
+  assert.deepEqual(result.marks, []);
+});
