@@ -619,10 +619,13 @@ export function createDashboardStream<Timer>(ports: Ports<Timer>) {
     const catalog = ports.catalog?.();
     const itemChanges = compactSlots(data.items, catalog),
       slotChanges = compactSlots(data.slots, catalog);
-    // A change names a bag cell or an equipment slot of the character's last report: the game's bag
-    // size and slots bound it, so any other key is no telemetry change.
-    const reported = ports.statuses()[name], cells = Array.isArray(reported?.items) ? reported.items.length : 0, slots = requestObject(reported?.slots);
-    if (Object.keys(itemChanges).some(key => !(/^\d+$/.test(key) && Number(key) < cells)) || Object.keys(slotChanges).some(key => !Object.hasOwn(slots, key)))
+    // A change names a bag cell or a slot of the character's last report: the game's bag size and
+    // slots bound it, so any other key is no telemetry change. The report names its filled slots in
+    // `slots` and its empty ones in `emptySlots` (items/character/bag.ts), so the first sample's
+    // `elixir: null` lands as the card's empty Elixir cell.
+    const reported = ports.statuses()[name], cells = Array.isArray(reported?.items) ? reported.items.length : 0;
+    const slots = new Set([...Object.keys(requestObject(reported?.slots)), ...(Array.isArray(reported?.emptySlots) ? reported.emptySlots.map(String) : [])]);
+    if (Object.keys(itemChanges).some(key => !(/^\d+$/.test(key) && Number(key) < cells)) || Object.keys(slotChanges).some(key => !slots.has(key)))
       return response.status(400).json({ error: "oversized telemetry" });
     session.sample = Number(body.sample);
     metrics.accepted++;

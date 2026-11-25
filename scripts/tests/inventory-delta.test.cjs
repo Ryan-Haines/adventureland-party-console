@@ -293,3 +293,11 @@ test('a carried bank skips the comparison only while it produced the current sna
  consumeBankReport({name:'M',bank:changed},state,ports);
  assert.equal(state.bankSnapshot.gold,7);
 });
+
+// The telemetry route bounds a slot change by `slots` and `emptySlots` (status/coordinator/streams.ts),
+// so a report that omits the unchanged inventory keeps both.
+test('an unchanged report keeps the empty slots the full report named',()=>{
+ const t=fixture();t.invoke(full('F','a.1',{emptySlots:['elixir']}));
+ t.time(2000);assert.equal(t.invoke(delta('F','a.1')).code,200);
+ assert.deepEqual(t.state.statuses.F.emptySlots,['elixir']);
+});

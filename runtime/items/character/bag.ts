@@ -511,22 +511,27 @@ export function createBagReads(p: BagPorts) {
         sprite: G.items.placeholder ? itemSheetSprite(G.items.placeholder.skin) : null };
     return entry;
   }
-  // A report omits items, slots and bank while they match the revision the coordinator's last reply
-  // acknowledged (docs/efficiency.md, Inventory deltas). The key is every input of the three
+  // A report omits items, slots, emptySlots and bank while they match the revision the coordinator's
+  // last reply acknowledged (docs/efficiency.md, Inventory deltas). The key is every input of the
   // builders, so a change rebuilds them once and the next report carries them.
   function statusInventory() {
     const character = me(), upgrade = p.activeUpgrade(), known = p.catalogKnown();
     const key = JSON.stringify([character.items, character.slots || null, character.bank || null, upgrade && [upgrade.slot, upgrade.item]]);
     // Before the catalog acknowledgement itemDefinition reads the world cache, which fills in over time.
     if (known && statusCache?.key === key) return statusCache;
-    const slots: Record<string, unknown> = {};
-    for (const [slot, item] of Object.entries<any>(character.slots || {})) if (item) slots[slot] = { item: fingerprint(item), meta: itemDefinition(item) };
+    // `slots` names the filled slots and `emptySlots` the rest of the game's `character.slots`, so
+    // the dashboard telemetry route knows an empty slot such as `elixir` (status/coordinator/streams.ts).
+    const slots: Record<string, unknown> = {}, emptySlots: string[] = [];
+    for (const [slot, item] of Object.entries<any>(character.slots || {}))
+      if (item) slots[slot] = { item: fingerprint(item), meta: itemDefinition(item) };
+      else emptySlots.push(slot);
     return statusCache = { key: known ? key : null, revision: statusSession + '.' + (++statusCount),
-      items: (character.items || []).map(inventoryOperationEntry), slots, bank: bankSnapshot() };
+      items: (character.items || []).map(inventoryOperationEntry), slots, emptySlots, bank: bankSnapshot() };
   }
   function withStatusInventory<T extends Record<string, unknown>>(status: T): T {
     const inventory = statusInventory();
-    return Object.assign(status, { inventoryRevision: inventory.revision, items: inventory.items, slots: inventory.slots, bank: inventory.bank });
+    return Object.assign(status, { inventoryRevision: inventory.revision, items: inventory.items, slots: inventory.slots,
+      emptySlots: inventory.emptySlots, bank: inventory.bank });
   }
   // The full inventory goes out while the coordinator's last reply acknowledged another revision.
   // The first report of a load names a new session's revision, a lost or unanswered full report

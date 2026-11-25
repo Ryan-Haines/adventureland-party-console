@@ -153,11 +153,11 @@ export function consumeBankReport(body: BankReport, state: SnapshotState, ports:
   delete body.bank;
 }
 
-// Character scripts omit `items`, `slots` and `bank` while they match the revision this coordinator
-// acknowledged (docs/efficiency.md, Inventory deltas). `complete` puts the carried fields back on the
+// Character scripts omit `items`, `slots`, `emptySlots` and `bank` while they match the revision this
+// coordinator acknowledged (docs/efficiency.md, Inventory deltas). `complete` puts the carried fields back on the
 // raw report before any reader sees it; the revision describes this coordinator process, so it
 // stays out of the report.
-const CARRIED_FIELDS = ['items', 'slots', 'bank'] as const;
+const CARRIED_FIELDS = ['items', 'slots', 'emptySlots', 'bank'] as const;
 export function createInventoryCarry() {
   const carried = new Map<string, { revision: string; fields: Partial<Record<(typeof CARRIED_FIELDS)[number], unknown>> }>();
   /** False when the report omits inventory this coordinator does not hold. */

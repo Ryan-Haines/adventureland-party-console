@@ -173,3 +173,28 @@ test('DashboardLive falls back on silent heartbeats and reconnects on the next c
   await act(async () => view.unmount());
   client.clear();
 });
+
+// An empty equipment slot is a slot of the game's `character.slots` that the report names in
+// `emptySlots`, not in `slots`. The sampler's first sample names every slot, `elixir: null` among
+// them; that sample's vitals reach the stream and the record keeps the empty Elixir cell.
+test('a first sample naming an empty reported slot keeps its vitals and the empty cell; an unreported slot is still refused', async () => {
+  const f = fixture();
+  f.statuses.A.slots = { mainhand: { item: { name: 'blade' }, meta: { sprite: 'blade' } } };
+  f.statuses.A.emptySlots = ['elixir', 'trade1'];
+  const client = f.connect();
+  const answers = [];
+  const sampler = createDashboardSampler({ now: () => 1000, current: () => true, name: () => 'A', runtime: () => 'runtime1',
+    sample: () => ({ vitals: { hp: 42 }, items: {}, slots: { mainhand: { name: 'blade' }, elixir: null, trade1: null } }),
+    entry: value => ({ item: value, meta: { sprite: value.name } }),
+    send: async body => { const response = f.invoke('POST', '/party-api/dashboard-telemetry', body).response; answers.push(response.code); return response.body; } });
+  sampler.renew(f.stream.lease('A'));
+  sampler.pulse();
+  await new Promise(resolve => setImmediate(resolve));
+  const record = messages(client.response).at(-1).characters.A;
+  assert.equal(record.vitals.hp, 42, `the vitals of the sample reach the stream (telemetry answered ${answers})`);
+  assert.deepEqual(answers, [200], 'the first sample is accepted');
+  assert.ok(Object.hasOwn(record.slots, 'elixir'), 'the empty Elixir cell is in the record');
+  assert.equal(record.slots.elixir, null);
+  assert.equal(f.send(5, { slots: { unknown: null } }).code, 400, 'a slot the report names in neither list is refused');
+  client.request.close();
+});

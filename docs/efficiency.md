@@ -1131,8 +1131,9 @@ meta (above) that is still most of a report.
   built before this change never acknowledges, so it keeps receiving every
   report in full. On a 409 `inventory-required` refusal, `request()` sends the
   same report with the inventory and resolves with that reply.
-- `runtime/items/coordinator/storage.ts` `createInventoryCarry`: per character, the items, slots and bank of
-  the last full report and the revision it named. A report naming that
+- `runtime/items/coordinator/storage.ts` `createInventoryCarry`: per character, the items, slots, empty
+  slots and bank of the last full report and the revision it named. The empty slots (`emptySlots`, the
+  slot names `slots` leaves out) bound the dashboard telemetry's slot changes. A report naming that
   revision without the fields gets them back on the raw body before any
   consumer runs, so merchant scheduling, bank observation, delivery recovery
   and the stored status all see a full report. An unknown revision (restart,

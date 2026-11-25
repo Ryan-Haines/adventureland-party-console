@@ -528,6 +528,7 @@ export const characterFields = {
   tracktrix: lean("Tracktrix status and bonuses.", all),
   items: lean("Bag entries with item fingerprints and metadata.", [...all, "metrics"], large("117 to 273 KB")),
   slots: lean("Equipped entries with item fingerprints and metadata.", [...all, "metrics"], large("457 to 484 KB")),
+  emptySlots: debug("The game's empty slots of the character, which bound a telemetry slot change beside `slots` (status/coordinator/streams.ts `receive`)."),
   nearbyStandListings: debug("Player stand listings near the character.", large("up to 1.9 MB")),
   nearbyGiveaways: debug("Giveaways near the character."),
   bank: consumed("Bank snapshot; 10's items row moves it to bankSnapshot (items/coordinator/storage.ts writeBankSnapshot; a null report stays on the status).", large("all bank packs with item metadata")),
