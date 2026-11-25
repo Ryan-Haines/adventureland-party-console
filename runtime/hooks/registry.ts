@@ -182,9 +182,10 @@ export interface RecoveryView { id: string; phase: string; reason: string; names
   fight: RecoveryFightRule; record: unknown }
 // `targeting.fight`'s answer: the group's grouped fight as the
 // queue holds it, its target's start, its fights and its death tombstones with their monster type.
-// `targeting.groupView`'s answer: the queue ledger's facts.
+// `targeting.groupView`'s answer: the queue ledger's facts. `ready` is the formation's: a regrouping
+// queue holds no target and lists none.
 export interface GroupView { selected: string | null; queued: unknown[]; locked: unknown; engaged: unknown[]; killed: unknown[]; claimed: unknown[];
-  revision: string | undefined; acknowledgements: string[]; lost: { retiredAt: number; reason: string }[]; seenAt: number }
+  revision: string | undefined; acknowledgements: string[]; lost: { retiredAt: number; reason: string }[]; seenAt: number; ready: boolean }
 export interface GroupFightView { startedAt?: number; fights: readonly { id: string; map: string; in?: string | number; server?: string; mtype?: string; hp?: number }[];
   deaths: readonly { id: string; map: string; in?: string | number; server?: string; at: number; mtype?: string }[] }
 // `survival.refuses`'s question: the recovery's or a walk's verdict with what it read.

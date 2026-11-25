@@ -468,7 +468,7 @@ export interface RareStatus extends Point {
   groupedCombat?: { queueAck?: string | null; approach?: ApproachReport; currentAttackersAt?: number; currentAttackers?: CurrentAttacker[]; protocol?: number };
   range?: number;
   combatSelection?: { runtimeId?: string };
-  rareObservation?: { at: number; runtimeId: string; map: string; in: string; server: string; x: number; y: number; sightings: RareSight[] };
+  rareObservation?: { at: number; runtimeId: string; map: string; in: string; server: string; x: number; y: number; grouped?: boolean; sightings: RareSight[] };
   rareKills?: (Point & { id: string; mtype: string; in: string; at: number; partyEngaged?: boolean })[];
   rareFields?: { x: number; y: number }[];
   rareDeployment?: { encounterId: string; failed?: boolean };

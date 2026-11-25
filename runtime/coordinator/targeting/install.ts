@@ -23,13 +23,14 @@ function registration(records: GroupRecords | null): Registration {
   // acknowledges the queue's revision (`queueAck`), the queue's own delivery acknowledgement that the
   // rare client reads today (rare-hunting.ts `selectionAcknowledged`); `lost` is the queue's lost
   // targets, each with its `retiredAt` and `reason`; `seenAt` is the time the queue was last evaluated,
-  // which v1.5.0's rare bridge gave its selected target as its sighting time.
+  // which v1.5.0's rare bridge gave its selected target as its sighting time; `ready` is the
+  // formation's (queue.ts `ready`).
   function groupView(ask: { group: string }): GroupView | undefined {
     const state = records?.state(ask.group), g = state?.groupedCombat;
     if (!g) return undefined;
     const acknowledgements = Object.entries(state!.statuses ?? {}).filter(([, s]) => !!g.queueRevision && s?.groupedCombat?.queueAck === g.queueRevision).map(([name]) => name);
     return { selected: g.selection, queued: g.queue, locked: g.target, engaged: g.fights, killed: g.deaths, claimed: g.claims ?? [],
-      revision: g.queueRevision, acknowledgements, lost: g.lostTargets ?? [], seenAt: g.seenAt };
+      revision: g.queueRevision, acknowledgements, lost: g.lostTargets ?? [], seenAt: g.seenAt, ready: g.ready === true };
   }
   function fight(group: string): GroupFightView | undefined {
     const g = records?.state(group)?.groupedCombat;

@@ -161,6 +161,8 @@ function groupedView(state: RareState, members: () => string[], view: () => Grou
     // The group fights grouped: more than one member, one of them on the grouped protocol, no scatter.
     grouped: () => state.partyFarmingMode !== 'scatter' && members().length > 1 &&
       members().some(name => currentQueue(state.statuses[name]?.groupedCombat)),
+    // The group's formation is ready, so its queue lists the targets it plans.
+    formed: () => view()?.ready === true,
     selected: (sight: RareSight) => same(view()?.locked as Fighting, sight),
     queued: (sight: RareSight) => has(view()?.queued, sight),
     locked: (sight: RareSight) => has(view()?.engaged, sight),
@@ -507,9 +509,10 @@ export function createRares(input: unknown, ports: RarePorts) {
     // under way ends here as the tasks owner's takeover would end it, and the rare commits nothing into it.
     if (state.activeConvoy) ports.cancelConvoy();
     // The combat mode answer's rare row answers grouped from the next reply on (modes.ts reads `rareOwns`), so the
-    // encounter writes nothing of the mode or the scatter break.
+    // encounter writes nothing of the mode or the scatter break. Every encounter awaits its selection: a party
+    // that scatters at the start fights the rare grouped from that reply on.
     encounter = { ...capture(), id: `rare-${now()}-${++serial}`, target, start: now(), lastSeen: now(),
-      stage: 'approach', awaitingSelection: combat.grouped(), generator: 'none', message: rareLabel('approach', rareName(target.mtype)) };
+      stage: 'approach', awaitingSelection: true, generator: 'none', message: rareLabel('approach', rareName(target.mtype)) };
     // The live encounter's start, the one pursuit the record keeps, survives a restart under the
     // rare's key and no total limit keeps older ones.
     const saved = state.rarePursuitProgress?.[rareKey(target)];
@@ -716,15 +719,20 @@ export function createRares(input: unknown, ports: RarePorts) {
 
   // ---- Grouped combat ----
 
-  // Before the targeting owner's clients switch out of scatter, their old reports read as no selection, so a
-  // nomination counts as released only after one report round since it with no member taking it, or
-  // once every member acknowledged the queue.
+  // Before the targeting owner's clients switch out of scatter, their old reports read as no selection, so the
+  // queue's reading counts only after every member reported since the nomination while it plays grouped
+  // (its observation's `grouped`). A party that scatters at the start reports under scatter until the
+  // reply carrying the rare's grouped answer reaches each member. The switch to grouped then regroups the
+  // formation, and a regrouping queue lists no target (queue.ts `lockedQueue`), so its reading counts only
+  // once the formation is ready. The wait ends once the queue locks the rare or every member acknowledged
+  // it as the selection.
+  const groupedRound = (at: number) => members().every(name => observedAfter(name, at) && !!state.statuses[name]!.rareObservation!.grouped);
   function released(e: RareEncounter): boolean {
     if (e.awaitingSelection) {
-      if (!combat.locked(e.target) && !(combat.selected(e.target) && combat.acknowledged()))
-        return reportRound(e.start);
-      e.awaitingSelection = false;
-      diagnostic('Rare target selected', { id: e.target.id, mtype: e.target.mtype });
+      if (combat.locked(e.target) || combat.selected(e.target) && combat.acknowledged()) {
+        e.awaitingSelection = false;
+        diagnostic('Rare target selected', { id: e.target.id, mtype: e.target.mtype });
+      } else if (!groupedRound(e.start) || !combat.formed()) return false;
     }
     // A pending fight of the group goes first; a rare still queued behind it is not released.
     const queued = combat.queued(e.target) && !claimed(e.target);

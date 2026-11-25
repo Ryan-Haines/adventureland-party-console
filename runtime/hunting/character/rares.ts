@@ -107,10 +107,12 @@ export function installRareClient(ports: RareClientPorts) {
     }
     return result.sort((a, b) => ports.priority(b) - ports.priority(a));
   }
+  // `grouped` names the mode the report was made under, so the coordinator reads a missing nomination as
+  // a release only from a member that nominates grouped (coordinator/rares.ts `groupedRound`).
   function observation() {
     const c = me(), w = ports.walk();
     return { at: Date.now() + w.clockOffset, runtimeId: w.runtimeId, map: c.map, in: String(c.in || c.map), server: ports.realm(),
-      x: c.x, y: c.y, sightings: sightings() };
+      x: c.x, y: c.y, grouped: ports.grouped(), sightings: sightings() };
   }
   const fields = () => Object.values(ports.frame().entities || {})
     .filter(e => e && e.mtype === 'fieldgen0' && !e.dead && e.hp > 0).map(e => ({ id: e.id, x: e.x, y: e.y }));

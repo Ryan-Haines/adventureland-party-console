@@ -110,6 +110,61 @@ scenarioTable('a rare encounter is acquired by priority, pursued while it progre
   r.sight('tinyp','M');assert.equal(r.party.rareHuntState.encounter.mtype,'tinyp');
   assert.equal(r.controller.control('P').target.id,'tinyp');
  }],
+ // A rare sighted while the party scatters holds it until the members report grouped: the reports
+ // after the start go out under scatter until the reply carrying the rare's grouped answer reaches
+ // each member. Observed in the end run at a699982a7: the Phoenix row's encounter ended `released`
+ // 750 ms after its start while both fighters still reported "event or independent combat".
+ ['a rare begun under scatter waits for the members to play grouped before its selection counts as released', r=>{
+  r.party.partyFarmingMode='scatter';
+  for(const s of Object.values(r.party.statuses)) Object.assign(s,{groupedCombat:{protocol:4},grouped:false});
+  r.party.groupedCombat={protocol:4,seenAt:r.time(),target:null,queue:[],fights:[],deaths:[]};
+  r.sight();assert.equal(r.controller.encounter(),true);
+  // Two report rounds after the start: the coordinator's answer turns grouped, the members still report scatter.
+  r.party.partyFarmingMode='default';
+  for(let i=0;i<2;i++){r.advance(250);r.sight();}
+  assert.equal(r.controller.encounter(),true,'reports made under scatter release nothing');
+  // The members report grouped and the ready formation's queue holds nothing, so the selection is released.
+  for(const s of Object.values(r.party.statuses)) s.grouped=true;
+  r.party.groupedCombat.ready=true;
+  r.advance(250);r.sight();
+  assert.equal(r.controller.encounter(),false);
+  assert.equal(r.party.rareHuntState.message,'Rare pursuit cancelled: selection released');
+ }],
+ // Observed in final-gate-closing7's W13 T24: the Phoenix's encounter began under scatter at
+ // 1795578566170 and its rare task ended 500 ms later, as the warrior logged "Group regrouping" with
+ // no target and the blocker "waiting for stable formation". A regrouping queue lists nothing for
+ // any target (queue.ts `lockedQueue`), so its empty queue gives no answer on the rare.
+ ['a rare waits out the regroup that follows the switch to grouped', r=>{
+  r.party.partyFarmingMode='scatter';
+  for(const s of Object.values(r.party.statuses)) Object.assign(s,{groupedCombat:{protocol:4},grouped:false});
+  r.party.groupedCombat={protocol:4,seenAt:r.time(),ready:false,target:null,queue:[],fights:[],deaths:[]};
+  r.sight();assert.equal(r.controller.encounter(),true);
+  r.party.partyFarmingMode='default';
+  for(const s of Object.values(r.party.statuses)) s.grouped=true;
+  for(let i=0;i<2;i++){r.advance(250);r.sight();}
+  assert.equal(r.controller.encounter(),true,'a regrouping queue releases nothing');
+  // The formation readies and the queue plans the rare.
+  const rare={id:'phoenix',mtype:'phoenix',map:'main',in:'main',server:'USII',x:20,y:10,state:'planned'};
+  Object.assign(r.party.groupedCombat,{ready:true,target:rare,queue:[rare]});
+  r.advance(250);r.sight();
+  assert.equal(r.controller.encounter(),true,'the ready queue holds the rare');
+ }],
+ // Observed in the confirming table at fdc770fc6: the cutebee, hen and rooster rows each ended their
+ // rare task `released` within 760 ms of its grant while the party fought goo, and no member hit the rare.
+ ['a rare the queue holds behind the goo fight under way stays once the members play grouped', r=>{
+  r.party.partyFarmingMode='scatter';
+  for(const s of Object.values(r.party.statuses)) Object.assign(s,{groupedCombat:{protocol:4},grouped:false});
+  r.party.groupedCombat={protocol:4,seenAt:r.time(),target:null,queue:[],fights:[],deaths:[]};
+  r.sight();assert.equal(r.controller.encounter(),true);
+  // The members report grouped, and the queue holds the rare behind the goo fight they were in.
+  r.party.partyFarmingMode='default';
+  for(const s of Object.values(r.party.statuses)) s.grouped=true;
+  const goo={id:'goo1',mtype:'goo',map:'main',in:'main',server:'USII',x:0,y:0,state:'engaged'},
+    rare={id:'phoenix',mtype:'phoenix',map:'main',in:'main',server:'USII',x:20,y:10,state:'planned'};
+  Object.assign(r.party.groupedCombat,{target:goo,queue:[goo,rare],fights:[goo]});
+  for(let i=0;i<2;i++){r.advance(250);r.sight();}
+  assert.equal(r.controller.encounter(),true,'a queued rare is not released');
+ }],
  ['manual navigation revision cancels a pursuit without a stale return convoy', r=>{
  r.sight();r.revisions.W++;r.controller.tick();
   assert.equal(r.controller.encounter(),false);assert.equal(r.starts(),0);

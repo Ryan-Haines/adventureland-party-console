@@ -18,7 +18,7 @@ function phoenixParty(time, fields, member) {
   for (const [name,ctype] of [['W','warrior'],['M','mage'],['P','priest']]) {
     const s = party.statuses[name] = { name,ctype,server:'USII',map:'main',in:'main',hp:1000,seenAt:time,rareSightings:[],...member };
     s.combatSelection = {runtimeId:name};
-    Object.defineProperty(s,'rareObservation',{configurable:true,get(){return {at:s.seenAt,runtimeId:s.name,map:s.map,in:s.in,server:s.server,x:s.x,y:s.y,sightings:s.rareSightings};}});
+    Object.defineProperty(s,'rareObservation',{configurable:true,get(){return {at:s.seenAt,runtimeId:s.name,map:s.map,in:s.in,server:s.server,x:s.x,y:s.y,grouped:s.grouped??true,sightings:s.rareSightings};}});
   }
   return party;
 }

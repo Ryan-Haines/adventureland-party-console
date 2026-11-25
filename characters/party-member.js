@@ -16250,6 +16250,7 @@ ${hook}`, was = errors.get(key3);
         server: ports.realm(),
         x: c.x,
         y: c.y,
+        grouped: ports.grouped(),
         sightings: sightings2()
       };
     }

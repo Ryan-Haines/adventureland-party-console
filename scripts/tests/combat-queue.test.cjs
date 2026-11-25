@@ -190,19 +190,19 @@ scenarioTable("sight recovery retraces breadcrumbs and explores checked detours 
 
 // `targeting.groupView` reads the group's queue ledger: its selection, queue, lock, fights, deaths,
 // claims and revision, the members whose report acknowledges that revision, each lost target with
-// when and why it was retired, and when the group's fight was last seen.
+// when and why it was retired, when the group's fight was last seen and whether its formation is ready.
 require('node:test')('targeting.groupView: the read names the queue ledger facts and its lost targets', () => {
   const { installCoordinatorTargeting } = require('../../runtime/coordinator/targeting/install.ts');
   const lost = { id: 'bee', map: 'main', server: 'USII', retiredAt: 5, reason: 'released for travel; no current attacker' };
   const state = { groupedCombat: { selection: 's1', queue: [{ id: 'goo' }], target: { id: 'goo' }, fights: [{ id: 'goo' }], deaths: [{ id: 'old' }],
-    claims: [], queueRevision: 'r7', lostTargets: [lost], seenAt: 9 },
+    claims: [], queueRevision: 'r7', lostTargets: [lost], seenAt: 9, ready: true },
     statuses: { W: { groupedCombat: { queueAck: 'r7' } }, P: { groupedCombat: { queueAck: 'r6' } } } };
   // The application publishes core:targeting over its group records; the row reads the published one.
   let published;
   installCoordinatorTargeting({ publish: r => { published = r; return { ok: true }; } }, { state: g => g === 'party:W' ? state : undefined, now: () => 10 });
   const view = published.hooks['targeting.groupView']({ group: 'party:W' });
   assert.deepEqual(view, { selected: 's1', queued: [{ id: 'goo' }], locked: { id: 'goo' }, engaged: [{ id: 'goo' }], killed: [{ id: 'old' }], claimed: [],
-    revision: 'r7', acknowledgements: ['W'], lost: [lost], seenAt: 9 });
+    revision: 'r7', acknowledgements: ['W'], lost: [lost], seenAt: 9, ready: true });
   assert.equal(published.hooks['targeting.groupView']({ group: 'party:X' }), undefined);
 });
 
