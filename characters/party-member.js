@@ -38456,7 +38456,7 @@ ${hook}`, was = errors.get(key3);
     }
     function owned(session) {
       if (!active || memory.session !== session) return false;
-      if (matches(session.expected)) return true;
+      if (matches(session.expected) || ports.same(ports.hands().mainhand, session.bow)) return true;
       relinquish();
       return false;
     }
@@ -38540,8 +38540,11 @@ ${hook}`, was = errors.get(key3);
         memory.retryAt = 0;
         run(() => restore(memory.session));
       },
+      // A dashboard equip or unequip asks here first, for any slot. It waits out the swap's call in
+      // flight and holds off a new swap on the current target. owned() decides whether the change
+      // ends the session.
       async manual() {
-        relinquish();
+        memory.suppressedTarget = memory.target;
         await memory.pending;
       },
       busy: () => !!memory.pending,

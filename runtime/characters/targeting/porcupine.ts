@@ -57,9 +57,13 @@ export function createPorcupineEquipment(ports: WeaponPorts, memory: WeaponMemor
     memory.suppressedTarget = memory.target;
     delete memory.session;
   }
+  // The session keeps the hands to restore while its bow is in the mainhand or the hands are the ones
+  // its last call left. Only a weapon in place of the bow ends it unrestored: that change is the
+  // player's, and the bow is off. A ring, armor or an offhand change leaves the bow on, so the record
+  // stays and the next departure puts the normal hands back.
   function owned(session: WeaponSession): boolean {
     if (!active || memory.session !== session) return false;
-    if (matches(session.expected)) return true;
+    if (matches(session.expected) || ports.same(ports.hands().mainhand, session.bow)) return true;
     relinquish();
     return false;
   }
@@ -145,8 +149,11 @@ export function createPorcupineEquipment(ports: WeaponPorts, memory: WeaponMemor
       memory.retryAt = 0;
       run(() => restore(memory.session!));
     },
+    // A dashboard equip or unequip asks here first, for any slot. It waits out the swap's call in
+    // flight and holds off a new swap on the current target. owned() decides whether the change
+    // ends the session.
     async manual() {
-      relinquish();
+      memory.suppressedTarget = memory.target;
       await memory.pending;
     },
     busy: () => !!memory.pending,

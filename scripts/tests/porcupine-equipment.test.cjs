@@ -56,6 +56,26 @@ scenarioTable("the porcupine bow swap equips, keeps and restores the loadout",()
   g.api.depart(); await settle(); assert.match(g.errors[0], /missing/);
   g.items[index]=original; g.advance(); g.tick(null,'physical',150,false); await settle(); assert.equal(g.hands.mainhand.name,'sword');
   }],
+  // Live 2026-11-22: Sadokunn held bowofthedead+6 for hours after its last porcupine, through six
+  // convoy departures, with swordofthedead+9 and glolipop+9 in its bag and no swap failure recorded.
+  ["a change that leaves the bow in the mainhand keeps the record, so departure restores the loadout",async ()=>{
+  // A dashboard equip of a ring asks manual() first and touches no hand.
+  const f = fixture(); f.tick(); await settle();
+  await f.api.manual(); f.api.depart(); await settle();
+  assert.deepEqual(f.hands, { mainhand: { name: 'sword', level: 8 }, offhand: { name: 'shield', level: 3 } });
+  assert.equal(f.memory.session, undefined);
+  // A hand change the swap did not make, with its bow still in the mainhand.
+  const g = fixture(); g.tick(); await settle();
+  g.hands.offhand = { name: 'quiver', level: 0 };
+  g.tick({ id: 'goo', mtype: 'goo' }); g.api.depart(); await settle(); g.tick(null, 'physical', 150, false); await settle();
+  assert.deepEqual(g.hands, { mainhand: { name: 'sword', level: 8 }, offhand: { name: 'shield', level: 3 } });
+  }],
+  ["a manual change holds off a new swap on its target",async ()=>{
+  const f = fixture(); f.tick(); await settle(); assert.equal(f.hands.mainhand.name, 'bow');
+  await f.api.manual(); f.ports.equip(f.items.findIndex(item => item?.name === 'sword'), 'mainhand'); await settle();
+  f.tick(); await settle(); f.tick(); await settle();
+  assert.equal(f.hands.mainhand.name, 'sword'); assert.equal(f.memory.session, undefined);
+  }],
   ["departure during an in-flight swap serializes restoration",async ()=>{
   let release;
   const f = fixture(); const unequip=f.ports.unequip;
