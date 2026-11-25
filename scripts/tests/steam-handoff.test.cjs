@@ -106,7 +106,7 @@ test('timeout never starts a duplicate; recovery requires authoritative offline 
 // from `realm.target()`; once the move arrives, the Steam move goes.
 scenarioTable('MJ46: a Steam move holding the merchant waits while its realm move is in flight', () => undefined, [
   ['a single handoff naming the merchant', async () => {
-    const f = fixture(), move = merchantMove({ merchant: 'Merchant', steam: ['Priest'], slots: [] });
+    const f = fixture(), move = merchantMove({ merchant: 'Merchant', steam: ['Priest'], slots: ['Merchant'] });
     f.ports.validateParticipants = move.validateParticipants;
     assert.equal(move.realm.want('job:a', 'SR_EUI'), 'moving');
     await assert.rejects(f.service.begin('Merchant'), /active inventory operation/);

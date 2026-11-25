@@ -106,6 +106,18 @@ export interface RealmRequest {
   climbedAt?: number;
 }
 
+// A move is in flight from its request until its arrival, while the merchant is online (a Steam
+// member or a headless slot). An offline merchant makes no move: its request stays saved, and its
+// next login starts on the realm the move wrote to its block and finishes it. A job's listing hop
+// holds only inside v1.5.0's 60 s window, the time v1.5.0's home return gave a job's realm request
+// before it took the merchant home (home-recovery.ts:122).
+export function moveInFlight(request: RealmRequest | undefined, online: boolean,
+  status: { server?: string; seenAt?: number } | undefined, now: number): boolean {
+  if (!request || request.exhausted || !online) return false;
+  if (realmRequestArrived(status, request, now)) return false;
+  return !jobWant(request.owner) || now - request.requestedAt < ARRIVAL_WINDOW_MS;
+}
+
 // The realm id rule is the protocol's (protocol/realm.ts); the call budget's readers take it
 // through this door.
 export { normalizedRealm };

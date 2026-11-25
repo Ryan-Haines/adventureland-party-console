@@ -10,7 +10,7 @@ import type { CharacterBlock } from '../../lifecycle/api.ts';
 import { fresh } from '../../protocol/reports.ts';
 import { endMerchantJob, merchantSlotCommand } from '../../merchant-jobs/coordinator/api.ts';
 import type { LadderPort } from '../../tasks/api.ts';
-import { ARRIVAL_WINDOW_MS, jobWant, normalizedRealm, realmRefusal, realmRequestArrived, wantRank,
+import { ARRIVAL_WINDOW_MS, jobWant, moveInFlight, normalizedRealm, realmRefusal, realmRequestArrived, wantRank,
   type RealmAnswer, type RealmRequest, type WantOptions } from '../rules.ts';
 import { recordRealm } from './records.ts';
 import { boundFired } from '../../status/coordinator/api.ts';
@@ -275,15 +275,13 @@ export function createMerchantRealmOwner<T extends Worker>(state: RealmOwnerStat
     return false;
   }
 
-  // A move holds `realm-hold` from the write of its destination until the arrival; a
-  // job's listing hop holds it only inside v1.5.0's 60 s window, the time the
-  // v1.5.0's home return already gave a job's realm request before it took the
-  // merchant home (home-recovery.ts:122).
+  // A move holds `realm-hold` from the write of its destination until the arrival (rules.ts
+  // moveInFlight), so the roster's spawn of an offline merchant never waits on it.
   function moving(): boolean {
-    const current = request(), merchant = state.merchantCharacter;
-    if (!current || current.exhausted || !merchant) return false;
-    if (realmRequestArrived(state.statuses[merchant], current, ports.now())) return false;
-    return !jobWant(current.owner) || ports.now() - current.requestedAt < ARRIVAL_WINDOW_MS;
+    const merchant = state.merchantCharacter;
+    if (!merchant) return false;
+    const online = !!state.steamMembers?.includes(merchant) || !!state.headlessSlots?.includes(merchant);
+    return moveInFlight(request(), online, state.statuses[merchant], ports.now());
   }
   // `realm.moving()` for one character, the roster's read. A party switch's move holds no roster
   // action: the switch's own Steam group restore carries a Steam merchant to the realm, and a

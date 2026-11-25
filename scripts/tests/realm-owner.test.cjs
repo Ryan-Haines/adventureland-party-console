@@ -310,6 +310,23 @@ scenarioTable('the merchant realm owner over a two-character headless fixture ra
   f.owner.retry();
   assert.equal(f.state.merchantRealmRequests.M, undefined);
 }],
+// W49 run 6 (liveb-step10-run6.log): the merchant logged out during its home move and the roster
+// refused its next spawn on that move with no end.
+["an offline merchant's home move holds no roster action, and its next login finishes it", () => {
+  const f = fixture({}, 'SR_EUI');
+  f.state.statuses.M.server = 'EUI';
+  assert.equal(f.owner.ensureHome('upgrade'), false);
+  assert.equal(f.owner.movingFor('M'), true);
+  f.state.headlessSlots = ['F'];
+  assert.equal(f.owner.movingFor('M'), false);
+  assert.equal(f.state.merchantRealmRequests.M.owner, 'home');
+  assert.equal(f.blocks.M.realm, 'SR_USII');
+  f.state.headlessSlots = ['F', 'M'];
+  f.setNow(f.at() + 1000);
+  Object.assign(f.state.statuses.M, { server: 'USII', seenAt: f.at() });
+  assert.equal(f.owner.ensureHome('upgrade'), true);
+  assert.equal(f.state.merchantRealmRequests.M, undefined);
+}],
 ]);
 
 // The one hop executor on the character. An answer with `alreadyThere`

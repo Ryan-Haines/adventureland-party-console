@@ -185,7 +185,7 @@ export function createCoordinatorOwnershipPorts<Block extends { enabled?: boolea
       state.bankboiTransaction ||
       operation(name) ||
       // A Steam or roster action waits while the realm owner's move for the merchant is in flight;
-      // the move's own window bounds it.
+      // the move's own window or the merchant's logout ends it (merchant-realm/rules.ts moveInFlight).
       ports.realmMoving?.(name) === true
     );
   // The roster's one refusal: a BankBoi transaction, or the first of `names` the busy

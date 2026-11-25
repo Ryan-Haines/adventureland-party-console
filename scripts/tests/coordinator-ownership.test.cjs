@@ -77,7 +77,9 @@ test('readiness, active inventory work and bank transactions gate handoffs', () 
   f.state.bankboiTransaction=null;f.state.merchantCurrent={id:'stale-ordinary-job',phase:'assigned'};
   f.state.statuses.M={seenAt:0,runtime:'native'};
   assert.equal(f.service.busy(['M']),null,'Stale ordinary jobs must not block login recovery');
-  // The job's realm move is the calls owner's saved request for the merchant, asked a second before now.
+  // The job's realm move is the calls owner's saved request for the merchant, asked a second before now,
+  // while the merchant holds its Steam place.
+  f.state.steamMembers=['A','M'];
   f.state.merchantCurrent={id:'realm-owned-job',phase:'switching party realm'};
   f.state.merchantRealmRequests={M:{realm:'EUI',owner:'job:realm-owned-job',requestedAt:9000,attempts:1}};
   f.state.statuses.M={seenAt:0,runtime:'native'};

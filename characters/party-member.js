@@ -8168,6 +8168,7 @@
     "which owner's realm want wins": { at: "runtime/merchant-realm/rules.ts#wantRank", core: "tier-table", cite: "runtime/protocol/ranks.ts:12" },
     "a job wants the realm": { at: "runtime/merchant-realm/rules.ts#jobWant", core: "tier-table", cite: "runtime/protocol/ranks.ts:12" },
     "an add-on job's realm": { site: "runtime/hooks/rows/08-merchant.ts:19", hook: "merchant.jobKind" },
+    "a move holds the merchant": { at: "runtime/merchant-realm/rules.ts#moveInFlight", core: "integrity", cite: "runtime/merchant-realm/rules.ts:108, a held spawn waits only on a move an online merchant makes" },
     "realm blacklist refusal": { at: "runtime/merchant-realm/rules.ts#realmRefusal", hook: "settings.overlay" },
     // The home realm setting reaches the rule through `played`, so an add-on's overlay plays.
     "the home realm the console uses": { at: "runtime/merchant-realm/rules.ts#consoleHomeRealm", hook: "settings.overlay" },
@@ -47254,6 +47255,7 @@ ${hook}`, was = errors.get(key3);
     consoleHomeRealm: () => consoleHomeRealm,
     firstAccountRealm: () => firstAccountRealm,
     jobWant: () => jobWant,
+    moveInFlight: () => moveInFlight,
     normalizedRealm: () => normalizedRealm,
     realmRefusal: () => realmRefusal,
     realmRequestArrived: () => realmRequestArrived,
@@ -47299,6 +47301,11 @@ ${hook}`, was = errors.get(key3);
   var REALM_LOGIN_MS = 6e4;
   var REALM_HOME_CONFIRM_MS = 12e4;
   var REALM_HOME_REPLY_MS = 3e4;
+  function moveInFlight(request, online, status5, now) {
+    if (!request || request.exhausted || !online) return false;
+    if (realmRequestArrived(status5, request, now)) return false;
+    return !jobWant(request.owner) || now - request.requestedAt < ARRIVAL_WINDOW_MS;
+  }
   function realmRequestArrived(status5, request, now) {
     return Number(status5?.seenAt) > request.requestedAt && fresh(status5?.seenAt, now) && normalizedRealm(status5?.server) === request.realm;
   }

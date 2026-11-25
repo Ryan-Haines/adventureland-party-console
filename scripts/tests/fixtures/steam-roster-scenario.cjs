@@ -32,13 +32,13 @@ function groupFixture(steam=['P'],slots=['M','W','Trader',null]) {
   release:async()=>{state.handoff.multi.release.forEach(n=>online.delete(n));await service.released(state.handoff.id);}};
 }
 
-// The realm owner holds `merchant` on SR_USII with a job
-// running, and the coordinator's ownership ports read its move. `arrive` reports the merchant on
+// The realm owner holds `merchant` on SR_USII with a job running, online on the given Steam and
+// slot lists, and the coordinator's ownership ports read its move. `arrive` reports the merchant on
 // SR_EUI, which ends the move.
 function merchantMove({merchant,steam,slots}){
  let now=100000;const blocks={[merchant]:{realm:'SR_USII',connected:true}};
  const realmState={merchantCharacter:merchant,activeRealm:'SR_USII',merchantRealmRequests:{},merchantRealmBlacklist:[],
-  statuses:{[merchant]:{server:'USII',seenAt:now,runtime:'headless'}},commands:{},nextCommandId:1,merchantCurrent:{id:'a',reason:'ALData marketplace purchases'}};
+  statuses:{[merchant]:{server:'USII',seenAt:now,runtime:'headless'}},steamMembers:steam,headlessSlots:slots,commands:{},nextCommandId:1,merchantCurrent:{id:'a',reason:'ALData marketplace purchases'}};
  const realm=createMerchantRealmOwner(realmState,{now:()=>now,block:name=>blocks[name],realmLabel:r=>r,log(){},persist(){},restart(){},resolve:()=>true});
  const ownership=createCoordinatorOwnershipPorts({steamMembers:steam,nativeOwner:steam[0],headlessSlots:slots,steamSwitch:null,
   statuses:realmState.statuses,bankbois:{},bankboiTransaction:null,merchantCharacter:merchant,leader:null,lifecycle:{}},{},
