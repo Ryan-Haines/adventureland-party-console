@@ -1,0 +1,362 @@
+id	spec	window	test	row	verdict
+T1	live-movement-owner.spec.ts	W32	movement owner: the rows that start from the default fixture > UP-1 cant_join: one refused join ends the round and the respawned priest goes back to the farm	UP-1 cant_join: one refused join ends the round and the respawned priest goes back to the farm	observe in W32
+T2	live-movement-owner.spec.ts	W30	movement owner: the rows that start from the default fixture > UP-1 horseman: the respawned follower walks back while the coordinator keeps the failed walk	UP-1 horseman: the respawned follower walks back while the coordinator keeps the failed walk	keep
+T3	live-movement-owner.spec.ts	W30	movement owner: the rows that start from the default fixture > UP-1 mrgreen: the respawned follower walks back while the coordinator keeps the failed walk	UP-1 mrgreen: the respawned follower walks back while the coordinator keeps the failed walk	merge into T2 (same check, W30)
+T4	live-movement-owner.spec.ts	W25	movement owner: the rows that start from the default fixture > UP-3 farm: the priest respawns after the event ended and goes back to its farm	UP-3 farm: the priest respawns after the event ended and goes back to its farm	keep
+T5	live-movement-owner.spec.ts	W25	movement owner: the rows that start from the default fixture > UP-3 hunt: the priest respawns after the event ended and goes back to its hunt	UP-3 hunt: the priest respawns after the event ended and goes back to its hunt	merge into T4 (same check, W25)
+T6	live-movement-owner.spec.ts	W29	movement owner: the rows that start from the default fixture > E1: an escape during a live event, then Resume	E1: an escape during a live event, then Resume	keep
+T7	live-movement-owner.spec.ts	W07	movement owner: the rows that start from the default fixture > M2: a character on Manual, then Pause headless	M2: a character on Manual, then Pause headless	keep
+T8	live-movement-owner.spec.ts	W09	movement owner: the rows that start from the default fixture > movement owner on: ranked requests, the stop rule, kept and retargeted journeys, waits and holds	movement owner on: ranked requests, the stop rule, kept and retargeted journeys, waits and holds	fix
+T9	live-movement-owner.spec.ts	UNIT	movement owner: the rows that start from the default fixture > movement owner on: a rung with no progress logs one stuck record	movement owner on: a rung with no progress logs one stuck record	remove
+T10	live-movement-owner.spec.ts	UNIT	movement owner: the rows that start from the default fixture > movement records: typed calls name their site, end codes, a bounded ring of copies, none in the heartbeat	movement records: typed calls name their site, end codes, a bounded ring of copies, none in the heartbeat	remove
+T11	live-movement-owner.spec.ts	W01	movement owner: the rows that start from the default fixture > movement owner on: a walk names its tier, and the card names the trip from its first poll and stays still while farming	movement owner on: a walk names its tier, and the card names the trip from its first poll and stays still while farming	observe in W01
+T12	live-movement-owner.spec.ts	W10	movement owner: the rows that start from the default fixture > movement owner on: a party travel that cannot arrive climbs the walk ladder and never fails for good	movement owner on: a party travel that cannot arrive climbs the walk ladder and never fails for good	fix
+T13	live-movement-owner.spec.ts	W01	movement owner: the rows that start from the default fixture > combat steps, owner on: six farming windows	combat steps, owner on: six farming windows	keep
+T14	live-movement-owner.spec.ts	W08	movement owner: the rows that start from the default fixture > step safety, owner on: six windows on the bee field	step safety, owner on: six windows on the bee field	fix
+T15	live-movement-owner.spec.ts	W10	movement owner: the rows that start from the default fixture > coordinator interruption during a convoy recovers the actual destination	coordinator interruption during a convoy recovers the actual destination	observe in W10
+T16	live-movement-owner.spec.ts	W27	movement owner: the rows that start from the default fixture > active event return hands off when leaving Green	active event return hands off when leaving Green	keep
+T17	live-movement-owner.spec.ts	W27	movement owner: the rows that start from the default fixture > active event return hands off when following a Pumpkin leader	active event return hands off when following a Pumpkin leader	observe in W27
+T18	live-movement-owner.spec.ts	W27	movement owner: the rows that start from the default fixture > active event return hands off when restoring a held Green return	active event return hands off when restoring a held Green return	fix
+T19	live-movement-owner.spec.ts	W27	movement owner: the rows that start from the default fixture > active event return hands off when interrupting a checkpoint return	active event return hands off when interrupting a checkpoint return	fix
+T20	live-movement-owner.spec.ts	W27	movement owner: the rows that start from the default fixture > event rendezvous starts with a moved destination	event rendezvous starts with a moved destination	observe in W27
+T21	live-movement-owner.spec.ts	W27	movement owner: the rows that start from the default fixture > event rendezvous starts with a silent member	event rendezvous starts with a silent member	fix
+T22	live-movement-owner.spec.ts	W27	movement owner: the rows that start from the default fixture > event rendezvous starts with a left-out member, who waits in Main	event rendezvous starts with a left-out member, who waits in Main	observe in W27
+T23	live-movement-owner.spec.ts	W14	movement owner: the rows that start from the default fixture > saved follower Hunt preferences and cleared backup focus preserve the active leader quest through real reward	saved follower Hunt preferences and cleared backup focus preserve the active leader quest through real reward	observe in W14
+T24	live-movement-owner.spec.ts	W13	movement owner: the rows that start from the default fixture > native phoenix interruption kills and loots before resuming the same Hunt	native phoenix interruption kills and loots before resuming the same Hunt	observe in W13
+T25	live-movement-owner.spec.ts	W13	movement owner: the rows that start from the default fixture > native goldenbat interruption kills and loots before resuming the same Hunt	native goldenbat interruption kills and loots before resuming the same Hunt	merge into T24 (same check, W13)
+T26	live-movement-owner.spec.ts	W13	movement owner: the rows that start from the default fixture > native cutebee interruption kills and loots before resuming the same Hunt	native cutebee interruption kills and loots before resuming the same Hunt	merge into T24 (same check, W13)
+T27	live-movement-owner.spec.ts	W13	movement owner: the rows that start from the default fixture > native hen interruption kills and loots before resuming the same Hunt	native hen interruption kills and loots before resuming the same Hunt	merge into T24 (same check, W13)
+T28	live-movement-owner.spec.ts	W13	movement owner: the rows that start from the default fixture > native rooster interruption kills and loots before resuming the same Hunt	native rooster interruption kills and loots before resuming the same Hunt	merge into T24 (same check, W13)
+T29	live-movement-owner.spec.ts	W13	movement owner: the rows that start from the default fixture > native tinyp interruption kills and loots before resuming the same Hunt	native tinyp interruption kills and loots before resuming the same Hunt	keep
+T30	live-movement-owner.spec.ts	W20	movement owner: the rows that start from the default fixture > Hunt collection resumes after coordinator restart without losing or duplicating cargo	Hunt collection resumes after coordinator restart without losing or duplicating cargo	observe in W20
+T31	live-movement-owner.spec.ts	W20	movement owner: the rows that start from the default fixture > Hunt collection resumes after queued merchant death without losing or duplicating cargo	Hunt collection resumes after queued merchant death without losing or duplicating cargo	observe in W20
+T32	live-movement-owner.spec.ts	W20	movement owner: the rows that start from the default fixture > Hunt collection resumes after active merchant death without losing or duplicating cargo	Hunt collection resumes after active merchant death without losing or duplicating cargo	keep
+T33	live-movement-owner.spec.ts	W07	movement owner: the rows that start from the default fixture > Hunt collection resumes after a member on Manual that carries on without losing or duplicating cargo	Hunt collection resumes after a member on Manual that carries on without losing or duplicating cargo	observe in W07
+T34	live-movement-owner.spec.ts	W07	movement owner: the rows that start from the default fixture > Hunt collection resumes after a member on Manual that follows me without losing or duplicating cargo	Hunt collection resumes after a member on Manual that follows me without losing or duplicating cargo	keep
+T35	live-movement-owner.spec.ts	W34	movement owner: the rows that start from the default fixture > Goobrawl interrupts Hunt and real event evacuation resumes it	Goobrawl interrupts Hunt and real event evacuation resumes it	keep
+T36	live-movement-owner.spec.ts	W34	movement owner: the rows that start from the default fixture > Goobrawl interrupts Hunt and real event evacuation resumes it across coordinator restart	Goobrawl interrupts Hunt and real event evacuation resumes it across coordinator restart	fix
+T37	live-movement-owner.spec.ts	W35	movement owner: the rows that start from the default fixture > Goobrawl interrupts Hunt and real event evacuation resumes it with a finished Hunt at the event start	Goobrawl interrupts Hunt and real event evacuation resumes it with a finished Hunt at the event start	fix
+T38	live-movement-owner.spec.ts	W60	movement owner: the rows that start from the default fixture > Achievement Hunt in play: the add-on picks goo, its task holds the party to the kills, and its switch-off returns the mode	Achievement Hunt in play: the add-on picks goo, its task holds the party to the kills, and its switch-off returns the mode	observe in W60
+T39	live-movement-owner.spec.ts	W41	movement owner: the rows that start from the default fixture > Cave shared-route pacing keeps the party together and stops the selected route	Cave shared-route pacing keeps the party together and stops the selected route	fix
+T40	live-movement-owner.spec.ts	W05	movement owner: the rows that start from the default fixture > call budget: the merchant's bursts stay under the limit	call budget: the merchant's bursts stay under the limit	fix
+T41	live-movement-owner.spec.ts	W05	movement owner: the rows that start from the default fixture > call budget: survival goes first while jobs fill the window	call budget: survival goes first while jobs fill the window	fix
+T42	live-movement-owner.spec.ts	HARNESS	movement owner: the rows that start from the default fixture > call budget: a row end puts back the calls.band and socket.emit it wrapped	call budget: a row end puts back the calls.band and socket.emit it wrapped	remove
+T43	live-movement-owner.spec.ts	W01	movement owner: the rows that start from the default fixture > turns: the priest's slot at the edge	turns: the priest's slot at the edge	fix
+T44	live-movement-owner.spec.ts	W06	movement owner: the rows that start from the default fixture > turns: one potion in flight	turns: one potion in flight	fix
+T45	live-movement-owner.spec.ts	W04	movement owner: the rows that start from the default fixture > survival: potions and regeneration per class	survival: potions and regeneration per class	fix
+T46	live-movement-owner.spec.ts	W08	movement owner: the rows that start from the default fixture > targeting: retire and skip	targeting: retire and skip	keep
+T47	live-movement-owner.spec.ts	W05	movement owner: the rows that start from the default fixture > call budget: a forced limitdc saves one snapshot	call budget: a forced limitdc saves one snapshot	keep
+T48	live-movement-owner.spec.ts	W06	movement owner: the rows that start from the default fixture > M2: the priest headless on Pause	M2: the priest headless on Pause	keep
+C1	live-game.spec.ts	W48	Steam-style CODE replacement retires old socket callbacks and pending heartbeat		merge into C27 (same check, W48)
+C2	live-game.spec.ts	W09	real server, native clients, maintained character runtime › a console character order produces real walking and observed arrival		merge into C6 (same check, W09)
+C3	live-game.spec.ts	DROP	real server, native clients, maintained character runtime › a two-character convoy reaches the destination through real movement		remove
+C4	live-game.spec.ts	W11	real server, native clients, maintained character runtime › a lost native follower reconnects and finishes the current convoy		keep
+C5	live-game.spec.ts	W09	real server, native clients, maintained character runtime › Town executes a real cast after travel and returns both party members without passive healing cancelling the channel		merge into C29 (same check, W09)
+C6	live-game.spec.ts	W09	real server, native clients, maintained character runtime › a merchant route crosses a real door into the bank and returns home		keep
+C7	live-game.spec.ts	W12	real server, native clients, maintained character runtime › starting Hunt in the dashboard obtains a real first quest from Daisy		merge into C8 (same check, W12)
+C8	live-game.spec.ts	W12	real server, native clients, maintained character runtime › Hunt kills real monsters then returns to Daisy and receives a real token		keep
+C9	live-game.spec.ts	W14	real server, native clients, maintained character runtime › a completed Hunt survives restart and claims its reward only once		observe in W14
+C10	live-game.spec.ts	W14	real server, native clients, maintained character runtime › Hunt off and a new destination prevent the previous mission resuming after restart		merge into C9 (same check, W14)
+C11	live-game.spec.ts	W34	real server, native clients, maintained character runtime › Hunt off as soon as the leader joins a real event preserves evacuation without reviving Hunt		observe in W34
+C12	live-game.spec.ts	W35	real server, native clients, maintained character runtime › Hunt off after the party joins a real event preserves evacuation without reviving Hunt		observe in W35
+C13	live-game.spec.ts	W47	real server, native clients, maintained character runtime › fragile loadout death recovery › a real character death is observed and the maintained runtime respawns it		merge into C26 (same check, W47)
+C14	live-game.spec.ts	W03	real server, native clients, maintained character runtime › a merchant delivery transfers one real item without creating or losing copies		keep
+C15	chronal-clock-reconnect.case.ts (imported by live-game.spec.ts)	HARNESS	ChronAL late joining actors preserve relative startup timers		remove
+C16	chronal-clock-reconnect.case.ts (imported by live-game.spec.ts)	HARNESS	ChronAL browser clock recovers an initial rejected handshake without losing virtual progress		remove
+C17	live-solo-ranger.spec.ts	W02	a single ranger leader continuously farms native Goos in Group mode		keep
+C18	live-monster-safety-reach.spec.ts	W22	a mage reaches its booboo while a second booboo attacks the warrior		keep
+C19	live-planner-corner.spec.ts	W10	planner corner edges › Routes from a town corner contain no edge the game rejects, and the party walks them unrepaired		fix
+C20	live-navigation-supersession.spec.ts	W49	realm departure retires an old native convoy before destination arrival		keep
+C21	live-navigation-supersession.spec.ts	W10	restored native Town keeps subsequent party travel commands increasing		keep
+C22	live-convoy-event-defense.spec.ts	W29	a follower fighting a live event boss a map away does not hold the leader in travel defense		keep
+C23	live-calls-hooks.spec.ts	W05	calls hooks: one fixture add-on registers every hook and event		keep
+C24	live-targeting-hooks.spec.ts	W08	targeting hooks: one fixture add-on registers every hook and event		fix (split across windows)
+C25	live-turns-hooks.spec.ts	W04	turns hooks: one fixture add-on registers every hook and event		fix (split across windows)
+C26	live-survival-hooks.spec.ts	W47	survival hooks: one fixture add-on registers every hook and event		keep
+C27	live-lifecycle-hooks.spec.ts	W48	lifecycle hooks: one fixture add-on registers every hook and event		keep
+C28	live-events-hooks.spec.ts	W34	events hooks: one fixture add-on registers every hook and event		observe in W34
+C29	live-movement-hooks.spec.ts	W09	movement hooks: one fixture add-on registers every hook and event	movement.request: holds, steps or walks the character at its add-on tier	keep
+C30	live-movement-hooks.spec.ts	W01	movement hooks: one fixture add-on registers every hook and event	group.anchor: the group record asks it with its members in a fight	keep
+C31	live-movement-hooks.spec.ts	W09	movement hooks: one fixture add-on registers every hook and event	step.safety: refuses a step that ends inside its zone	keep
+C32	live-movement-hooks.spec.ts	W01	movement hooks: one fixture add-on registers every hook and event	journey.started: fires when a request is granted, kept, retargeted or resumed	keep
+C33	live-movement-hooks.spec.ts	W06	movement hooks: one fixture add-on registers every hook and event	journey.paused: fires when a pause source, a click or a combat step pauses the journey	keep
+C34	live-movement-hooks.spec.ts	W06	movement hooks: one fixture add-on registers every hook and event	journey.resumed: fires when the pause ends	keep
+C35	live-movement-hooks.spec.ts	W01	movement hooks: one fixture add-on registers every hook and event	journey.ended: fires once with its end code	keep
+C36	live-movement-hooks.spec.ts	W01	movement hooks: one fixture add-on registers every hook and event	movement.followIfFar: a member inside the distance does not walk	fix
+C37	live-movement-hooks.spec.ts	W09	movement hooks: one fixture add-on registers every hook and event	walks.end: ends the group's walk with the asker's code	keep
+C38	live-movement-hooks.spec.ts	W01	movement hooks: one fixture add-on registers every hook and event	walk.formed: fires once when a group walk is created	keep
+C39	live-movement-hooks.spec.ts	W01	movement hooks: one fixture add-on registers every hook and event	walk.phase: fires on each phase change of the walk	keep
+C40	live-movement-hooks.spec.ts	W01	movement hooks: one fixture add-on registers every hook and event	walk.member: fires when a member completes or leaves the walk	keep
+C41	live-movement-hooks.spec.ts	W01	movement hooks: one fixture add-on registers every hook and event	walk.ended: fires once with the end code	keep
+C42	live-movement-hooks.spec.ts	W09	movement hooks: one fixture add-on registers every hook and event	walks.request: starts the group's walk at the asker's tier, and a lower ask is refused	keep
+C43	live-movement-hooks.spec.ts	W09	movement hooks: one fixture add-on registers every hook and event	movement.step: one step through step safety at the asker's turn	keep
+C44	live-movement-hooks.spec.ts	UNIT	movement hooks: one fixture add-on registers every hook and event	movement.live: names who holds movement	remove
+C45	live-movement-hooks.spec.ts	UNIT	movement hooks: one fixture add-on registers every hook and event	reports.fresh: answers the one freshness rule for a reading	remove
+C46	live-movement-hooks.spec.ts	UNIT	movement hooks: one fixture add-on registers every hook and event	movement.climbing: names the live climb's rung and try	remove
+C47	live-movement-hooks.spec.ts	UNIT	movement hooks: one fixture add-on registers every hook and event	movement.records: answers the character's ring	remove
+C48	live-movement-hooks.spec.ts	UNIT	movement hooks: one fixture add-on registers every hook and event	movement.incidents: answers the character's stuck and caught-error records	remove
+C49	live-movement-hooks.spec.ts	UNIT	movement hooks: one fixture add-on registers every hook and event	movement.formationRecovery: answers the group's terrain recovery round	remove
+C50	live-movement-hooks.spec.ts	UNIT	movement hooks: one fixture add-on registers every hook and event	movement.independentApproach: answers whether every member approaches on its own	remove
+C51	live-movement-hooks.spec.ts	UNIT	movement hooks: one fixture add-on registers every hook and event	movement.independentReadiness: answers each member's readiness report	remove
+C52	live-movement-hooks.spec.ts	UNIT	movement hooks: one fixture add-on registers every hook and event	movement.confirmIndependentApproach: issues and settles the confirmation round	remove
+C53	live-movement-hooks.spec.ts	W01	movement hooks: one fixture add-on registers every hook and event	route.avoid: the planner asks it for every route it plans	keep
+C54	live-movement-hooks.spec.ts	W09	movement hooks: one fixture add-on registers every hook and event	crossing.allows: refuses a crossing in plain words, and the crossing ends refused	keep
+C55	live-movement-hooks.spec.ts	W09	movement hooks: one fixture add-on registers every hook and event	step.point: offers this character's step point, which step safety judges	keep
+C56	live-movement-hooks.spec.ts	W09	movement hooks: one fixture add-on registers every hook and event	crossing.started: fires when a crossing is sent	keep
+C57	live-movement-hooks.spec.ts	W09	movement hooks: one fixture add-on registers every hook and event	crossing.ended: fires once when a crossing lands, is refused, interrupted or times out	keep
+C58	live-movement-hooks.spec.ts	W01	movement hooks: one fixture add-on registers every hook and event	step.sent: fires when a combat step is sent, with its mover and point	keep
+C59	live-movement-hooks.spec.ts	W01	movement hooks: one fixture add-on registers every hook and event	formation.moved: fires when a formation step is sent	keep
+C60	live-movement-bug7.spec.ts	W24	D.BUG7: a mage escort whose corner holds adds reaches its range of the joined boss		fix
+H1	live-hunt-anniversary-preemption.spec.ts	W36	an old Anniversary preemption response cannot stop the resumed native Hunt		merge into H9 (same check, W36)
+H2	live-hunt-code-identity.spec.ts	W10	native characters acknowledge executing CODE hashes and preserve inventory across coordinator restart		observe in W10
+H3	live-hunt-combat.spec.ts	W17	native Hunt travel combat and death ownership › armadillo Hunt kills passing goos outbound and returning before claiming Daisy		keep
+H4	live-hunt-combat.spec.ts	W19	native Hunt travel combat and death ownership › fighter death during Hunt releases the failed mission and recovers with native respawn		merge into H28 (same check, W19)
+H5	live-hunt-committed-three-fighter-corner.spec.ts	W21	committed three-fighter corner preserves red combat while Mage and Priest recover		keep
+H6	live-hunt-departure.spec.ts	W09	a member that hears the travel phase late departs late, with no new epoch or recovery, and reaches the destination		keep
+H7	live-hunt-empty-spawn.spec.ts	W21	empty saved hawk spawn recovers separated fighters and acquires on sight before the spawn center		keep
+H8	live-hunt-engaged-terrain.spec.ts	W22	healthy warrior reaches an engaged Phoenix through its open side		keep
+H9	live-hunt-events.spec.ts	W36	native anniversary visit resume delivers real kiss rewards and event deselection returns to current Hunt policy		keep
+H10	live-hunt-events.spec.ts	W36	native anniversary visit restart delivers real kiss rewards and event deselection returns to current Hunt policy		merge into H9 (same check, W36)
+H11	live-hunt-events.spec.ts	W37	native anniversary visit hunt-off delivers real kiss rewards and event deselection returns to current Hunt policy		keep
+H12	live-hunt-events.spec.ts	W12	disabled anniversary selection leaves native Hunt fighting and creates no visit reward		merge into H21 (same check, W12)
+H13	live-hunt-events.spec.ts	W13	disabled rare stays alive while native Hunt progresses and rejected settings preserve preferences		observe in W13
+H14	live-hunt-failed-collection.spec.ts	W20	failed convoy permits native collection without restarting exhausted travel		fix
+H15	live-hunt-ice-roamer.spec.ts	W09	a missing native sprite frame preserves actual convoy walking and draw scheduling		merge into H6 (same check, W09)
+H16	live-hunt-ice-roamer.spec.ts	W16	native Ice Roamer Hunt engages successive enemies and returns both real rewards		keep
+H17	live-hunt-lifecycle.spec.ts	W15	native Hunt lifecycle › a native Boo Boo Hunt crosses real map doors, kills its target and returns to Daisy		keep
+H18	live-hunt-lifecycle.spec.ts	W15	native Hunt lifecycle › native Boo Boo walking-return cache › native Boo Boo walking return reuses its validated route after a communication hold		merge into H17 (same check, W15)
+H19	live-hunt-lifecycle.spec.ts	W14	native Hunt lifecycle › native quest expiration records one failure, survives restart and obtains a fresh Daisy quest		fix
+H20	live-hunt-lifecycle.spec.ts	W14	native Hunt lifecycle › both independently completed party quests claim exactly one native reward each		observe in W14
+H21	live-hunt-lifecycle.spec.ts	W12	native Hunt lifecycle › a follower completed quest waits for leader real kills then both owners receive Daisy rewards		keep
+H22	live-hunt-lifecycle.spec.ts	W12	native Hunt lifecycle › a real leader final kill leaves an unfinished follower quest usable without a loot hold stall		keep
+H23	live-hunt-lifecycle.spec.ts	W61	native Hunt lifecycle › an unfollowed priest completes a native solo Hunt without activating the warrior controller		fix
+H24	live-hunt-lifecycle.spec.ts	W14	native Hunt lifecycle › Hunt off then on starts a new cycle using the remaining native quest after restart		keep
+H25	live-hunt-lifecycle.spec.ts	W18	native Hunt lifecycle › a preferred spawn survives restart and produces real Hunt kills at the selected area		fix
+H26	live-hunt-lifecycle.spec.ts	UNIT	native Hunt lifecycle › invalid backup and spawn preference mutations leave an active native Hunt intact		remove
+H27	live-hunt-lifecycle.spec.ts	W19	native Hunt lifecycle › an active Hunt survives native death and restart with death threshold 1		merge into H28 (same check, W19)
+H28	live-hunt-lifecycle.spec.ts	W19	native Hunt lifecycle › an active Hunt survives native death and restart with death threshold 2		keep
+H29	live-hunt-mage-range.spec.ts	W23	native mage closes from outside range and damages a fast Phoenix		keep
+H30	live-hunt-manual-event-override.spec.ts	W29	explicit command travel skips only the current native event occurrence		keep
+H31	live-hunt-manual-event-override.spec.ts	W29	explicit travel travel skips only the current native event occurrence		merge into H30 (same check, W29)
+H32	live-hunt-manual-event-override.spec.ts	W29	explicit monster travel skips only the current native event occurrence		merge into H30 (same check, W29)
+H33	live-hunt-multi-corner.spec.ts	W23	warrior › fighters route through multiple level1 corners to a visible combat target		keep
+H34	live-hunt-multi-corner.spec.ts	W23	mage › fighters route through multiple level1 corners to a visible combat target		merge into H33 (same check, W23)
+H35	live-hunt-planned-terrain.spec.ts	W22	blocked melee Phoenix recovery computes native hitbox-clear goals and reaches combat		fix
+H36	live-hunt-recovery.spec.ts	W10	native Hunt fallback arrival releases farming instead of repeatedly restarting travel		fix
+H37	live-hunt-recovery.spec.ts	W12	native Hunt survives completion-request loss and both owners receive exactly one Daisy reward		merge into H21 (same check, W12)
+H38	live-hunt-recovery.spec.ts	W12	native Hunt survives completion-response loss and both owners receive exactly one Daisy reward		merge into H22 (same check, W12)
+H39	live-hunt-recovery.spec.ts	W11	native Hunt survives follower-reconnect loss and both owners receive exactly one Daisy reward		keep
+H40	live-hunt-round2-recovery.spec.ts	W10	native escape requested membership › native escape retains both members with missing role metadata		keep
+H41	live-hunt-round2-recovery.spec.ts	W09	native collateral convoy defense › native Targetron splash does not stop an outsider convoy pass		keep
+H42	live-hunt-round2-recovery.spec.ts	W09	native collateral convoy defense › native Targetron splash preserves party defense		keep
+H43	live-hunt-round2-recovery.spec.ts	UNIT	native arrival connector recovery › native Town connector first submission loss preserves arrival and deadline		remove
+H44	live-hunt-round2-recovery.spec.ts	UNIT	native arrival connector recovery › native Town connector all submission loss preserves arrival and deadline		remove
+H45	live-hunt-round2-recovery.spec.ts	W37	native Anniversary staging recovery › native Anniversary staging survives an old-round slice without repeated Town warps		keep
+H46	live-hunt-sparkbot-follow.spec.ts	W21	sparkbot › planned Sparkbot approach independently routes each fighter into native attack range		keep
+H47	live-hunt-sparkbot-follow.spec.ts	W21	goo › planned Goo approach holds every fighter until fresh native range confirmation		merge into H49 (same check, W21)
+H48	live-hunt-sparkbot-follow.spec.ts	W21	native wall range readiness › planned Goo ranged fighters confirm native range through a blocked terrain ray		keep
+H49	live-hunt-sparkbot-follow.spec.ts	W21	goo › planned roaming Goo advances two queued targets with fresh native confirmation		keep
+H50	live-hunt-targetron-mage.spec.ts	W21	mage reengages a blocked Targetron from the reported UHills screenshot		keep
+H51	live-hunt-targetron-terrain.spec.ts	W21	warrior recovers a blocked Targetron approach in the reported UHills layout		keep
+H52	live-hunt-targetron-terrain.spec.ts	W21	selected UHills handoff › selected UHills robot engages while the healer rounds its approach		keep
+H53	live-hunt-town-recovery.spec.ts	W18	partial native Town failure reunites the Hunt party and claims both rewards		fix
+H54	live-hunting-hooks.spec.ts	W60	hunting hooks: one fixture add-on registers every hook and event		fix
+E1	live-halloween.spec.ts	W25	mrgreen native adds > Halloween mrgreen prioritizes native threshold adds, loots and resumes boss		merge into E4 (same check, W25)
+E2	live-halloween.spec.ts	W26	mrpumpkin native adds > Halloween mrpumpkin prioritizes native threshold adds, loots and resumes boss		merge into E5 (same check, W26)
+E3	live-halloween.spec.ts	UNIT	authorized pre-join native staging > Halloween future staging survives a delayed genuine admission before both clients join		remove
+E4	live-halloween.spec.ts	W25	mrgreen > Halloween mrgreen stages from native timer, fights, recovers death and returns after deselection		keep
+E5	live-halloween.spec.ts	W26	mrpumpkin > Halloween mrpumpkin stages from native timer, fights, recovers death and returns after deselection		keep
+E6	live-halloween.spec.ts	W26	mrpumpkin > Halloween mrpumpkin stages from native timer, fights, recovers death and returns after deselection with a lost final native completion response		merge into E5 (same check, W26)
+E7	live-halloween.spec.ts	W33	Slenderman > Halloween Slenderman follows native map-only sightings, reacquires a warp and returns after native death		keep
+E8	live-halloween.spec.ts	W32	Absent Halloween spawn > Halloween staging abandons an absent native spawn after its fixed deadline and returns without reopening		fix
+E9	live-october-events.spec.ts	W38	October native door tour visits every door once and restores its farming checkpoint		fix
+E10	live-october-events.spec.ts	W39	October native cipher merchant solves a constrained recipe and does not replay after restart		fix
+E11	live-october-events.spec.ts	W30	October Horseman walks to the forest graveyard and engages the native boss		merge into E24 (same check, W30)
+E12	live-october-events.spec.ts	W30	October Horseman add priority > October Horseman retargets each native Jack-o-Walker wave before resuming boss		merge into E24 (same check, W30)
+E13	live-october-events.spec.ts	W31	October Graveyard targeting > October Graveyard ignores an unchecked Gargoyle and fights it after enabling		merge into E25 (same check, W31)
+E14	live-october-events.spec.ts	W40	October Cipher gathering > October fighters gather until gather_end, then hand their ingredients to the merchant at the Witch		keep
+E15	live-october-events.spec.ts	UNIT	October Cipher inventory decisions > October Cipher prefers abundant ingredients for equally informative guesses		remove
+E16	live-october-events.spec.ts	UNIT	October Cipher inventory decisions > October Cipher ends an unavoidable recipe shortage at gather_end without spending a try		remove
+E17	live-october-events.spec.ts	UNIT	October Cipher inventory decisions > October Cipher with clues 0 brews on an empty board		remove
+E18	live-october-events.spec.ts	W39	October Cipher during a Hunt > Hunt running when the Cipher starts, one member dies on the way, the party reaches the Cipher and gathers		keep
+E19	live-october-events.spec.ts	W39	October Cipher complete stock at cutoff > October Cipher brews early on the mix the merchant affords, before the fighters hand over		keep
+E20	live-october-events.spec.ts	W39	Cipher priority handoff > Cipher gathering interrupts lower priority Green and reaches the selected Spider spawn		keep
+E21	live-october-additions.spec.ts	W30	October boss avoidance > October additions: farming with the all focus never pulls an unjoined Horseman		merge into E24 (same check, W30)
+E22	live-october-additions.spec.ts	UNIT	October additions: the Bestiary credits each event-only monster to its event		remove
+E23	live-october-additions.spec.ts	UNIT	October additions: older clients retain their complete event priority order		remove
+E24	live-event-pretravel.spec.ts	W30	published horseman > Event pretravel horseman leaves at its walk estimate and fights only after LIVE		keep
+E25	live-event-pretravel.spec.ts	W31	published graveyard > Event pretravel graveyard leaves at its walk estimate and returns when cancelled		keep
+E26	live-event-entry-failure.spec.ts	W26	native event entry recovers Town unavailable once		keep
+E27	live-event-entry-failure.spec.ts	W26	native event entry recovers entry unavailable until exhausted		merge into E26 (same check, W26)
+E28	live-event-entry-failure.spec.ts	W32	ended A/B arena reconnects once and completes native Main recovery		keep
+E29	live-event-runtime-recovery.spec.ts	W25	empty event sighting recovery > native Mr Green leaves an empty last-seen waypoint and reacquires its catalog spawn		keep
+E30	live-event-runtime-recovery.spec.ts	W25	native respawned event follower starts catchup while the survivor convoy is still moving		keep
+E31	live-event-runtime-recovery.spec.ts	W25	native event death during convoy admission returns after respawn		merge into E30 (same check, W25)
+E32	live-event-runtime-recovery.spec.ts	W28	native fixed-end event timer survives clock resync and a limit added during attendance		keep
+E33	live-event-runtime-recovery.spec.ts	W28	retired event exit ownership > native event entry resumes after its old return cycle disappears		keep
+E34	live-event-runtime-recovery.spec.ts	UNIT	retired event exit ownership > native event entry resumes after its old deferred return is superseded		remove
+E35	live-event-runtime-recovery.spec.ts	UNIT	retired event exit ownership > native event entry resumes after its old deferred return admits a temporarily stale peer		remove
+E36	live-event-runtime-recovery.spec.ts	W28	native event walking recovers owned CODE turnover after coordinator restart		keep
+E37	live-event-runtime-recovery.spec.ts	W28	native event selection replaces a failed old entry without waiting on another boss		merge into E36 (same check, W28)
+E38	live-event-runtime-recovery.spec.ts	W26	visible event boss separated by native terrain > native event route retains ownership until the visible boss is attack reachable		keep
+E39	live-event-runtime-recovery.spec.ts	W28	native event limits exhaust only the current instance and survive restart		fix
+E40	live-event-runtime-recovery.spec.ts	W25	native mrgreen walk yields to a newly visible boss before the advertised spawn		keep
+E41	live-event-runtime-recovery.spec.ts	W26	native mrpumpkin walk yields to a newly visible boss before the advertised spawn		observe in W26
+E42	live-event-runtime-recovery.spec.ts	W29	farming focus changed during native event attendance > new farming focus resumes after natural Halloween completion		keep
+E43	live-cave.spec.ts	W41	Cave entry closes settings, shows native choices and keeps follower maps and travel working		observe in W41
+E44	live-cave.spec.ts	W41	Cave completes native rooms and recovers displaced stairs after farewell		observe in W41
+E45	live-cave.spec.ts	W41	Cave assembly regroups displaced completed participants before departure (random)		observe in W41
+E46	live-cave.spec.ts	W41	Cave assembly regroups displaced completed participants before departure (unavailable entry shop)		merge into E45 (same check, W41)
+E47	live-cave.spec.ts	W41	Cave owner rows: the phase notice, the visit read, the priest after the rescue vote and the event exit		observe in W41
+E48	live-cave-headless.spec.ts	W42	a headless party sees the Cave floor through its leader and frees it when the visit ends		keep
+E49	live-cave-talk.spec.ts	W41	Cave talk reopens a merchant after a later encounter, buys its item, and Retry starts the failed travel again		observe in W41
+E50	live-console-explicit-activation.spec.ts	W48	native browser CODE ignores manifest edits until explicit activation and supports rollback		observe in W48
+E51	live-console-main-reload.spec.ts	W48	Main reload parks fighters, preserves the merchant position and restores the saved farm checkpoint		observe in W48
+E52	live-console-mixed-deployment.spec.ts	W48	one deployment barrier covers the native browser and real headless workers through coordinator restart		keep
+E53	live-console-port-binding.spec.ts	W48	native coordinator starts beside an occupied probe port and reconnects after restart		merge into E52 (same check, W48)
+E54	chronal-clock-reconnect.case.ts	HARNESS	ChronAL browser clock recovers an initial rejected handshake without losing virtual progress		remove
+E55	chronal-clock-reconnect.case.ts	HARNESS	ChronAL late joining actors preserve relative startup timers		remove
+E56	live-farm-death-escape.spec.ts	W46	survival on, owner on > case A: the trio lands off home > bug 5 closed: the trio escape lands in the Arena		keep
+E57	live-farm-death-escape.spec.ts	W43	cases B and C: a blocked walk home, then a player command during it > UP-2 and D7: the walk home climbs past blocked doors, and a player command ends it	D7: a travel command ends the escape and the priest walks it (owner on)	keep
+E58	live-farm-death-escape.spec.ts	W43	cases B and C: a blocked walk home, then a player command during it > UP-2 and D7: the walk home climbs past blocked doors, and a player command ends it	UP-2 recovers: a farming death, the first four walks home fail at the door	keep
+E59	live-farm-death-escape.spec.ts	W43	cases B and C: a blocked walk home, then a player command during it > UP-2 and D7: the walk home climbs past blocked doors, and a player command ends it	a Hunt turn-in comes due during the escape walk home	merge into E58 (same check, W43)
+E60	live-farm-death-escape.spec.ts	W46	cases B and C: a blocked walk home, then a player command during it > UP-2 and D7: the walk home climbs past blocked doors, and a player command ends it	case E: a party with no mage walks home	keep
+E61	live-farm-death-escape.spec.ts	W44	cases B and C: a blocked walk home, then a player command during it > UP-2 and D7: the walk home climbs past blocked doors, and a player command ends it	case F (1): after a death the party finishes a fight it wins	keep
+E62	live-farm-death-escape.spec.ts	W44	cases B and C: a blocked walk home, then a player command during it > UP-2 and D7: the walk home climbs past blocked doors, and a player command ends it	case F (2): after a death the party leaves a fight it cannot outlast	merge into E61 (same check, W44)
+E63	live-farm-death-escape.spec.ts	UNIT	cases B and C: a blocked walk home, then a player command during it > UP-2 and D7: the walk home climbs past blocked doors, and a player command ends it	S9.11: a fixture add-on centres the formation on the member it names	remove
+E64	live-farm-death-escape.spec.ts	W06	cases B and C: a blocked walk home, then a player command during it > UP-2 and D7: the walk home climbs past blocked doors, and a player command ends it	safe console reload finishes the native fight without acquiring the next target; the console Pause holds through a deploy and restarts until Play	observe in W06
+E65	live-farm-death-escape.spec.ts	W48	cases B and C: a blocked walk home, then a player command during it > UP-2 and D7: the walk home climbs past blocked doors, and a player command ends it	safe console reload finishes the native fight without acquiring the next target after Hunt and unjoined event selection turnover	observe in W48
+E66	live-farm-death-escape.spec.ts	W48	cases B and C: a blocked walk home, then a player command during it > UP-2 and D7: the walk home climbs past blocked doors, and a player command ends it	console reload resumes native farming and roaming defense in safe mode	observe in W48
+E67	live-farm-death-escape.spec.ts	W48	cases B and C: a blocked walk home, then a player command during it > UP-2 and D7: the walk home climbs past blocked doors, and a player command ends it	console reload resumes native farming and roaming defense in now mode	observe in W48
+E68	live-farm-death-escape.spec.ts	W45	case D: a party with a mage that is not the trio > case D: the mage leads the escape of a ranger, a priest and a mage	case D (1): the mage ports both members	keep
+E69	live-farm-death-escape.spec.ts	W45	case D: a party with a mage that is not the trio > case D: the mage leads the escape of a ranger, a priest and a mage	case D (2): the mage ports whom its MP covers, the other walks	keep
+E70	live-farm-death-escape.spec.ts	W45	case D: a party with a mage that is not the trio > case D: the mage leads the escape of a ranger, a priest and a mage	case D (3): a member dead after the Blink leaves to its own recovery	keep
+A1	live-bank-collection.spec.ts	W51	bank popup sort completes native merchant-luck swaps and permits departure		observe in W51
+A2	live-bank-collection.spec.ts	UNIT	bank popup sort completes legacy recovery and permits departure		remove
+A3	live-bank-collection.spec.ts	W51	bank automatic NPC collection runs with toggle		observe in W51
+A4	live-bank-collection.spec.ts	W51	bank automatic NPC collection runs with already enabled		merge into A3 (same check, W51)
+A5	live-bank-collection.spec.ts	W51	bank automatic NPC collection runs with threshold		observe in W51
+A6	live-bank-collection.spec.ts	W51	merchant compresses five candy piles and bank sort consolidates compatible silk		observe in W51
+A7	live-bank-collection.spec.ts	W57	resumed exchange compresses newly delivered candy while reward receipts remain owned		fix
+A8	live-bank-npc-sales.spec.ts	W51	full merchant defers external compounds until native NPC sales free capacity		observe in W51
+A9	live-bank-npc-sales.spec.ts	W03	bank sale scheduling collapses cleanout retries and sells only excess reserved stock		fix
+A10	live-bank-npc-sales.spec.ts	W51	bank NPC sale rule withdraws native stock and respects disabled sales across restart		observe in W51
+A11	live-bank-npc-sales.spec.ts	W51	bank NPC selection caps ten stacks and excludes persisted NPC stand conflicts		observe in W51
+A12	live-bank-staging.spec.ts	W54	bank uses all initial slots until the first offline BankBoi reserves its transfer row		observe in W54
+A13	live-bankboi-offerings.spec.ts	W54	manual BankBoi Lantern triplet survives delivery and restart before one native compound		observe in W54
+A14	live-bankboi-offerings.spec.ts	W54	safe maintenance waits for the active BankBoi instead of the stopped merchant		observe in W54
+A15	live-bankboi-offerings.spec.ts	W54	automatic NPC sales retrieve BankBoi stock and preserve kept and locked copies		observe in W54
+A16	live-bankboi-offerings.spec.ts	W54	BankBoi compound inputs admit merchant work only after native bank delivery		observe in W54
+A17	live-bankboi-offerings.spec.ts	W54	BankBoi-only offering supplies manual native upgrade (none)		observe in W54
+A18	live-bankboi-offerings.spec.ts	W55	BankBoi-only offering supplies manual native upgrade (handoff)		keep
+A19	live-bankboi-offerings.spec.ts	W55	BankBoi-only offering supplies manual native upgrade (delivery)		merge into A18 (same check, W55)
+A20	live-bankboi-offerings.spec.ts	W54	BankBoi-only offering supplies manual native upgrade (remote input)		observe in W54
+A21	live-bankboi-offerings.spec.ts	W54	BankBoi-only offering supplies required automatic native upgrade (none)		merge into A17 (same check, W54)
+A22	live-bankboi-offerings.spec.ts	W55	BankBoi-only offering supplies required automatic native upgrade (handoff)		merge into A18 (same check, W55)
+A23	live-bankboi-offerings.spec.ts	W55	BankBoi-only offering supplies required automatic native upgrade (delivery)		merge into A18 (same check, W55)
+A24	live-bankboi-offerings.spec.ts	W52	ordinary manual offering stock boundary: carried		observe in W52
+A25	live-bankboi-offerings.spec.ts	W52	ordinary manual offering stock boundary: native bank		observe in W52
+A26	live-bankboi-offerings.spec.ts	UNIT	ordinary manual offering stock boundary: optional absent		remove
+A27	live-bankboi-offerings.spec.ts	W52	ordinary manual offering stock boundary: required absent		fix
+A28	live-bankboi-offerings.spec.ts	W52	ordinary manual offering stock boundary: protected		observe in W52
+A29	live-bankboi-offerings.spec.ts	W54	BankBoi drains all seven reserve cells after a persisted movement timeout		observe in W54
+A30	live-bankboi.spec.ts	W54	BankBoi storage bypasses merchant production admission and combines native stacks		observe in W54
+A31	live-economy.spec.ts	W52	merchant buys one Liquid Luck from the customer side of the Winter Inn bar		observe in W52
+A32	live-economy.spec.ts	W53	completed native upgrade receipt restores commerce after a lost completion response		keep
+A33	live-economy.spec.ts	UNIT	restarted upgrade batch whose owned items moved holds for inventory review		remove
+A34	live-economy.spec.ts	UNIT	restarted upgrade batch whose owned items moved holds for inventory review beside surplus identical cargo		remove
+A35	live-economy.spec.ts	W52	unavailable upgrade estimate enforces its gold cap across native purchases and restart		keep
+A36	live-economy.spec.ts	W53	production journal storage echoes retain the current native attempt ownership		observe in W53
+A37	live-economy.spec.ts	UNIT	operator unknown receipt review resumes a missing commerce cycle without resetting spend		remove
+A38	live-economy.spec.ts	W56	merchant stand location is valid at first setup and stays saved through restart		observe in W56
+A39	live-economy.spec.ts	W56	MJ15: one covered stand bid queues its funding once across six other jobs		observe in W56
+A40	live-economy.spec.ts	W53	best-effort lucky restoration preserves changed native cargo and sequential rolls across CODE restart		keep
+A41	live-economy.spec.ts	W53	best-effort lucky restoration preserves changed native cargo and locked rolls across CODE restart		merge into A40 (same check, W53)
+A42	live-economy.spec.ts	W53	merchant finishes native upgrades despite delayed lucky journal storage echoes		observe in W53
+A43	live-economy.spec.ts	W53	lucky upgrade preserves party deliveries across preparation and best-effort restoration		merge into A40 (same check, W53)
+A44	live-economy.spec.ts	W52	merchant mass skills use both tiers and passive recovery restores critical HP and MP during work		fix
+A45	live-economy.spec.ts	W52	upgrade purchase batch excludes an existing target-level coat		observe in W52
+A46	live-economy.spec.ts	W53	buy with upgrade target survives lucky restoration failure and missing client journals across restart		merge into A40 (same check, W53)
+A47	live-economy.spec.ts	W57	real merchant economy and durable work > native exchanges bank default rewards, chain marked boxes and sell rewards across restart		observe in W57
+A48	live-economy.spec.ts	UNIT	real merchant economy and durable work > failed delivery equip reconciles missing stock across restart		remove
+A49	live-economy.spec.ts	W03	real merchant economy and durable work > failed delivery equip reconciles retained merchant stock across restart		observe in W03
+A50	live-economy.spec.ts	W52	real merchant economy and durable work > duplicate queued NPC buys execute once and remain complete after coordinator restart		observe in W52
+A51	live-economy.spec.ts	W51	real merchant economy and durable work > NPC partial sale credits actual gold and preserves the unsold stack after restart		observe in W51
+A52	live-economy.spec.ts	W51	real merchant economy and durable work > marked bank deposit and requested withdrawal conserve a real stack across restart		observe in W51
+A53	live-economy.spec.ts	W52	real merchant economy and durable work > a cancelled queued purchase stays cancelled while a later real purchase completes		observe in W52
+A54	live-economy.spec.ts	W52	real merchant economy and durable work > a manual upgrade consumes one real scroll and does not replay after restart		observe in W52
+A55	live-economy.spec.ts	W56	native WTB withdraws bank funding and reconciles replaced offers after reopening		observe in W56
+A56	live-economy.spec.ts	W56	native WTB retries an empty never-confirmed reservation after restart without counting a fill		observe in W56
+A57	live-economy.spec.ts	W03	native Tracktrix stays in the final inventory slot through full-bag cleanout and merchant tidying		observe in W03
+A58	live-economy.spec.ts	W03	auto merchant collects twelve native copies alongside a finite upgrade rule		observe in W03
+A59	live-economy.spec.ts	W03	auto merchant collects twelve native copies alongside a finite compound rule		observe in W03
+A60	live-economy.spec.ts	W52	manual compound from native bank withdraws exactly its reserved triplet		observe in W52
+A61	live-economy.spec.ts	W52	automatic compound from native bank withdraws exactly its reserved triplet		merge into A60 (same check, W52)
+A62	live-economy.spec.ts	W56	IT21: a level 80 merchant opens a 30-slot stand		observe in W56
+M01	live-catalog.spec.ts	W01	accepted native catalogs stop retransmitting on every character heartbeat		observe in W01
+M02	live-catalog.spec.ts	W05	native tracker home rewards refresh monster and item discovery after later table changes		observe in W05
+M03	live-combat-handoff.spec.ts	W03	bag-only native merchant collection finishes while the fighter keeps fighting		observe in W03
+M04	live-combat-handoff.spec.ts	W05	native collection sends wait while the call-cost window is held, then all transfer		fix
+M05	live-elixir-restock.spec.ts	W03	elixir restock stored uses native supply and consumption receipts		observe in W03
+M06	live-elixir-restock.spec.ts	W03	elixir restock buy uses native supply and consumption receipts		observe in W03
+M07	live-elixir-restock.spec.ts	W03	elixir restock craft uses native supply and consumption receipts		observe in W03
+M08	live-elixir-restock.spec.ts	W51	merchant restocks and consumes its own native elixir		observe in W51
+M09	live-equipment.spec.ts	DROP	merchant gathering waits at capacity without resetting cooldowns		remove
+M10	live-equipment.spec.ts	W58	manual merchant weapon remains selected through gathering and restart		merge into M11 (same check, W58)
+M11	live-equipment.spec.ts	W58	manual merchant weapon remains selected through gathering and restart across an interrupted native cast		observe in W58
+M12	live-equipment.spec.ts	W09	Loaded Die equips through the priest inventory menu into the native orb slot		observe in W09
+M13	live-equipment.spec.ts	UNIT	gathering tool crafting settings are opt in and persist independently		remove
+M14	live-equipment.spec.ts	W58	missing fishing tool crafts once only after opt in and available materials		observe in W58
+M15	live-equipment.spec.ts	W58	missing mining tool crafts once only after opt in and available materials		merge into M14 (same check, W58)
+M16	live-exchange-collection.spec.ts	W57	party Exchange hands selected native stock to the merchant		observe in W57
+M17	live-exchange-collection.spec.ts	W57	party Auto exchange hands selected native stock to the merchant		merge into M16 (same check, W57)
+M18	live-exchange-reward-bank.spec.ts	W57	exchange rewards that merge into carried stacks are banked by default		observe in W57
+M19	live-farming-handoff.spec.ts	W21	native UHills farming handoff reaches terrain-safe combat for both fighters		keep
+M20	live-franky-party.spec.ts	W24	disabling inherited Franky interrupts native boss combat and evacuates both participants		keep
+M21	live-franky.spec.ts	W24	Franky personal defense and Cleave › Franky members kill personal mummies then resume boss and warrior cleaves nearby enemies		merge into M20 (same check, W24)
+M22	live-franky.spec.ts	W22	ordinary warrior Cleave › warrior Cleave hits two native attackers in default mode and skips one		merge into M23 (same check, W22)
+M23	live-franky.spec.ts	W22	ordinary warrior Cleave › warrior Cleave hits two native attackers in scatter mode and skips one		observe in W22
+M24	live-franky.spec.ts	W17	restored acknowledged Franky exit resumes completed gscorpion Hunt from desertland while the boss remains alive		observe in W17
+M25	live-gathering-cooldown.spec.ts	W58	a missed fishing or mining channel is recast at once; a success waits for the game cooldown		fix
+M26	live-home-connect.spec.ts	W49	headless spawn and restart use home realm despite stale worker configuration		observe in W49
+M27	live-home-realm.spec.ts	W49	home realm change confirms every active character including merchant		keep
+M28	live-home-realm.spec.ts	W49	temporary native headless home change › offline merchant logs in to set home and returns offline without changing slots		merge into M27 (same check, W49)
+M29	live-items-hooks.spec.ts	W03	items hooks: one fixture add-on registers every hook and event		observe in W03
+M30	live-mailbox.spec.ts	W51	mailbox automation collects native attachments before deletion and records confirmed sent mail (delete enabled afterward)		observe in W51
+M31	live-mailbox.spec.ts	W51	mailbox automation collects native attachments before deletion and records confirmed sent mail (delete enabled during collection)		merge into M30 (same check, W51)
+M32	live-manual-upgrade.spec.ts	W52	interrupted automatic broom resumes from +2 until +7 or native destruction		observe in W52
+M33	live-manual-upgrade.spec.ts	W52	displaced manual upgrade recovers unfinished inventory among completed duplicates		merge into M32 (same check, W52)
+M34	live-manual-upgrade.spec.ts	W52	withdrawn manual shield and inventory shield finish one mixed upgrade batch		merge into M32 (same check, W52)
+M35	live-merchant-anniversary-availability.spec.ts	W12	merchant Main arrival retires current empty event return and sells a full inventory during Hunt		observe in W12
+M36	live-merchant-anniversary-availability.spec.ts	W12	merchant Main arrival retires deferred empty event return and sells a full inventory during Hunt		merge into M35 (same check, W12)
+M37	live-merchant-anniversary-availability.spec.ts	W38	merchant October admission › merchant adopts a deferred Cipher return into the native door tour and resumes NPC sales		observe in W38
+M38	live-merchant-anniversary-availability.spec.ts	W37	unavailable native Anniversary host releases merchant bank work then visit resumes on reconnect		keep
+M39	live-merchant-config.spec.ts	W09	fresh merchant login automatically enables merchant controls and persists through restart		observe in W09
+M40	live-merchant-hooks.spec.ts	W58	merchant hooks: one fixture add-on registers every hook and event		observe in W58
+M41	live-merchant-realm-recovery.spec.ts	W50	Steam merchant realm hop redispatches saved work and returns home natively		observe in W50
+M42	live-merchant-realm-recovery.spec.ts	W49	merchant destination ownership › party realm transition keeps its own sixty second timeout during missing arrival reports		fix
+M43	live-merchant-realm-recovery.spec.ts	W49	merchant destination ownership › MJ42: a saved exhausted home return holds no home job, and Retry runs it at once		keep until its failure cause is named (Q8)
+M44	live-merchant-realm-recovery.spec.ts	W49	merchant destination ownership › cross realm merchant collection reconnects before transferring real cargo		keep
+M45	live-merchant-realm-recovery.spec.ts	W49	merchant destination ownership › merchant reconnect completes bank work off its native home		merge into M44 (same check, W49)
+M46	live-merchant-realm-recovery.spec.ts	W50	IT20: the realm stay holds for an equal job on its realm		merge into M41 (same check, W50)
+M47	live-merchant-realm-recovery.spec.ts	W50	IT20: the realm stay gives way to a more urgent home job		merge into M41 (same check, W50)
+M48	live-merchant-transporter-approach.spec.ts	W59	Desert › native headless merchant approaches Desert transporter within range and collects real cargo		observe in W59
+M49	live-merchant-transporter-approach.spec.ts	W59	Winter Inn exit › native headless merchant approaches Winter Inn exit transporter within range and collects real cargo		keep
+M50	live-npc-sale-keep.spec.ts	W51	an automatic NPC sale keeps the configured amount across bank and merchant stock		merge into M51 (same check, W51)
+M51	live-npc-sale-keep.spec.ts	W51	an automatic NPC sale keeps the configured amount across bank and BankBoi stock		observe in W51
+M52	live-stale-merchant.spec.ts	W09	Hunt blacklist full catalog scrolls and sprites select their own monster		observe in W09
+M53	live-stale-merchant.spec.ts	UNIT	stale merchant recovery › production recovery holds orphaned receipts without repeated bank trips		remove
+M54	live-stale-merchant.spec.ts	UNIT	stale merchant recovery › production recovery reconciles an admitted prepared journal before bank work		remove
+M55	live-stale-merchant.spec.ts	UNIT	stale merchant recovery › automatic missing sale marks expire while manual and locked marks survive restart		remove
+M56	live-stale-merchant.spec.ts	UNIT	stale bank confirmation preserves reused inventory and permits native travel		remove
+M57	live-stale-merchant.spec.ts	UNIT	stale merchant recovery › offline merchant work permits stale-status login and times out without a heartbeat		remove
+M58	live-stat-scroll-bank.spec.ts	W52	a merchant str stat scroll comes from the bank instead of being bought again		observe in W52
+M59	live-stat-scroll-bank.spec.ts	W03	a merchant str stat scroll comes from the bank before higher priority delivery		observe in W03
+M60	live-stat-scroll-bank.spec.ts	W52	a merchant luck stat scroll comes from the bank instead of being bought again		merge into M58 (same check, W52)
+M61	live-stat-scroll-bank.spec.ts	UNIT	a stale stat mark cannot fabricate a completed delivery stat		remove
+M62	live-status-hooks.spec.ts	W01	status hooks: one fixture add-on registers every hook and event		observe in W01
+M63	live-tasks-hooks.spec.ts	W34	tasks hooks: one fixture add-on registers every hook and event		observe in W34
+M64	live-wtb-unconfirmed-purchase.spec.ts	UNIT	a stale unconfirmed WTB purchase is resolved as not bought from the dashboard		remove
+M65	live-wtb-unconfirmed-purchase.spec.ts	UNIT	a stale unconfirmed WTB purchase is resolved as bought from the dashboard		remove
+M66	live-wtb-unconfirmed-purchase.spec.ts	UNIT	unconfirmed WTB resolution refuses a still queued purchase job		remove
+M67	live-settings-hooks.spec.ts	CONSOLE	settings hooks › settings hooks: one fixture add-on registers every hook and event		keep, move to the console project
