@@ -22,6 +22,7 @@ import { currentMerchantReport, createCompletionResults, createMerchantCompletio
 import { createMerchantClusters, type ClusterState, type ClusterPorts } from './sources.ts';
 import { scopeWork } from './commands.ts';
 import { merchantEventReserved } from './event-hold.ts';
+import { standReturnProgress } from './stand.ts';
 import { recordMerchant } from './records.ts';
 import { bareRealm, typedRealm } from '../../protocol/realm.ts';
 
@@ -715,6 +716,7 @@ export function createMerchantIdleRoute(state: IdleState, ports: IdlePorts) {
     if (body.commandId && command && command.id !== body.commandId)
       return res.status(409).json({ error: "merchant idle command is no longer current" });
     if (!phase(body)) return res.status(400).json({ error: "invalid idle phase" });
+    standReturnProgress(state, body.commandId, body.phase);
     ports.persist();
     return res.json({ ok: true });
   };

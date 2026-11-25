@@ -4,6 +4,7 @@ const {productionFunctions} = require('./helpers/production-functions.cjs');
 const test=require('node:test');const assert=require('node:assert/strict');const fs=require('node:fs');const vm=require('node:vm');
 const source=require('./helpers/coordinator-source.cjs').coordinatorSource();
 const {createMerchantObservation}=require('../../runtime/items/coordinator/market.ts');
+const {createMerchantIdleRoute}=require('../../runtime/merchant-jobs/coordinator/routes.ts');
 function fixture(){const party={merchantCharacter:'M',statuses:{M:{map:'bank',x:0,y:-37,seenAt:Date.now()}},merchantQueue:[{reason:'marked items'}],gatheringModes:['fishing'],gatheringCooldowns:{fishing:Date.now()+60000},commands:{},standListings:[],nextCommandId:1,withdrawals:{},bankbois:{}};
 const r=withRunner(vm.createContext({merchantInventoryStacks:{plan:require('../../runtime/items/coordinator/storage.ts').inventoryMergePlan},party,bankboiSwitchBusy:false,bankboiService:{busy:()=>r.bankboiSwitchBusy},merchantAnniversaryControl:()=>({}),ensureMerchantHome:()=>true,merchantTransferCapacityBlocked:()=>false,markedCollectionReady:job=>job.reason!=='marked items'}));
 require('./helpers/coordinator-idle.cjs')(r);return {r,party};}
@@ -27,6 +28,15 @@ scenarioTable('the merchant idle dispatch gives the stand return or yields to it
  ['already open at market does not issue another return',({r,party})=>{Object.assign(party.statuses.M,{map:'main',x:-63,y:100,standOpen:true});r.dispatchMerchantIdle();assert.equal(party.commands.M,undefined);}],
  ['anniversary reservation returns to stand despite paused queue and gathering',({r,party})=>{r.merchantAnniversaryControl=()=>({reserved:true,preWindow:true});r.markedCollectionReady=()=>true;r.dispatchMerchantIdle();assert.equal(party.commands.M.type,'merchant-idle');}],
  ['active anniversary kiss retains movement ownership',({r,party})=>{r.merchantAnniversaryControl=()=>({reserved:true,busy:true});r.dispatchMerchantIdle();assert.equal(party.commands.M,undefined);}],
+// The merchant reports the id spent and stays at the bank, as after runner.ts holdStand's `skipped`.
+ ['a spent stand return that never set off is given again',({r,party})=>{party.gatheringModes=[];r.dispatchMerchantIdle();assert.equal(party.commands.M.id,1);
+ party.statuses.M.lastCommandId=1;r.dispatchMerchantIdle();assert.equal(party.commands.M.type,'merchant-idle');assert.equal(party.commands.M.id,2);}],
+ ['a spent stand return holds while on its way and at the stand, and goes again once moved off',({r,party})=>{party.gatheringModes=[];r.dispatchMerchantIdle();
+ const route=createMerchantIdleRoute(party,{sameItem:(a,b)=>a.name===b?.name,log(){},persist(){},queue(){}});
+ const send=phase=>route({body:{character:'M',commandId:party.commands.M.id,phase}},{status(){return this;},json(){}});
+ party.statuses.M.lastCommandId=1;send('returning');r.dispatchMerchantIdle();assert.equal(party.commands.M.id,1,'on its way');
+ Object.assign(party.statuses.M,{map:'main',x:-63,y:100});send('arrived');r.dispatchMerchantIdle();assert.equal(party.commands.M.id,1,'at the stand');
+ Object.assign(party.statuses.M,{map:'bank',x:0,y:-37});r.dispatchMerchantIdle();assert.equal(party.commands.M.id,2,'moved off');}],
 ]);
 
 test('ready collection and ready gathering retain priority over stand return',()=>{for(const mode of ['collection','gathering']){const {r,party}=fixture();if(mode==='collection')r.markedCollectionReady=()=>true;else party.gatheringCooldowns.fishing=0;r.dispatchMerchantIdle();assert.equal(party.commands.M,undefined);}});

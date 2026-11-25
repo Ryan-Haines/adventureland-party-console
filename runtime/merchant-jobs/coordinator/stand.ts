@@ -50,6 +50,8 @@ interface IdlePorts {
   command(name: string | null): MerchantCommand | undefined;
   // A manual command you gave holds the slot until its report.
   manualPending(): boolean;
+  // The stand return's last progress report for the command `id` (standReturnProgress).
+  progress(id: number): string | undefined;
   issue(name: string, command: MerchantCommand): void;
   nextCommand(): number;
   realm(): string;
@@ -119,6 +121,18 @@ export function createMerchantIdle(ports: IdlePorts) {
     return !status.standOpen && status.standItem === null && !merge;
   }
 
+  // The runner spends a stand return's id when it takes it (the report's `lastCommandId`), and the
+  // slot keeps the spent command until a phase that ends the return clears it. reserved() already
+  // holds the stand return while navigation owns the merchant. The return is on its way while its
+  // last report is `returning`, and opens and lists at the stand after `arrived` while the merchant
+  // stays at the market. Any other spent return ran nothing, as the runner's `skipped` and
+  // `deferred` answers send no report, or something moved the merchant off after its arrival.
+  function returnStalled(status: IdleStatus, current: MerchantCommand): boolean {
+    if (!(Number(status.lastCommandId) >= current.id)) return false;
+    const phase = ports.progress(current.id);
+    return phase !== "returning" && !(phase === "arrived" && atMarket(status));
+  }
+
   function needsCommand(status: IdleStatus, merge: unknown): boolean {
     // At the market the standless merchant needs no return; a bag merge still sends the visit, whose
     // open merges first.
@@ -128,6 +142,7 @@ export function createMerchantIdle(ports: IdlePorts) {
     const current = ports.command(ports.merchant());
     return (
       current?.type !== "merchant-idle" ||
+      returnStalled(status, current) ||
       (ports.standLocation && JSON.stringify(current.standLocation) !== JSON.stringify(ports.standLocation())) ||
       JSON.stringify(current.listings) !== JSON.stringify(ports.listings())
     );
@@ -188,6 +203,13 @@ export function createMerchantIdle(ports: IdlePorts) {
   return { idle };
 }
 
+// The stand return's own progress reports to the idle route, by the slot command they answer: `returning`
+// as it sets off for the market, `arrived` there. The phases that end the return clear the slot.
+const standProgress = new WeakMap<object, { id: number; phase: string }>();
+export function standReturnProgress(state: object, commandId: unknown, phase: unknown): void {
+  if ((phase === "returning" || phase === "arrived") && typeof commandId === "number") standProgress.set(state, { id: commandId, phase });
+}
+
 // The stand return on the coordinator's records.
 type ComposedIdlePorts = Parameters<typeof createMerchantIdle>[0];
 interface IdleState extends MerchantEventState {
@@ -234,6 +256,7 @@ export function createCoordinatorMerchantIdle(state: IdleState, ports: IdleCompo
     inventoryMerge: (status) => ports.inventoryMerge(status),
     command: (name) => state.commands[String(name)],
     manualPending: () => manualCommandPending(state),
+    progress: (id) => { const report = standProgress.get(state); return report?.id === id ? report.phase : undefined; },
     issue: (_name, command) => { merchantSlotCommand(state, 'idle', command); },
     nextCommand: () => state.nextCommandId++,
     realm: () => state.activeRealm,
