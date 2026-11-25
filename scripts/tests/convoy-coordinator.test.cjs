@@ -74,6 +74,15 @@ scenarioTable('a barrier phase lasts while its members work and ends on a failed
   assert.equal(c.phase,'shared-hold');assert.equal(c.failure,'A: Town shortcut unavailable; party remains held');
   assert.equal(c.disableTown,true);assert.equal(c.ladderRung,'replan','one climb, on the ladder of the walk');
  }],
+ // final-gate-closing10 W24: the fighters' own attacks on Franky ended their Town channels
+ // (server.js:3519), and the member's report names only "interrupted" (errands.ts `interrupted`).
+ ['a member\'s Town cast that ends "interrupted" climbs with Town off', p=>{
+  const c=p.activeConvoy;Object.assign(c,{phase:'town',townCompleted:false,observedPhase:'town',phaseStartedAt:1000,lastProgressAt:1000,progress:{},runtimes:{A:'A',B:'B'}});
+  for(const n of ['A','B'])p.statuses[n].convoyNavigation.phase='casting-town';
+  for(const n of ['A','B'])p.statuses[n].seenAt=2000;p.step(2000);
+  Object.assign(p.statuses.A.convoyNavigation,{phase:'failed',failure:'interrupted'});p.step(2000);
+  assert.equal(c.failure,'A: interrupted');assert.equal(c.disableTown,true);
+ }],
  // The Town command stays B's command, so each heartbeat reply carries it until B's
  // report acknowledges it (runtime/status/rules.ts keeps `party-monster-travel`).
  ['a member that never acknowledges keeps the Town phase and its command for each next reply, with no end after a round', p=>{

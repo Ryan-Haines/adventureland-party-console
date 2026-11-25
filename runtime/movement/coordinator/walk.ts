@@ -1186,8 +1186,11 @@ function unpreparedHuntReturn(c: SharedConvoy): boolean {
   return c.purpose === "monster-hunt" && !!c.returnRouting && !c.routeServer && !c.routeVersion;
 }
 function disableFailedTown(c: SharedConvoy, reason: string): void {
-  // Interrupted casts use the map-local round counter, never a text match.
-  if (!c.continuousReturn && /town/i.test(reason)) c.disableTown = true;
+  // A failure in the Town phase is the Town's, whatever its text: a cast the character's own attack
+  // ended (server.js:3519) reports "interrupted" (errands.ts `interrupted`). Another phase names a
+  // failed Town in its reason. A continuous return's interrupted casts use the map-local round
+  // counter instead.
+  if (!c.continuousReturn && (c.phase === 'town' || /town/i.test(reason))) c.disableTown = true;
 }
 function reassembleReturn(state: SharedState, c: SharedConvoy): void {
   walkPhase(state, c, "assemble"); c.departAt = null; c.observedPhase = null;
