@@ -15370,7 +15370,8 @@ ${hook}`, was = errors.get(key3);
         return at(0);
       }
     };
-    const tell = (hook, payload) => void hooks.notify(hook, { character: host4.character.name, ...payload, by: "core:calls" });
+    const name2 = host4.character.name;
+    const tell = (hook, payload) => void hooks.notify(hook, { character: name2, ...payload, by: "core:calls" });
     const ring = (entry) => {
       ringPush(current, { part: "calls", ...entry });
       const { method, band: band2, cost: cost2, waitedMs, margin: margin3, sentMargin, limit } = entry;
@@ -15434,7 +15435,7 @@ ${hook}`, was = errors.get(key3);
           }
         }
         if (current.admissions.length) ring({ decision: "unmatched", method, cost: cost2.cost, used: usedAt(at4) });
-        if (!current.held.length && usedAt(at4) + cost2.cost <= CALL_LIMIT) {
+        if (method === "ping_trig" || !current.held.length && usedAt(at4) + cost2.cost <= CALL_LIMIT) {
           bookPrice(method, cost2, at4);
           note(at4);
           return next.apply(this, [method, ...rest]);

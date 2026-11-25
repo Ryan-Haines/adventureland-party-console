@@ -516,9 +516,13 @@ export function installCallBudget(host: BudgetHost, ports: BudgetPorts): CallBud
   const charge = (method: string, data: unknown): Price => {
     try { return price(method, data, host.character, host.G, { entities: win.entities, party: win.party, party_list: win.party_list, roster: current.roster }); } catch { return at(0); }
   };
-  // A notice on the realm's registry; with nothing registered it is one empty list.
+  // A notice on the realm's registry; with nothing registered it is one empty list. The name is
+  // read at the install: the drain a stop leaves runs on the game window's timer after the CODE
+  // realm's `character` reads null (runner_functions.js:2902), and a read then threw before the
+  // held emit went (CB26).
+  const name = host.character.name;
   const tell = (hook: Parameters<HookRegistry['notify']>[0], payload: Omit<CallNotice, 'character' | 'by'>) =>
-    void hooks.notify(hook, { character: host.character.name, ...payload, by: 'core:calls' } satisfies CallNotice);
+    void hooks.notify(hook, { character: name, ...payload, by: 'core:calls' } satisfies CallNotice);
   // Each ring entry is a change an add-on hears: a held emit's release, a question's wait closed or
   // raised, an unmatched admission, and the `limitdc` snapshot.
   const ring = (entry: Omit<CallRecord, 'part'>) => {
@@ -573,7 +577,10 @@ export function installCallBudget(host: BudgetHost, ports: BudgetPorts): CallBud
       for (const seen of install.untagged) { try { seen(method); } catch { /* A reader's fault never stops the game's call. */ } }
       // An emit in the turn of another method's admission is not the call that was asked.
       if (current.admissions.length) ring({ decision: 'unmatched', method, cost: cost.cost, used: usedAt(at) });
-      if (!current.held.length && usedAt(at) + cost.cost <= CALL_LIMIT) {
+      // The ping charges nothing (`price`), and the game times each round trip from its emit to the
+      // `ping_ack` (js/functions.js:314-318), which the margin reads. It goes past the hold queue, so
+      // the round trip measures no hold.
+      if (method === 'ping_trig' || !current.held.length && usedAt(at) + cost.cost <= CALL_LIMIT) {
         bookPrice(method, cost, at);
         note(at);
         return next.apply(this, [method, ...rest]);

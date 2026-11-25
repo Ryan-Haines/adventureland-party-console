@@ -107,7 +107,7 @@ const BIG_CM={band:'job',method:'cm',data:{to:['A','B','C','D'],message:'x'.repe
 
 // The rework's planted install: a fake game socket on a test clock. The reads' timers are the
 // test's: each delay is kept with its run, so a row reads the wait a read set and runs it.
-function plantedInstall({items=[],pings=[99],fields={},render,handle=scope}={}){
+function plantedInstall({items=[],pings=[99],fields={},render,handle=scope,winTimers}={}){
   const {installCallBudget}=require('../../runtime/characters/call-budget.ts');
   const {READ_PICKS}=require('../../runtime/characters/call-budget-limits.ts');
   const kept={},timers=[],intervals=[],handlers={},emitted=[],replies=[];
@@ -117,14 +117,15 @@ function plantedInstall({items=[],pings=[99],fields={},render,handle=scope}={}){
   const realTimers=()=>{globalThis.setTimeout=realTimeout;globalThis.setInterval=realInterval;};
   let now=500_000,budget;
   const socket={emit(method){emitted.push(method);return socket;},on(event,fn){(handlers[event]??=[]).push(fn);},off(event,fn){handlers[event]=(handlers[event]??[]).filter(f=>f!==fn);}};
-  const win={socket,pings,render_tracker:render,setTimeout:()=>0,clearTimeout:()=>{},Date:{now:()=>now}};
+  // `winTimers` keeps the game window's timers, which the record's drain runs on.
+  const win={socket,pings,render_tracker:render,setTimeout:winTimers?(run,ms)=>winTimers.push({run,ms}):()=>0,clearTimeout:()=>{},Date:{now:()=>now}};
   const host={parent:win,character:{name:'W',map:'main',items,slots:{}},G:{items:{},skills:{},maps:{},conditions:{}}};
   plantTimers();
   try{budget=installCallBudget(host,{now:()=>now,cpu:()=>0,scope:handle,held:()=>false,tracker:data=>replies.push(data)});}
   finally{realTimers();for(const [field,value] of Object.entries(kept))READ_PICKS[field]=value;}
   // Every turn of the planted install runs on the planted timers.
   const turn=run=>{plantTimers();try{return run();}finally{realTimers();}};
-  return {budget,win,timers,intervals,emitted,replies,at:()=>now,advance:ms=>{now+=ms;},to:ms=>{now=ms;},
+  return {budget,win,host,timers,intervals,emitted,replies,at:()=>now,advance:ms=>{now+=ms;},to:ms=>{now=ms;},
     fire:(event,data)=>turn(()=>{for(const fn of handlers[event]??[])fn(data);}),
     emit:(...args)=>turn(()=>socket.emit(...args)),
     ask:question=>turn(()=>budget.band(question)),
@@ -236,6 +237,43 @@ test('the tracker retries one margin after a lost reply, kill credits raise the 
     b.advance(CALL_WINDOW_MS+b.budget.view().margin+1);plant();
     assert.equal(b.ask(read),'send','then the read goes in the background band');
   }finally{b.stop();}
+});
+
+// A stop with no next install leaves the hold queue to the record's drain on the game window's
+// timer (CB26). The stopped CODE realm's `character` reads null then: live row A's drain threw
+// reading its name for the release notice (runner_functions.js:2902), so the held `players` read
+// never went and the server charged nothing.
+test('a held emit drains after a stop whose CODE character reads null',()=>{
+  const winTimers=[],p=plantedInstall({winTimers});
+  try{
+    p.fire('player',{cc:199});
+    p.emit('players',{});
+    assert.equal(p.budget.view().held,1,'199 + 12 passes the limit, so the emit is held');
+    p.stop();
+    Object.defineProperty(p.host,'character',{get(){throw TypeError("Cannot read properties of null (reading 'character')");}});
+    p.advance(CALL_WINDOW_MS+1);
+    const sent=p.emitted.length;
+    for(const t of winTimers.splice(0))t.run();
+    assert.deepEqual(p.emitted.slice(sent),['players'],'the drain sends the held read');
+    assert.equal(p.win.__partyCallBudget.held.length,0);
+  }finally{p.stop();}
+});
+
+// The game times each round trip from its `ping_trig` emit to the `ping_ack` (js/functions.js:314-318,
+// game.js:1920), and the margin reads that list. Live row A's stand burst held a ping 2750 ms
+// behind the queue, so the game measured 2899 ms, the margin rose to 3149 and the ledger kept
+// every entry that much longer: a held `secondhands` waited 5749 ms (CB8).
+test('the ping goes at once past a hold queue, so the margin measures no hold',()=>{
+  const p=plantedInstall();
+  try{
+    p.fire('player',{cc:199});
+    p.emit('players',{});
+    assert.equal(p.budget.view().held,1,'199 + 12 passes the limit, so the emit is held');
+    const sent=p.emitted.length;
+    p.emit('ping_trig',{id:'x'});
+    assert.deepEqual(p.emitted.slice(sent),['ping_trig'],'the ping goes at once');
+    assert.equal(p.budget.view().held,1,'and the held read stays queued');
+  }finally{p.stop();}
 });
 
 // The shares follow the window (post-pr/budget-design.md 3.2). The warrior's 122 fight set the
