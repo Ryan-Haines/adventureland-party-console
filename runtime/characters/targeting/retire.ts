@@ -1,6 +1,6 @@
 // The overkill skip: a target is passed over while the character's own damage in flight on it
 // covers its HP. The damage in flight is the turns owner's projectile tracker (`skills.incoming`),
-// which holds each hit from its `action` packet until its `hit` packet or its eta, at 0.9 of the
+// which holds each hit from its `action` packet until its `hit` packet, at 0.9 of the
 // mitigated damage. A miss, an evade or a heal shows only when the hit lands, so a monster that
 // lived is a candidate again on the next pass. The tracker's entries key on one projectile, so a
 // new fight starts with no skip from an old one.

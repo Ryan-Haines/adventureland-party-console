@@ -18628,14 +18628,10 @@ ${hook}`, was = errors.get(key3);
   }
   function createProjectileTracker(world, notify = () => void 0) {
     const flights = /* @__PURE__ */ new Map();
-    function prune(now) {
-      for (const [id2, p] of flights) if (p.until <= now) flights.delete(id2);
-    }
     return {
       action(data) {
         if (!usable(data)) return;
         const w = world();
-        prune(w.now);
         if (!w.context.allies.some((a) => a.name === data.attacker || a.id === data.attacker)) return;
         const target = w.context.monsters.find((t) => t.id === data.target);
         if (!target) return;
@@ -18643,7 +18639,7 @@ ${hook}`, was = errors.get(key3);
         const defense = definition?.damage_type === "magical" ? target.resistance : target.armor;
         const factor = definition?.damage_type === "pure" ? 1 : w.damageMultiplier(Number(defense) || 0);
         const amount = Number(data.damage) * factor * 0.9;
-        flights.set(data.pid, { target: data.target, attacker: String(data.attacker), amount, until: w.now + Number(data.eta) });
+        flights.set(data.pid, { target: data.target, attacker: String(data.attacker), amount });
         notify("skills.shot", { projectile: data.pid, target: data.target, damage: amount, attacker: data.attacker, by: "core:turns" });
       },
       hit(data) {
@@ -18660,9 +18656,13 @@ ${hook}`, was = errors.get(key3);
           by: "core:turns"
         });
       },
+      // The target's `disappear`: the allies' flights on it land where this client hears nothing.
+      gone(target) {
+        const { actor } = world(), own3 = [actor.name, actor.id].filter(Boolean).map(String);
+        for (const [id2, p] of flights) if (p.target === target && !own3.includes(p.attacker)) flights.delete(id2);
+      },
       // With an attacker named, the sum counts that attacker's hits only.
-      incoming(target, now, attacker) {
-        prune(now);
+      incoming(target, attacker) {
         return [...flights.values()].filter((p) => p.target === target && (attacker === void 0 || p.attacker === attacker)).reduce((n, p) => n + p.amount, 0);
       },
       clear() {
@@ -18766,7 +18766,7 @@ ${hook}`, was = errors.get(key3);
         condition: (name2) => G.conditions[name2],
         cooldown: (id2) => id2 === "invis" && !!root2.partyMerchant?.jobs.visibilityActive() || Number(host4.next_skill?.[id2]) > Date.now(),
         damageMultiplier: host4.damage_multiplier || damageMultiplier,
-        incoming: (t) => projectiles.incoming(t.id, Date.now()),
+        incoming: (t) => projectiles.incoming(t.id),
         range: (t, id2) => skillRange(actor, t, skills[id2], id2),
         attacking: (t) => !!turns.attacking?.(t),
         allowed: (t, id2) => {
@@ -18841,13 +18841,20 @@ ${hook}`, was = errors.get(key3);
       if (data?.type === "all") monsters3.clear();
       else monsters3.changed((data?.monsters ?? []).map((m) => m?.id), update());
     };
-    const newMap = () => monsters3.clear();
+    const gone = (data) => {
+      if (data?.id != null) projectiles.gone(String(data.id));
+    };
+    const newMap = () => {
+      monsters3.clear();
+      projectiles.clear();
+    };
     const observe = scope("03", "observe"), socket = host4.socket;
     observe.on(socket, "action", action);
     observe.on(socket, "hit", hit);
+    observe.on(socket, "disappear", gone);
     observe.on(socket, "entities", entities);
     observe.on(socket, "new_map", newMap);
-    const incoming = (target, attacker) => projectiles.incoming(target, Date.now(), attacker);
+    const incoming = (target, attacker) => projectiles.incoming(target, attacker);
     if (hooks) {
       const result = hooks.publish(skillsRegistration(incoming));
       if (!result.ok) throw Error(`The turns owner's core:skills did not load: ${result.message}`);
@@ -18862,14 +18869,17 @@ ${hook}`, was = errors.get(key3);
       monsters: monsters3,
       // The world targeting's skill gate judges with: the engine's while it asks, else a fresh one.
       gateWorld: () => asking ?? world(),
+      // A targeting reset keeps the flights: their targets stay in view and their hits still reach
+      // this client. Only `disappear` and `new_map` end a flight unheard (game.js `handle_entities`
+      // drops the old map's entities on `new_map`).
       reset() {
         engine.reset();
-        projectiles.clear();
       },
       stop() {
         projectiles.clear();
         observe.off(socket, "action", action);
         observe.off(socket, "hit", hit);
+        observe.off(socket, "disappear", gone);
         observe.off(socket, "entities", entities);
         observe.off(socket, "new_map", newMap);
         monsters3.clear();

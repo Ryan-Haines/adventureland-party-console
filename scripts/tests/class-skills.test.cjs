@@ -272,21 +272,38 @@ test('A36: Energize sends its amount after its target and keeps the class reserv
   assert.equal(w.sent.length,1,'an amount that leaves MP below the class reserve waits');
  }finally{w.restore();}
 });
-test('projectile tracker excludes strangers and expires or settles accepted actions',()=>{
- const r=fixture(),t=r.add('a');const p=require('../../runtime/characters/turns/skills/projectiles.ts').createProjectileTracker(()=>r.w);
- p.action({pid:'x',attacker:'Stranger',target:t.id,damage:100,eta:100});assert.equal(p.incoming(t.id,r.w.now),0);
- p.action({pid:'x',attacker:'Hero',target:t.id,damage:100,eta:100});assert.equal(p.incoming(t.id,r.w.now),90);
- p.hit({pid:'x'});assert.equal(p.incoming(t.id,r.w.now),0);
- p.action({pid:'y',attacker:'Hero',target:t.id,damage:100,eta:100});assert.equal(p.incoming(t.id,r.w.now+101),0);
- // With an attacker named, the sum counts that attacker's own hits only; an ally's hit is not
- // this character's, and each entry still ends at its hit or its eta.
+test('projectile tracker excludes strangers and settles accepted actions at their hit',()=>{
+ const r=fixture(),t=r.add('a'),told=[];
+ const p=require('../../runtime/characters/turns/skills/projectiles.ts').createProjectileTracker(()=>r.w,(hook,n)=>told.push([hook,n.projectile]));
+ p.action({pid:'x',attacker:'Stranger',target:t.id,damage:100,eta:100});assert.equal(p.incoming(t.id),0);
+ p.action({pid:'x',attacker:'Hero',target:t.id,damage:100,eta:100});assert.equal(p.incoming(t.id),90);
+ p.hit({pid:'x'});assert.equal(p.incoming(t.id),0);
+ // TG16, TG17: the server resolves a projectile at its eta at the earliest (server.js
+ // `projectiles_loop`) and its `hit` reaches the client after that, so a pass between the eta and
+ // the hit still counts the damage, and the late hit still lands as `skills.landed`.
+ p.action({pid:'y',attacker:'Hero',target:t.id,damage:100,eta:100});
+ r.w.now+=101;
+ p.action({pid:'z',attacker:'Hero',target:t.id,damage:100,eta:100});
+ assert.equal(p.incoming(t.id),180,'the damage stays in flight past its eta until the hit');
+ p.hit({pid:'y'});assert.deepEqual(told.filter(([h])=>h==='skills.landed').map(([,id])=>id),['x','y'],'a hit after its eta lands');
+ // No ally's hit packet reaches this client for a target that left its view, and no hit at all for
+ // a map it left, so a target's disappear ends the allies' flights on it and a new map ends every
+ // flight. The server sends the attacker its own hit wherever the target stands (server.js:4409
+ // `xy_emit(target, "hit", def, attacker.id)`), so the own flight waits for its hit: W04's final gate
+ // run heard the priest's pmagic DCKa2E land 250 ms after the goo's disappear with outside:true.
  r.ally('Ally');
+ p.action({pid:'g',attacker:'Ally',target:t.id,damage:200,eta:100});
+ p.gone(t.id);assert.equal(p.incoming(t.id),90,"the target gone ends the ally's flight and keeps the own one");
+ p.hit({pid:'z'});assert.deepEqual(told.filter(([h])=>h==='skills.landed').map(([,id])=>id),['x','y','z'],'the own hit after a disappear lands');
+ p.action({pid:'m',attacker:'Hero',target:t.id,damage:100,eta:100});p.clear();assert.equal(p.incoming(t.id),0,'a new map ends every flight');
+ // With an attacker named, the sum counts that attacker's own hits only; an ally's hit is not
+ // this character's, and each entry still ends at its hit.
  p.action({pid:'h',attacker:'Hero',target:t.id,damage:100,eta:100});p.action({pid:'a',attacker:'Ally',target:t.id,damage:200,eta:100});
- assert.equal(p.incoming(t.id,r.w.now),270);
- assert.equal(p.incoming(t.id,r.w.now,'Hero'),90,"the Hero's own hit only");
- assert.equal(p.incoming(t.id,r.w.now,'Ally'),180,"the ally's hit is not the Hero's");
- p.hit({pid:'h'});assert.equal(p.incoming(t.id,r.w.now,'Hero'),0,'the own hit ends at its hit packet');
- assert.equal(p.incoming(t.id,r.w.now+101,'Ally'),0,"the ally's entry ends at its eta");
+ assert.equal(p.incoming(t.id),270);
+ assert.equal(p.incoming(t.id,'Hero'),90,"the Hero's own hit only");
+ assert.equal(p.incoming(t.id,'Ally'),180,"the ally's hit is not the Hero's");
+ p.hit({pid:'h'});assert.equal(p.incoming(t.id,'Hero'),0,'the own hit ends at its hit packet');
+ p.hit({pid:'a'});assert.equal(p.incoming(t.id,'Ally'),0,"the ally's entry ends at its hit packet");
 });
 test('an add-on group.anchor answer centres the group on its member and keeps the priest range',()=>{
  // Step 9 (e2e/movement-owner-failures.md "Step 9" items 5 and 11): the `group.anchor` hook.

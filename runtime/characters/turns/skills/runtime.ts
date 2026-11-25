@@ -86,8 +86,8 @@ export function installSkillRuntime(root: CombatRoot, turns: SkillRuntimePorts, 
     // Offensive skill definitions retain their own damage_type precedence.
     const actor: Actor = { ...character, damage_type: turns.damageType ? turns.damageType() : (character as Actor).damage_type };
     // combatContext copies every visible monster, the largest console self
-    // time in a fighter thread. busy(), attack() for
-    // classes without attack skills and projectile pruning never read it, so
+    // time in a fighter thread. busy() and attack() for
+    // classes without attack skills never read it, so
     // world() builds it on the first read and keeps it for this world.
     let context: CombatContext | undefined;
     const build = (): CombatContext => {
@@ -106,7 +106,7 @@ export function installSkillRuntime(root: CombatRoot, turns: SkillRuntimePorts, 
       condition: name => (G.conditions as Record<string, ReturnType<SkillWorld['condition']>>)[name],
       cooldown: id => id === 'invis' && !!root.partyMerchant?.jobs.visibilityActive() || Number(host.next_skill?.[id]) > Date.now(),
       damageMultiplier: host.damage_multiplier || damageMultiplier,
-      incoming: t => projectiles.incoming(t.id, Date.now()),
+      incoming: t => projectiles.incoming(t.id),
       range: (t, id) => skillRange(actor, t, skills[id], id),
       attacking: t => !!turns.attacking?.(t),
       allowed: (t, id) => {
@@ -178,15 +178,18 @@ export function installSkillRuntime(root: CombatRoot, turns: SkillRuntimePorts, 
   const entities = (data: { type?: string; monsters?: ({ id?: unknown } | null)[] } | null) => {
     if (data?.type === 'all') monsters.clear(); else monsters.changed((data?.monsters ?? []).map(m => m?.id), update());
   };
-  const newMap = () => monsters.clear();
+  // A target's `disappear` and a new map end the flights whose hit this client no longer hears.
+  const gone = (data: { id?: unknown } | null) => { if (data?.id != null) projectiles.gone(String(data.id)); };
+  const newMap = () => { monsters.clear(); projectiles.clear(); };
   // The projectile records and the monster table's packets are the turns owner's `observe` registrations: they only
   // record, so the incoming damage and the table are current at Play.
   const observe = scope('03', 'observe'), socket = host.socket as Parameters<typeof observe.on>[0];
   observe.on(socket, 'action', action as (data: unknown) => void);
   observe.on(socket, 'hit', hit as (data: unknown) => void);
+  observe.on(socket, 'disappear', gone as (data: unknown) => void);
   observe.on(socket, 'entities', entities as (data: unknown) => void);
   observe.on(socket, 'new_map', newMap);
-  const incoming = (target: string, attacker?: string) => projectiles.incoming(target, Date.now(), attacker);
+  const incoming = (target: string, attacker?: string) => projectiles.incoming(target, attacker);
   if (hooks) {
     const result = hooks.publish(skillsRegistration(incoming));
     if (!result.ok) throw Error(`The turns owner's core:skills did not load: ${result.message}`);
@@ -195,10 +198,14 @@ export function installSkillRuntime(root: CombatRoot, turns: SkillRuntimePorts, 
   return { ...engine, world, casts, pullSafe: (w: SkillWorld, t: Combatant) => pullSafe(w, [t]), incoming, report, monsters,
     // The world targeting's skill gate judges with: the engine's while it asks, else a fresh one.
     gateWorld: (): SkillWorld => asking ?? world(),
-    reset() { engine.reset(); projectiles.clear(); },
+    // A targeting reset keeps the flights: their targets stay in view and their hits still reach
+    // this client. Only `disappear` and `new_map` end a flight unheard (game.js `handle_entities`
+    // drops the old map's entities on `new_map`).
+    reset() { engine.reset(); },
     stop() {
       projectiles.clear();
       observe.off(socket, 'action', action as (data: unknown) => void); observe.off(socket, 'hit', hit as (data: unknown) => void);
+      observe.off(socket, 'disappear', gone as (data: unknown) => void);
       observe.off(socket, 'entities', entities as (data: unknown) => void); observe.off(socket, 'new_map', newMap);
       monsters.clear();
     },

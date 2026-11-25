@@ -88,6 +88,28 @@ test('the monster table rebuilds only the entries a packet changed', () => {
   } finally { for (const key of keys) if (saved[key] === undefined) delete global[key]; else global[key] = saved[key]; }
 });
 
+// A targeting reset (lifecycle/character/roles.ts `reset`, through turns/install.ts `reset`) keeps
+// the flights in the air: their target is still in view, so its `hit` still reaches this client.
+// The live W04 run of 2026-11-24 (w04-red5.log) read three hits to the priest that the tracker
+// never landed. A new map still ends every flight.
+test('a targeting reset keeps the flights in the air; a new map ends them', () => {
+  const h = harness('priest');
+  try {
+    h.r.add('a');
+    const shot = pid => h.handlers.action({ pid, attacker: h.r.actor.name, target: 'a', damage: 100, eta: 400, type: 'attack' });
+    shot('p1');
+    const flying = h.runtime.incoming('a');
+    assert.ok(flying > 0, 'the shot joins the tracker');
+    h.runtime.reset();
+    assert.equal(h.runtime.incoming('a'), flying, 'a reset dropped a live flight');
+    h.handlers.hit({ pid: 'p1', id: 'a' });
+    assert.equal(h.runtime.incoming('a'), 0, 'the hit lands the flight');
+    shot('p2');
+    h.handlers.new_map({});
+    assert.equal(h.runtime.incoming('a'), 0, 'a new map keeps a flight');
+  } finally { h.restore(); }
+});
+
 // The ranking asks the same target and skill many times inside one world (each spot's area hits ask
 // every monster again), and every ask runs targeting's gate rows.
 test('one world asks targeting once per target and skill; the next world asks again', () => {
