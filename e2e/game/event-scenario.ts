@@ -32,3 +32,17 @@ export async function seedSmallGoobrawl(live: Pick<LiveGame, 'admin'>) {
       completion:'native combat must kill survivors after the event timer ends'};
   })()`);
 }
+
+/** End a seeded Goobrawl inside one play: the event is off, its survivors go and the goo
+ * definitions come back, so the next round's seedSmallGoobrawl starts from the game's own. It
+ * refuses while a member still stands in the arena, since the round it ends has to be over. */
+export async function endSmallGoobrawl(live: Pick<LiveGame, 'admin'>) {
+  return live.admin(`output=(()=>{
+    if(Object.values(players).some(p=>p.map==='goobrawl')) throw new Error('End Goobrawl after the party left the arena');
+    events.goobrawl=false;delete E.goobrawl;broadcast_e();
+    const removed=Object.values(instances.goobrawl?.monsters||{}).map(m=>{remove_monster(m,{silent:true});return String(m.id);});
+    const restored=globalThis.__e2eGoobrawlDefinitions||null;
+    if(restored){for(const type of ['bgoo','rgoo'])G.monsters[type].hp=restored[type];delete globalThis.__e2eGoobrawlDefinitions;}
+    return {removed,restored};
+  })()`);
+}

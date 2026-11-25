@@ -1,6 +1,6 @@
 // The movement owner's fixture add-on: one add-on that registers every movement decision hook an
 // add-on may answer and every movement notice, and keeps what it was asked and told, so
-// e2e/live-movement-hooks.spec.ts proves each `HOOKS` row is asked or told at its decision point.
+// W01, W06a and W09 prove each `HOOKS` row is asked or told at its decision point.
 // Every answer stays inert until a row sets one, so registering it changes no play.
 // The character half registers on a character's page (`registerCharacterHalf`); the coordinator
 // half joins the live coordinator's registry through e2e/live-coordinator.cjs
@@ -21,7 +21,16 @@ export interface FixtureState { seen: Seen[]; answers: Answers }
 // the crossing; the coordinator holds the anchor and the route. Each half hears its realm's notices.
 // The function is page source too (`registerCharacterHalf`), so it uses no import and no closure.
 export function movementHooks(state: FixtureState, realm: 'character' | 'coordinator'): FixtureHooks {
-  const keep = (hook: string, payload: unknown) => { state.seen.push({ hook, at: Date.now(), payload }); if (state.seen.length > 2000) state.seen.shift(); };
+  // Each hook keeps its own last 2000 entries (the list's memory bound), so the asks a long farm
+  // repeats (group.anchor, route.avoid, step.sent) never push out the walk notices of its start:
+  // W01's run of 2026-11-23 lost every walk.* notice that way after six goo windows.
+  const counts = new Map<string, number>();
+  for (const s of state.seen) counts.set(s.hook, (counts.get(s.hook) ?? 0) + 1);
+  const keep = (hook: string, payload: unknown) => {
+    state.seen.push({ hook, at: Date.now(), payload });
+    const count = (counts.get(hook) ?? 0) + 1;
+    if (count > 2000) state.seen.splice(state.seen.findIndex(s => s.hook === hook), 1); else counts.set(hook, count);
+  };
   const notices = realm === 'character'
     ? ['journey.started', 'journey.paused', 'journey.resumed', 'journey.ended', 'request.waiting', 'request.refused', 'ladder.climbed',
       'hold.started', 'hold.ended', 'click.taken', 'crossing.started', 'crossing.ended', 'step.sent', 'formation.moved']

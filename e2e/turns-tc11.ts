@@ -54,7 +54,10 @@ export function tc11(log:Tc11Log,from:number,to:number,step:number,cooldown:numb
     const free=reply.at,next=attacks.find(s=>s.at>free);
     if(!next)continue;
     const edge=!reply.failed?free+cooldown-rtt:reply.response==='cooldown'&&Number.isFinite(reply.ms)?free+Number(reply.ms)-rtt:free;
-    const ready=Math.max(free,edge),gap=next.at-ready,inGap=(at:number)=>at>ready&&at<next.at;
+    // The server can move the edge after its reply: a frequency change sends `skill_timeout` for the
+    // attack (server.js:1736-1744, reason `attack_ms`), which sets next_skill, and the executor waits
+    // for next_skill (executor.ts `readyAt`). The next send carries next_skill as it read at the send.
+    const ready=Math.max(free,edge,next.edge??0),gap=next.at-ready,inGap=(at:number)=>at>ready&&at<next.at;
     if(gap<=0)continue;
     const pass=SELECTION_MS+(Number.isFinite(step)?step:0),samples=log.samples.filter(s=>inGap(s.at)),skip=skipStretch(samples,pass);
     // A skipped edge: the skip held from within a pass of the edge to within a pass of the send. The

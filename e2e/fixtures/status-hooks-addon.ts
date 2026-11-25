@@ -1,5 +1,5 @@
 // Dashboard and status's fixture add-on: one add-on that answers `status.line` and `status.report`, hears every 12
-// notice and asks the three status reads, so e2e/live-status-hooks.spec.ts proves each `HOOKS` and
+// notice and asks the three status reads, so W01 and W09 prove each `HOOKS` and
 // `SLOTS` row of runtime/hooks/rows/12-status.ts at its decision point or its change. Its coordinator
 // half (registered by e2e/live-coordinator.cjs's `/party-api/e2e-status-hooks`) keeps what it heard in
 // memory; its character half answers `status.report` with one field under its own name and reads its

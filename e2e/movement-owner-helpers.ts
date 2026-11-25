@@ -36,19 +36,6 @@ export async function settleNavigation(client:LiveClient,name:string){
   return revisions.at(-1);
 }
 
-// rowSetup readies one character for a scripted movement row: the merchant's routines off
-// unless the row keeps them, the character leading the formation with no focus, its native
-// report fresh, and its client holding the revision those posts made. It returns the client.
-export async function rowSetup(live:LiveGame,name:string,{keepRoutines=false}={}){
-  if(!keepRoutines)await live.post('/merchant/routine-priorities',ROUTINES_OFF);
-  await live.post('/formation',{leader:name});
-  await live.post('/focus',{monsterFocus:[]});
-  await expect.poll(async()=>fresh((await live.state()).characters[name]),{timeout:30_000}).toBe(true);
-  const client=live.clients[name]!;
-  await settleNavigation(client,name);
-  return client;
-}
-
 // fightersReady turns the merchant's routines off and waits for both fighters' native reports.
 export async function fightersReady(live:LiveGame){
   await live.post('/merchant/routine-priorities',ROUTINES_OFF);

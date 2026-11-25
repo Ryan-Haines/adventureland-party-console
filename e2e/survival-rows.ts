@@ -1,16 +1,15 @@
-import {expect,plantVitals,waitForGameplay,writeDelivered,type LiveGame} from './live-fixtures';
+import {expect,plantVitals,waitForGameplay,type LiveGame} from './live-fixtures';
 import type {TestInfo} from '@playwright/test';
 import {fighters} from './game/hunt-lifecycle';
-import {clock,fightingAtGoo,needsSince,plantView,red,spendLog,spendsSince,timing} from './turns-rows';
+import {clock,fightingAtGoo,plantView,spendLog,spendsSince,timing} from './turns-rows';
 import {replyStep} from './turns-tc11';
 import {W,P} from './hunt-interruption-helpers';
-import {A9_LINE,POTION_DEFAULTS} from '../runtime/characters/survival/lines';
-import {switches as addonSwitches} from './fixtures/hooks-fixture-kit';
+import {POTION_DEFAULTS} from '../runtime/characters/survival/lines';
 
-// The survival owner's potions row of the default table: potions and regeneration per class, planted with
-// `live.admin` writes of `hp` and `mp` as the turns rows plant them. Each failure mode is read
-// from the spend log after the row's plants, so a row on a tree without the survival owner still
-// measures, and each check is soft so the row runs to its end.
+// The survival owner's rows, which W02, W04 and W08d play. The potions row: potions and regeneration per
+// class, planted with `live.admin` writes of `hp` and `mp` as the turns rows plant them. Each failure
+// mode is read from the spend log after the row's plants, so a row on a tree without the survival owner
+// still measures, and each check is soft so the row runs to its end.
 // The defaults of "HP potion below" and "MP potion below" (decided 2026-11-05), as
 // shares of the maximum.
 export const HP_LINE=POTION_DEFAULTS.hp/100;
@@ -98,9 +97,14 @@ export const wrongWhileLow=(list:Spend[],name:string)=>list.filter(s=>family(s)&
   .map(s=>[s.at,family(s),Math.round(s.party[name]!.hp/s.party[name]!.max*100)]);
 const restore=async(live:LiveGame)=>{for(const n of fighters)await plantVitals(live,n,{hp:1,mp:1});};
 
-// Row V1: SV1, SV2, SV3, SV5, SV6, SV11 and SV13.
-export async function survivalNeedsRow(live:LiveGame,info:TestInfo){
-  const result:any={stocked:{}};
+// Row V1: SV1, SV2, SV3, SV5, SV6, SV11, SV13 and SV41. The play plants and records into
+// `result`; the verdicts below assert. W04 plays SV1, SV3 and SV11 only (DESIGN.md 4.3 T45): the
+// other parts map to unit rows in the coverage ledger.
+export type SurvivalParts={sv2:boolean;sv5:boolean;sv6:boolean;sv13:boolean;sv41:boolean};
+// The row's start: potions stocked, the party fighting at goo, and each fighter's potion window.
+// W04 plays the steps below in its own order on one farm, so each is its own function.
+export async function survivalStart(live:LiveGame,result:any){
+  result.stocked={};
   for(const n of fighters)result.stocked[n]=await stockPotions(live,n);
   await fightingAtGoo(live);
   const step=async(name:string,from:number)=>{const r=replyStep((await spendsSince(live,name,from)).replies);return Number.isFinite(r)?r:0;};
@@ -109,8 +113,11 @@ export async function survivalNeedsRow(live:LiveGame,info:TestInfo){
   const rowFrom=Math.min(...await Promise.all(fighters.map(n=>clock(live,n))));
   const bound=async(name:string)=>windows[name]!.cooldown+windows[name]!.rtt+await step(name,rowFrom);
   const sends=async(name:string,from:number,to=Infinity)=>((await spendsSince(live,name,from)).spends as Spend[]).filter(s=>s.at<to);
-
-  // SV1: each fighter planted to 40% HP in the fight drinks `use_hp` within one potion cooldown.
+  return {live,result,step,windows,rowFrom,bound,sends};
+}
+export type SurvivalRun=Awaited<ReturnType<typeof survivalStart>>;
+// SV1: each fighter planted to 40% HP in the fight drinks `use_hp` within one potion cooldown.
+export async function sv1Play({live,result,windows,bound,sends}:SurvivalRun){
   result.sv1={};
   for(const n of fighters){
     const planted=await plantOwn(live,n,{hp:0.4}),limit=await bound(n);
@@ -121,7 +128,9 @@ export async function survivalNeedsRow(live:LiveGame,info:TestInfo){
       shareAtFree:share,due:share===null||share<HP_LINE,wrong:wrongWhileLow(list,n).map(([at,...r])=>[Number(at)-planted.seenAt,...r])};
     await restore(live);await waitForGameplay(2_500);
   }
-  // SV3: MP planted to 15% drinks `use_mp` within one potion cooldown.
+}
+// SV3: MP planted to 15% drinks `use_mp` within one potion cooldown.
+export async function sv3Play({live,result,windows,bound,sends}:SurvivalRun){
   result.sv3={};
   for(const n of fighters){
     const planted=await plantOwn(live,n,{mp:0.15}),limit=await bound(n);
@@ -130,211 +139,56 @@ export async function survivalNeedsRow(live:LiveGame,info:TestInfo){
     result.sv3[n]={planted:planted.mp,max:planted.max_mp,limit,pollLagMs:planted.polledAt-planted.seenAt,freeAfterMs:free-planted.seenAt,afterMs:first?first.at-free:null};
     await restore(live);await waitForGameplay(2_500);
   }
-  // SV6: both needs open on the priest, the first potion family entry is `use_hp`.
-  {const planted=await plantOwn(live,P,{hp:0.4,mp:0.15}),limit=await bound(P);
-    await waitForGameplay(REGEN_COOLDOWN_MS+limit+500);
-    const list=await sends(P,planted.seenAt),first=list.find(s=>family(s));
-    // SV6's failure: a regeneration goes before a due HP potion, so no potion family send but
-    // `use_hp` while the priest's HP reads below its line.
-    result.sv6={first:first?family(first):null,afterMs:first?first.at-planted.seenAt:null,limit,wrong:wrongWhileLow(list,P).map(([at,...r])=>[Number(at)-planted.seenAt,...r])};
-    await restore(live);await waitForGameplay(2_500);}
-  // The warrior planted to 20% HP with its MP under its Taunt reserve: no `use_mp` while its own
-  // HP at the send reads below the HP line, and its first potion is `use_hp` (2026-11-02).
-  {const planted=await plantOwn(live,W,{hp:0.2,mp:0.05}),limit=await bound(W);
-    await waitForGameplay(2*limit+500);
-    const list=(await sends(W,planted.seenAt)).filter(s=>family(s));
-    const hp=(s:Spend)=>s.party[W]?s.party[W]!.hp/s.party[W]!.max:1;
-    result.sv2={first:list[0]?family(list[0]):null,potions:list.map(s=>[s.at-planted.seenAt,family(s),Math.round(hp(s)*100)]),
-      mpBelowLine:list.filter(s=>potion(s)==='use_mp'&&hp(s)<HP_LINE).length,limit};
-    await restore(live);await waitForGameplay(2_500);}
-  // SV5, in the fight: the priest planted to 60% MP and the warrior to 75% HP, both above their potion
-  // lines and the warrior below A9's 80%: no regeneration while the fight goes on.
-  {const from=Math.min(await clock(live,W),await clock(live,P));
-    // The priest reads the warrior's drop only with the warrior in its view, which the independent
-    // approach does not keep (the turns row's `plantSeen`), so the plant waits for it.
-    await expect.poll(()=>live.clients[P]!.run(`!!parent.entities[${JSON.stringify(W)}]`),{timeout:60_000,intervals:[50],message:"SV5: the warrior in the priest's view before the plant"}).toBe(true);
-    await plantOwn(live,P,{mp:0.6});await plantOwn(live,W,{hp:0.75});
-    // The gap between two kills: once each fighter's client reads
-    // the warrior below the line, every monster on a fighter and each fighter's own target leave at
-    // once, as at a kill, so for a moment no monster targets the party and no fighter holds a
-    // target, while the farm's other monsters stay.
-    await expect.poll(async()=>(await Promise.all(fighters.map(async n=>(await spendsSince(live,n,from)).samples
-      .some((x:any)=>x.party[W]&&x.party[W].hp/x.party[W].max<A9_LINE)))).every(Boolean),{timeout:10_000,intervals:[50],message:'SV5: each fighter reads the warrior below 80%'}).toBe(true)
-      .catch(async error=>{
-        // What each fighter's client read of the warrior from the plants on, with its heals.
-        for(const n of fighters){const l=await spendsSince(live,n,from);
-          console.log('SURVIVAL-SV5-DROP '+JSON.stringify({name:n,samples:(l.samples as any[]).map(x=>[x.at-from,x.party[W]?Math.round(x.party[W].hp/x.party[W].max*1000)/10:null,x.party[W]?Math.round(x.party[W].dist):null]),
-            replies:(l.replies as any[]).filter(r=>r.place==='heal'||r.place==='partyheal').map(r=>[r.at-from,r.place,r.response]),
-            view:await plantView(live,n,W,from)}).slice(0,9000));}
-        throw error;});
-    // A fighter between two targets holds nothing to remove, so the plant waits for one.
-    let removed:string[]=[],gapAt=0;
-    await expect.poll(async()=>{const held=await Promise.all(fighters.map(n=>live.clients[n]!.run('parent.ctarget&&!parent.ctarget.dead?String(parent.ctarget.id):null') as Promise<string|null>));
-      gapAt=Math.min(await clock(live,W),await clock(live,P));
-      removed=await live.admin(`output=(()=>{const names=${JSON.stringify(fighters)},held=${JSON.stringify(held)},out=[];
-        for(const m of Object.values(instances.main.monsters))if(names.includes(m.target)||held.includes(String(m.id))){out.push(String(m.id));remove_monster(m,{method:'disappear'});}return out;})()`) as string[];
-      return removed.length;},{timeout:10_000,intervals:[100],message:'SV5: a monster on a fighter, or a target a fighter holds, to remove'}).toBeGreaterThan(0);
-    await waitForGameplay(10_000);
-    const to=Math.min(await clock(live,W),await clock(live,P));
-    const fighting=(await spendsSince(live,P,from)).samples.filter(s=>s.at<to&&s.target).length;
-    // A9 holds a fighter's regeneration from the first time its own client read a fighter below
-    // the line in the fight, so each fighter's count starts at the first
-    // of its 100 ms samples that reads one. A regeneration before that, while the plants are still
-    // on their way, is the design's "before any fighter drops below 80%".
-    const dropAt:Record<string,number|null>=Object.fromEntries(await Promise.all(fighters.map(async n=>[n,(await spendsSince(live,n,from)).samples
-      .find(s=>s.at<to&&Object.values(s.party).some(m=>m.max>0&&m.hp/m.max<A9_LINE))?.at??null])));
-    const all:Record<string,[number,string,unknown][]>=Object.fromEntries(await Promise.all(fighters.map(async n=>[n,(await sends(n,from,to)).filter(s=>regen(s)).map(s=>[s.at-from,regen(s),s.fight] as [number,string,unknown])])));
-    const after=(n:string)=>{const at=dropAt[n];return at===null||at===undefined?null:at-from;};
-    // A regeneration after a drop: the needs' answers on that fighter over the window, for its reading.
-    for(const n of fighters){const d=after(n);if(d!==null&&all[n]!.some(([at])=>at>=d))
-      console.log('SURVIVAL-SV5-VIEW '+JSON.stringify({name:n,dropAfterMs:d,needs:((await needsSince(live,n,from)) as any)?.calls?.filter((c:any[])=>c[1]==='regeneration'&&c[0]<to-from),
-        samples:((await spendsSince(live,n,from)).samples as any[]).filter(s=>s.at<to).map(s=>[s.at-from,s.target?1:0,...Object.values(s.party).map((m:any)=>Math.round(m.hp/m.max*1000)/10)])}));}
-    // Each fighter's farm fact over the window: its share of passes that read the
-    // character at its farm, and its saved spot and position at the window's end.
-    const farm=Object.fromEntries(await Promise.all(fighters.map(async n=>{const calls=(((await needsSince(live,n,from)) as any)?.calls??[]).filter((c:any[])=>c[1]==='regeneration'&&c[0]<to-from);
-      return [n,{passes:calls.length,atFarm:calls.filter((c:any[])=>Array.isArray(c[7])&&c[7][2]===1).length,
-        ...await live.clients[n]!.run('({spot:partyHunting.farm.spot()??null,x:Math.round(character.x),y:Math.round(character.y),map:character.map})') as object}];})));
-    result.sv5fight={gapAfterMs:gapAt-from,removed,farm,windowMs:to-from,fightingSamples:fighting,line:A9_LINE,dropAfterMs:Object.fromEntries(fighters.map(n=>[n,after(n)])),all,
-      regens:Object.fromEntries(fighters.map(n=>{const d=after(n);return [n,d===null?[]:all[n]!.filter(([at])=>at>=d)];}))};
-    await restore(live);}
-  // "HP potion below" written to 30 mid-fight with the warrior at 40%: no `use_hp` from the next
-  // reply; back to 50: `use_hp`. A write reaches the character with its next
-  // report reply, so each half starts once the warrior reads the written value.
-  const setting=(value:number)=>writeDelivered(live,'hpPotionBelow',W,value,'globalThis.__partySurvival?.lines?.().hp??null','SV13');
-  result.sv13={written30:await setting(30)};
-  if(result.sv13.written30===true){
-    const at=await plantOwn(live,W,{hp:0.4}),limit=await bound(W);await waitForGameplay(limit+500);
-    result.sv13.potionsAt30=(await sends(W,at.seenAt)).filter(s=>potion(s)==='use_hp').length;
-    result.sv13.written50=await setting(50);
-    const back=await plantOwn(live,W,{hp:0.4});await waitForGameplay(REGEN_COOLDOWN_MS+limit+500);
-    const free=await familyFree(live,W,back.seenAt,windows[W]!.cooldown),share=await shareAt(live,W,free);
-    result.sv13.potionAt50=(await sends(W,back.seenAt)).some(s=>potion(s)==='use_hp');result.sv13.dueAt50=share===null||share<HP_LINE;
-    // A miss's reading: from the 30 half on, the warrior's sends, replies, executor records, its own
-    // HP samples and the potion and regeneration needs' answers.
-    if(result.sv13.dueAt50&&!result.sv13.potionAt50){const from=at.seenAt,l=await spendsSince(live,W,from);
-      console.log('SURVIVAL-SV13-VIEW '+JSON.stringify({back:back.seenAt-from,free:free-from,
-        spends:(l.spends as Spend[]).map(s=>[s.at-from,s.method,(s as any).name??s.item??(s as any).id,s.party[W]?Math.round(s.party[W]!.hp/s.party[W]!.max*1000)/10:null]),
-        replies:l.replies.map((r:any)=>[r.at-from,r.place,r.response,r.failed]),ring:l.ring.map((r:any)=>[r.at-from,r.kind,r.family,r.skill,r.reason??r.waitedMs??null]),
-        samples:l.samples.filter((_:unknown,i:number)=>i%3===0).map((s:any)=>[s.at-from,s.party[W]?Math.round(s.party[W].hp/s.party[W].max*1000)/10:null]),
-        needs:((await needsSince(live,W,from)) as any)?.calls?.filter((c:any[])=>c[1]!=='heal')}));}
-    await restore(live);
-  }
+}
+
+export async function sv11Play({live,result,windows,sends}:SurvivalRun){
   // SV11: a party Town with the priest planted below both
   // lines once its channel shows: no potion and no heal leaves during the channel, since each ends
   // it (server.js:7657, 3519); regeneration leaves it, so the pulse's regeneration goes on. The row
-  // sits here, where the default table's plants and spend log already run (13.3).
-  {const townFrom=await clock(live,P),answer=await live.post('/town-party',{}).catch((error:Error)=>String(error.message).slice(0,300));
-    // A miss's reading (13.5a item 3: run G's channel never showed and the log held nothing of the
-    // priest): the route's answer, the priest's state, its game replies and turns ring since the post,
-    // its town skill's cooldown and movement's last records.
-    await expect.poll(()=>live.clients[P]!.run('!!(character.c&&character.c.town)'),{timeout:30_000,intervals:[50],message:"SV11: the priest's Town channel"}).toBe(true)
-      .catch(async error=>{const l=await spendsSince(live,P,townFrom);
-        console.log('SURVIVAL-SV11-VIEW '+JSON.stringify({answer,replies:l.replies.map((r:any)=>[r.at-townFrom,r.place,r.response,r.failed,r.reason]),
-          ring:l.ring.map((r:any)=>[r.at-townFrom,r.kind,r.family,r.skill,r.reason??r.waitedMs??null]),
-          priest:await live.clients[P]!.run(`({rip:!!character.rip,map:character.map,at:[Math.round(character.real_x),Math.round(character.real_y)],c:Object.keys(character.c||{}),party:character.party??null,
-            moving:!!character.moving,townReady:parent.next_skill&&parent.next_skill.town?+parent.next_skill.town-Date.now():null,hand:partyTasks.holds.handControl()??null,
-            occupied:!!__partyHooks.skills.allows({rank:'damage',occupied:true}),held:__partyHooks.ask('lifecycle.held')??null,live:globalThis.__partyMovement?.live?.()?.owner??null,
-            command:(()=>{try{const c=partyTasks.convoyState().command;return c?JSON.stringify(c).slice(0,400):null;}catch(e){return String(e).slice(0,100);}})()})`),
-          // The movement owner's ring names each Town crossing and how it ended.
-          moves:await live.clients[P]!.run('__partyMovement.records().slice(-20).map(r=>[r.at,r.decision,r.kind,r.owner,r.code,r.cause])'),
-          tasks:((await live.tasks()).groups??[]).map((g:any)=>[g.id,g.members,g.live?.kind??null,g.live?.owner??null])}).slice(0,8000));
-        throw error;});
-    const planted=await plantOwn(live,P,{hp:0.4,mp:0.15});
-    await expect.poll(()=>live.clients[P]!.run('!(character.c&&character.c.town)'),{timeout:30_000,intervals:[50],message:"SV11: the priest's Town channel ends"}).toBe(true);
-    const list=(await sends(P,planted.seenAt)).filter(s=>(s as Spend&{town?:boolean}).town);
-    result.sv11={channelMs:(await clock(live,P))-planted.seenAt,potions:list.filter(s=>potion(s)).map(s=>[s.at-planted.seenAt,potion(s)]),
-      heals:list.filter(s=>s.method==='heal'||s.method==='skill'&&(s as Spend&{name?:string}).name==='partyheal').map(s=>s.at-planted.seenAt),
-      regens:list.filter(s=>regen(s)).map(s=>[s.at-planted.seenAt,regen(s)]),regenWindow:REGEN_COOLDOWN_MS+windows[P]!.rtt};
-    await restore(live);
-    // The party Town ends with the fighters in town; SV5's out-of-fight half starts from the fight.
-    await fightingAtGoo(live);}
-  // Out of a fight: both fighters sent north of the town square walk back to the goo field with
-  // no monster on them, and the warrior, planted to 70% HP with the transport, regenerates within one
-  // regeneration cooldown once the potion family is free. The fight up to the transport keeps the
-  // family locked: each attack spends MP, so the need sends `regen_mp` at every 4 s edge
-  // (server.js:12047) and the family is never free between two (fix3-surv run5, MP 595 of 1050).
-  // `familyFree` reads the end of the lock from the last family send before the plant, as SV1 and
-  // SV3 do. The plant rides the transport, so the need's first pick on the
-  // walk is `regen_hp` (needs.ts `regenerationOrder` reads HP before MP above half): in an earlier run
-  // the warrior, set full at the transport, cast Warcry as the walk began (MP 1050 to 730), the need
-  // sent `regen_mp`, its lock ran to the plant, and by then the walk had reached the farm, where the regeneration
-  // hold starts once a fighter reads below 80%. The walk starts at Main's spawn 9
-  // (-85, -389), about 990 from the goo field where spawn 0 is 600, so a lock from a regeneration sent
-  // shortly before the transport ends before the walk reaches the farm.
-  // Red plants of this setup: `sv5lock` sends a `regen_mp` as the walk begins, the potion group's
-  // lock of that earlier run, and `sv5old` keeps the setup before the fix: both fighters full at Main's
-  // spawn 0 and the plant once the family frees on the walk.
-  {const lock=async()=>{if(!red('sv5lock'))return;await live.admin(`output=(()=>{const p=get_player(${JSON.stringify(W)});p.mp=Math.round(p.max_mp*0.7);resend(p,'u+cid');return true;})()`);
-      await expect.poll(()=>live.clients[W]!.run('character.mp<character.max_mp'),{timeout:10_000,intervals:[50]}).toBe(true);
-      await live.clients[W]!.run(`parent.socket.emit('use',{item:'mp'})`);};
-    let planted:Awaited<ReturnType<typeof plantOwn>>;
-    if(red('sv5old')){
-      await live.admin(`output=(()=>{for(const n of ${JSON.stringify(fighters)}){const p=get_player(n);p.hp=p.max_hp;p.mp=p.max_mp;transport_player_to(p,'main',[0,0]);}return true;})()`);
-      await expect.poll(()=>live.clients[W]!.run('!!character.moving&&character.map==="main"'),{timeout:60_000,message:'SV5: the warrior walks back'}).toBe(true);
-      await lock();
-      await expect.poll(()=>live.clients[W]!.run(`!(parent.next_skill&&['use_hp','use_mp','regen_hp','regen_mp'].some(k=>+parent.next_skill[k]>Date.now()))`),
-        {timeout:15_000,intervals:[100],message:"SV5: the warrior's potion family is free before the plant"}).toBe(true);
-      planted=await plantOwn(live,W,{hp:0.7});
-    }else{
-      await lock();
-      await live.admin(`output=(()=>{const p=get_player(${JSON.stringify(P)});p.hp=p.max_hp;p.mp=p.max_mp;transport_player_to(p,'main',[-85,-389]);return true;})()`);
-      planted=await plantOwn(live,W,{hp:0.7,mp:1,transport:['main',-85,-389]});
-    }
-    const limit=REGEN_COOLDOWN_MS+windows[W]!.rtt+await step(W,rowFrom);
-    await waitForGameplay(REGEN_COOLDOWN_MS+limit+500);
-    const list=await sends(W,planted.seenAt);
-    const first=list.find(s=>regen(s)==='regen_hp'),free=await familyFree(live,W,planted.seenAt,windows[W]!.cooldown,above(W,planted,{hp:0.7}));
-    const threatened=await live.clients[W]!.run(`Object.values(parent.entities).some(e=>e.type==='monster'&&[${JSON.stringify(W)},${JSON.stringify(P)}].includes(e.target))`);
-    result.sv5out={limit,freeAfterMs:free-planted.seenAt,afterMs:first?first.at-free:null,threatened,family:list.filter(s=>family(s)).map(s=>[s.at-planted.seenAt,family(s)])};
-    // The needs' times read from 3000 ms before the plant (`needsFrom`); an earlier run read them as from the plant.
-    console.log('SURVIVAL-SV5-OUT '+JSON.stringify({planted,needsFrom:-3000,needs:((await needsSince(live,W,planted.seenAt-3000)) as any)?.calls?.filter((c:any[])=>c[1]!=='heal').slice(0,120),
-      before:(await sends(W,planted.seenAt-5000)).filter(s=>family(s)).map(s=>[s.at-planted.seenAt,family(s)]),
-      at:await live.clients[W]!.run('({x:character.real_x,y:character.real_y,map:character.map,moving:character.moving,hp:character.hp,max:character.max_hp,ns:parent.next_skill&&{use_hp:+parent.next_skill.use_hp||0,regen_hp:+parent.next_skill.regen_hp||0,now:Date.now()}})')}));
-    await restore(live);}
-  await info.attach('survival-v1',{body:JSON.stringify(result,null,1),contentType:'application/json'});
-  console.log('SURVIVAL-V1 '+JSON.stringify(result));
+  // sits here, where the row's plants and spend log already run (05-survival-design.md 13.3).
+  const townFrom=await clock(live,P),answer=await live.post('/town-party',{}).catch((error:Error)=>String(error.message).slice(0,300));
+  // A miss's reading (13.5a item 3: run G's channel never showed and the log held nothing of the
+  // priest): the route's answer, the priest's state, its game replies and turns ring since the post,
+  // its town skill's cooldown and movement's last records.
+  await expect.poll(()=>live.clients[P]!.run('!!(character.c&&character.c.town)'),{timeout:30_000,intervals:[50],message:"SV11: the priest's Town channel"}).toBe(true)
+    .catch(async error=>{const l=await spendsSince(live,P,townFrom);
+      console.log('SURVIVAL-SV11-VIEW '+JSON.stringify({answer,replies:l.replies.map((r:any)=>[r.at-townFrom,r.place,r.response,r.failed,r.reason]),
+        ring:l.ring.map((r:any)=>[r.at-townFrom,r.kind,r.family,r.skill,r.reason??r.waitedMs??null]),
+        priest:await live.clients[P]!.run(`({rip:!!character.rip,map:character.map,at:[Math.round(character.real_x),Math.round(character.real_y)],c:Object.keys(character.c||{}),party:character.party??null,
+          moving:!!character.moving,townReady:parent.next_skill&&parent.next_skill.town?+parent.next_skill.town-Date.now():null,hand:partyTasks.holds.handControl()??null,
+          occupied:!!__partyHooks.skills.allows({rank:'damage',occupied:true}),held:__partyHooks.ask('lifecycle.held')??null,live:globalThis.__partyMovement?.live?.()?.owner??null,
+          command:(()=>{try{const c=partyTasks.convoyState().command;return c?JSON.stringify(c).slice(0,400):null;}catch(e){return String(e).slice(0,100);}})()})`),
+        // The movement owner's ring names each Town crossing and how it ended.
+        moves:await live.clients[P]!.run('__partyMovement.records().slice(-20).map(r=>[r.at,r.decision,r.kind,r.owner,r.code,r.cause])'),
+        tasks:((await live.tasks()).groups??[]).map((g:any)=>[g.id,g.members,g.live?.kind??null,g.live?.owner??null])}).slice(0,8000));
+      throw error;});
+  const planted=await plantOwn(live,P,{hp:0.4,mp:0.15});
+  await expect.poll(()=>live.clients[P]!.run('!(character.c&&character.c.town)'),{timeout:30_000,intervals:[50],message:"SV11: the priest's Town channel ends"}).toBe(true);
+  const list=(await sends(P,planted.seenAt)).filter(s=>(s as Spend&{town?:boolean}).town);
+  result.sv11={channelMs:(await clock(live,P))-planted.seenAt,potions:list.filter(s=>potion(s)).map(s=>[s.at-planted.seenAt,potion(s)]),
+    heals:list.filter(s=>s.method==='heal'||s.method==='skill'&&(s as Spend&{name?:string}).name==='partyheal').map(s=>s.at-planted.seenAt),
+    regens:list.filter(s=>regen(s)).map(s=>[s.at-planted.seenAt,regen(s)]),regenWindow:REGEN_COOLDOWN_MS+windows[P]!.rtt};
+  await restore(live);
+}
+// The verdicts of row V1, each over the play's `result`. Each check is soft, so every one reports.
+export function sv1Verdict(result:any){
   for(const n of fighters){
     expect.soft(result.sv1[n].wrong,`SV1: ${n}'s potion family sends other than use_hp while its HP reads below the line`).toEqual([]);
     if(result.sv1[n].due)expect.soft(result.sv1[n].afterMs,`SV1: ${n} at 40% drinks use_hp within one potion cooldown`).not.toBeNull();
     if(result.sv1[n].afterMs!==null)expect.soft(result.sv1[n].afterMs,`SV1: ${n}'s use_hp within ${result.sv1[n].limit} ms`).toBeLessThanOrEqual(result.sv1[n].limit);
+  }
+}
+export function sv3Verdict(result:any){
+  for(const n of fighters){
     expect.soft(result.sv3[n].afterMs,`SV3: ${n} at 15% MP drinks use_mp within one potion cooldown`).not.toBeNull();
     if(result.sv3[n].afterMs!==null)expect.soft(result.sv3[n].afterMs,`SV3: ${n}'s use_mp within ${result.sv3[n].limit} ms`).toBeLessThanOrEqual(result.sv3[n].limit);
   }
-  expect.soft(result.sv6.first,'SV6: a potion family entry with both needs open').not.toBeNull();
-  expect.soft(result.sv6.wrong,'SV6: potion family sends other than use_hp while the HP reads below the line').toEqual([]);
-  expect.soft(result.sv2.first,'SV2: the warrior at 20% HP and low MP drinks use_hp first').toBe('use_hp');
-  expect.soft(result.sv2.mpBelowLine,'SV2: MP potions while HP reads below the HP line').toBe(0);
-  // The warrior's plant at 75% must reach each fighter's client, or the count below reads nothing.
-  for(const n of fighters)expect.soft(result.sv5fight.dropAfterMs[n],`SV5: ${n}'s client reads a fighter below 80%`).not.toBeNull();
-  for(const n of fighters)expect.soft(result.sv5fight.regens[n],`SV5: ${n}'s regeneration in a fight after a fighter read below 80%`).toEqual([]);
-  expect.soft(result.sv5out.afterMs,'SV5: out of a fight the warrior at 70% regenerates within one regeneration cooldown').not.toBeNull();
-  if(result.sv5out.afterMs!==null)expect.soft(result.sv5out.afterMs,`SV5: regeneration within ${result.sv5out.limit} ms`).toBeLessThanOrEqual(result.sv5out.limit);
+}
+export function sv11Verdict(result:any){
   expect.soft(result.sv11.potions,'SV11: potions during the Town channel').toEqual([]);
   expect.soft(result.sv11.heals,'SV11: heals during the Town channel').toEqual([]);
   // A channel shorter than one regeneration cooldown can fall wholly inside the last one's wait.
   if(result.sv11.channelMs>=result.sv11.regenWindow)expect.soft(result.sv11.regens.length,'SV11: regeneration goes on during the Town channel').toBeGreaterThan(0);
-  expect.soft(result.sv13.written30,'SV13: "HP potion below" takes a write (step 2)').toBe(true);
-  if(result.sv13.written30===true){expect.soft(result.sv13.potionsAt30,'SV13: at 30 the warrior at 40% drinks no use_hp').toBe(0);
-    if(result.sv13.dueAt50)expect.soft(result.sv13.potionAt50,'SV13: back at 50 it drinks use_hp').toBe(true);}
-  // The character half (decided 2026-11-06): a page
-  // add-on with one registration and no core edit asks `survival.verdict({character})` on each
-  // turns pass and keeps the answers; the farming warrior's own fight reads `fight`. The
-  // coordinator's half (the walk verdict and `survival.died`) is covered in hook-registry.test.cjs.
-  {
-    const name='survival-reader-fixture';
-    await live.clients[W]!.run(`(()=>{const hooks=globalThis.__partyHooks;globalThis.__e2eSurvivalReader=[];
-      if(hooks.registrations().some(r=>r.name==='${name}'))return true;
-      return hooks.register({name:'${name}',folder:'addons',author:'e2e',summary:'Reads the survival verdict.',
-        hooks:{'skills.request':[{name:'reader',rank:'task',answer(view){const me=view&&view.character;if(me)globalThis.__e2eSurvivalReader.push(hooks.survival.verdict({character:me.name}));
-          if(globalThis.__e2eSurvivalReader.length>200)globalThis.__e2eSurvivalReader.splice(0,100);return undefined;}}]}}).ok;})()`);
-    const switches=(on:boolean)=>live.clients[W]!.run(addonSwitches(name,on));
-    await live.post('/settings',{changes:[{field:'addons',value:await switches(true)}]});
-    await expect.poll(()=>live.clients[W]!.run('(globalThis.__e2eSurvivalReader||[]).length'),{timeout:30_000,message:'SV41: the add-on reads the verdict'}).toBeGreaterThan(0).catch(()=>{});
-    result.sv41=[...new Set(await live.clients[W]!.run('globalThis.__e2eSurvivalReader||[]') as string[])];
-    await live.post('/settings',{changes:[{field:'addons',value:await switches(false)}]});
-    console.log('SURVIVAL-SV41 '+JSON.stringify(result.sv41));
-    expect.soft(result.sv41,"SV41: the add-on's verdict answers on the farming warrior").toEqual(['fight']);
-  }
 }
 
 // The escape check: every survival spend a character makes while its escape
@@ -438,8 +292,8 @@ export async function sv12StompRows(live:LiveGame,info:TestInfo){
     // bee it had picked walked on from the spot after the transport (in one run it stood 60 off the spot
     // 1.5 s later, its approach headed for the field), and the coordinator's convoy
     // takes a leader away from its farm back to it (4 s after the transport in one run). With no farm
-    // focus, as the table's reset leaves the party (live-fixtures.ts `defaultFixtureReset`), the
-    // warrior stays where the transport puts it and fights only what attacks the party.
+    // focus, which the row sets below, the warrior stays where the transport puts it and fights only what
+    // attacks the party.
     await live.post('/focus',{monsterFocus:[]});
     const cooling=await live.clients[W]!.run(`[Date.now(),is_on_cooldown('stomp')?1:0]`) as [number,number];
     await expect.poll(()=>live.clients[W]!.run(`!is_on_cooldown('stomp')`),{timeout:30_000,message:'SV12: Stomp off its cooldown before the plant'}).toBe(true);
@@ -518,7 +372,7 @@ export async function sv12StompRows(live:LiveGame,info:TestInfo){
   console.log('SURVIVAL-SV12 '+JSON.stringify(result));
   expect.soft(result.stomps?.length??0,'SV12: the emergency Stomp goes with two monsters on the warrior').toBeGreaterThan(0);
   expect.soft((result.stomps??[]).filter((s:any)=>s.asked!=='send'),'SV12: a Stomp without a calls.band ask').toEqual([]);
-  expect.soft((result.stomps??[]).filter((s:any)=>!s.survival),'SV12: a Stomp that is not survival\'s request').toEqual([]);
+  expect.soft((result.stomps??[]).filter((s:any)=>!s.survival),"SV12: a Stomp that is not survival's request").toEqual([]);
   return result;
 }
 // SV17, SV18 and SV22 in case A: the warrior's shield cycle under a
@@ -569,11 +423,7 @@ export async function deathRecordHolds(live:LiveGame,name:string,since:number,la
   return {record,notices};
 }
 
-// The HP and MP potion rows on the solo ranger (the live finding of 2026-11-01: a ranger
-// died with HP potions in its bags): in its own fight, planted to 40% HP it drinks `use_hp`, and
-// planted to 15% MP `use_mp`, each within one potion cooldown. The ranger fights alone, so no heal
-// lifts its HP first.
-export async function rangerNeedsRows(live:LiveGame,info:TestInfo){
+export async function rangerNeedsPlay(live:LiveGame,info:TestInfo){
   const R=W,result:any={stocked:await stockPotions(live,R)};
   await live.clients[R]!.run(spendLog);
   const from=await clock(live,R),window=await potionWindow(live,R);
@@ -592,6 +442,9 @@ export async function rangerNeedsRows(live:LiveGame,info:TestInfo){
   }
   await info.attach('survival-ranger',{body:JSON.stringify(result,null,1),contentType:'application/json'});
   console.log('SURVIVAL-RANGER '+JSON.stringify(result));
+  return result;
+}
+export function rangerNeedsVerdict(result:any){
   for(const key of ['sv1','sv3']){
     expect.soft(result[key].afterMs,`${key.toUpperCase()}: the ranger drinks within one potion cooldown`).not.toBeNull();
     if(result[key].afterMs!==null)expect.soft(result[key].afterMs,`${key.toUpperCase()}: within ${result[key].bound} ms`).toBeLessThanOrEqual(result[key].bound);

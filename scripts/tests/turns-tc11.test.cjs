@@ -57,3 +57,14 @@ test('a send 200 ms past its edge on a 0 ms clock step is a wait, with no role l
     spends:[{at:0,method:'attack',edge:0},{at:2150,method:'attack',edge:0}],samples:[2000,2100].map(at=>({at,target:true,inRange:true,mpAttacks:true,party:{},tid:'goo1',skip:null}))};
   assert.equal(tc11(log,0,5000,0,COOLDOWN,RTT,true).waitsWithoutNotNow.length,1);
 });
+// W01's run of 2026-11-23 on c573fc423: Warcry faded on the server as the warrior's attack met a
+// `cooldown` reply with 76 ms left, and the server's frequency correction (`skill_timeout` with
+// reason `attack_ms`, server.js:1736-1744) moved next_skill.attack 310 ms on. The executor waits
+// for that edge (executor.ts `readyAt`), so the gap runs from the edge the send carries.
+test('a server skill_timeout after a cooldown reply moves the edge the gap runs from',()=>{
+  const corrected=edge=>({ring:[],spends:[{at:-778,method:'attack',edge:-1563},{at:-28,method:'attack',edge:-63},{at:472,method:'attack',edge}],
+    replies:[{at:-28,place:'attack',response:'cooldown',failed:true,ms:76}],
+    samples:[24,124,224,324,424].map(at=>({at,target:true,inRange:true,mpAttacks:true,party:{},tid:'717',skip:null}))});
+  assert.deepEqual(tc11(corrected(282),-5000,5000,250,826,48,false).waitsWithoutNotNow,[],'the send went one step after the corrected edge');
+  assert.equal(tc11(corrected(-63),-5000,5000,250,826,48,false).waitsWithoutNotNow.length,1,'with no correction the same send is a wait');
+});

@@ -3,14 +3,10 @@ import type {TestInfo} from '@playwright/test';
 import {spendLog} from './turns-rows';
 import {COMBAT,fightersReady,windowStart,turnsWindow,clock} from './movement-owner-helpers';
 import {fighters,location,party} from './game/hunt-lifecycle';
-import {sv12StompRows} from './survival-rows';
-import {reflectListRow} from './targeting-rows';
 
 // Step safety on the Main bee field, where every bee but the selected one is an idle monster in the server's
 // aggro grid (bee `aggro` 1, design/monsters.js). Failure inventory:
-// e2e/movement-owner-failures.md, "Step 6". Six farming windows, so a measure's spread between
-// windows can be told apart from a change between steps.
-const WINDOWS=6, WINDOW_MS=120_000;
+// e2e/movement-owner-failures.md, "Step 6".
 // The test's own copy of the server's grid (node/server_functions.js ghash and
 // get_nearby_ghash): a monster in cell (cx, cy) checks players in cells cx - 1 to cx + 1.
 // The segment is walked every half unit, which no step crosses a 32-unit cell between.
@@ -78,7 +74,9 @@ const windowReport=(from:number,to:number)=>`(()=>{const s=globalThis.__e2eSafet
       refused:count(r=>r.decision==='refused'),refusedStops:count(r=>r.decision==='refused-stop'),stepRefused:count(r=>r.decision==='step-refused')},
     started:count(r=>r.decision==='started'),pauses:count(r=>r.decision==='paused'&&r.cause==='combat')};})()`;
 
-export async function beeFieldRow(live:LiveGame,info:TestInfo){
+// The bee field farm: `count` windows of `windowMs` from the first selected bee, each fighter's
+// step-safety reading per window (W08a plays one window).
+export async function beeFieldPlay(live:LiveGame,info:TestInfo,count:number,windowMs:number){
     await fightersReady(live);
     await party(live);
     const farm=await location(live,'bee');
@@ -89,10 +87,10 @@ export async function beeFieldRow(live:LiveGame,info:TestInfo){
       `!!(parent.entities[character.target]&&parent.entities[character.target].mtype==='bee')`)))).some(Boolean),{timeout:180_000}).toBe(true);
     for(const name of fighters){await live.clients[name].run(instrument);await live.clients[name].run(spendLog);}
     const windows:any[]=[];
-    for(let index=0;index<WINDOWS;index++){
+    for(let index=0;index<count;index++){
       const start=await windowStart(live);
       const startedAt=Date.now();
-      await expect.poll(async()=>Date.now()-startedAt,{timeout:WINDOW_MS+30_000,intervals:[5_000]}).toBeGreaterThan(WINDOW_MS);
+      await expect.poll(async()=>Date.now()-startedAt,{timeout:windowMs+30_000,intervals:[5_000]}).toBeGreaterThan(windowMs);
       const result=Object.fromEntries(await Promise.all(fighters.map(async name=>{
         const end=await clock(live,name),events=(await live.clients[name].events()).filter((event:any)=>Number(event.sequence)>start[name]!.event&&event.event==='hit'&&event.data?.hid===name);
         const turns=await turnsWindow(live,name,start[name]!,end);
@@ -119,9 +117,9 @@ export async function beeFieldRow(live:LiveGame,info:TestInfo){
       console.log('MOVEMENT-SAFETY-WINDOW '+JSON.stringify({index,result}));
     }
     await info.attach('movement-step-safety',{body:JSON.stringify({windows}),contentType:'application/json'});
-    // The reflect list on a planted sparkbot, after the
-    // measured windows so their figures keep their meaning.
-    await reflectListRow(live,info);
+    return windows;
+}
+export function beeFieldVerdict(windows:any[]){
     for(const window of windows)for(const name of fighters){
       const {native,owner}=window[name];
       // The counters last the runtime, which the table's rows share; a window reads its change.
@@ -132,6 +130,4 @@ export async function beeFieldRow(live:LiveGame,info:TestInfo){
       expect(native.closes,`${name} combat steps closing on an attacker`).toBe(0);
       expect(native.pulls.step??0,`${name} idle monsters pulled by a combat step while fighting`).toBe(0);
     }
-    // The emergency Stomp on the same field, after the windows.
-    await sv12StompRows(live,info);
 }

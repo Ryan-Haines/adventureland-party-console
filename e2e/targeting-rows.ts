@@ -10,8 +10,8 @@ import {targetingSavedFields} from '../runtime/characters/targeting/saved-fields
 // The failed-approach mark's length, targeting's `setAsideMs` (rules.ts reads it through `pick`).
 const SET_ASIDE_MS=targetingSavedFields.settings.setAsideMs.default;
 
-// The targeting owner's row "targeting: retire and skip", in the default table after the survival potions row. Step 1 writes
-// its first case, the planned case on the bee field: a planted monster on walkable ground that has
+// The targeting owner's row "targeting: retire and skip", which W08b plays (`targetingRetireRow`). Step 1
+// writes its first case, the planned case on the bee field: a planted monster on walkable ground that has
 // no path from the party and lies farther than the warrior's range from any point the warrior can
 // reach, found on the warrior's client at run time. The plant is a pinkgoo, a passive monster with
 // no spawn in Main, with the focus set to it alone, so the farm candidates hold only the plant
@@ -107,6 +107,8 @@ export async function targetingRetireRow(live:LiveGame,info:TestInfo){
   expect(geometry.reached,'G1: the flood reaches the ground around the warrior '+JSON.stringify(geometry)).toBeGreaterThan(1);
   expect(geometry.point,"G1: a walkable point farther than the warrior's range from any point it can reach "+JSON.stringify(geometry)).not.toBeNull();
   const P=geometry.point as {x:number;y:number};
+  // Each plant's removal passes nospawn only for a world monster, so the pinkgoo leaves monster_c and
+  // its E entry with it (W08b-unreachable-plant.spec.ts `replant`).
   const id=String(await live.admin(`output=(()=>{const m=new_monster('main',{type:'pinkgoo',position:[${P.x},${P.y}],radius:0,count:1},{temp:1});m.hp=m.max_hp=2000000;return m.id;})()`));
   const planted=await live.admin(`output=(()=>{const m=instances.main.monsters[${JSON.stringify(id)}];return m?{x:m.x,y:m.y}:null;})()`);
   try{
@@ -139,7 +141,7 @@ export async function targetingRetireRow(live:LiveGame,info:TestInfo){
     expect.soft(tg41.keeps?.kept,'TG41: the non-leader keeps the marked lock target').toBe(true);
     expect.soft(tg41.knownDead,"TG41: the retire puts the marked lock target on the priest's killed list").toBe(false);
   }finally{
-    await live.admin(`output=(()=>{const m=instances.main.monsters[${JSON.stringify(id)}];if(m)remove_monster(m,{method:'disappear',nospawn:true});return true;})()`).catch(()=>{});
+    await live.admin(`output=(()=>{const m=instances.main.monsters[${JSON.stringify(id)}];if(m)remove_monster(m,{method:'disappear',nospawn:!m.temp});return true;})()`).catch(()=>{});
     await live.post('/focus',{monsterFocus:['bee'],monsterPriorities:{},monsterSearchRadius:400}).catch(()=>{});
   }
   await targetingHuntCase(live,info,geometry);
@@ -156,7 +158,7 @@ export async function targetingRetireRow(live:LiveGame,info:TestInfo){
 // notice is in play, and the leader's retire count is the premise that shows it.
 async function targetingNonLeaderNotice(live:LiveGame,shore:{x:number;y:number},first:string){
   const [WR,PR]=fighters;
-  await live.admin(`output=(()=>{const m=instances.main.monsters[${JSON.stringify(first)}];if(m)remove_monster(m,{method:'disappear',nospawn:true});return true;})()`);
+  await live.admin(`output=(()=>{const m=instances.main.monsters[${JSON.stringify(first)}];if(m)remove_monster(m,{method:'disappear',nospawn:!m.temp});return true;})()`);
   await live.admin(`output=(()=>{for(const n of ${JSON.stringify(fighters)})transport_player_to(get_player(n),'main',[${shore.x},${shore.y}]);return true;})()`);
   const id=String(await live.admin(`output=(()=>{const m=new_monster('main',{type:'pinkgoo',position:[${shore.x},${shore.y}],radius:0,count:1},{temp:1});m.hp=m.max_hp=2000000;return m.id;})()`));
   const retiredOf=`(globalThis.__partyTargeting.records()||[]).filter(e=>e.kind==='retired'&&e.target===${JSON.stringify(id)}).length`;
@@ -175,7 +177,7 @@ async function targetingNonLeaderNotice(live:LiveGame,shore:{x:number;y:number},
     tg41.knownDead=await live.clients[PR!]!.run(`!!(globalThis.partyRoleRunner&&globalThis.partyRoleRunner.isKnownDead&&globalThis.partyRoleRunner.isKnownDead(${JSON.stringify(id)}))`);
     return tg41;
   }finally{
-    await live.admin(`output=(()=>{const m=instances.main.monsters[${JSON.stringify(id)}];if(m)remove_monster(m,{method:'disappear',nospawn:true});return true;})()`).catch(()=>{});
+    await live.admin(`output=(()=>{const m=instances.main.monsters[${JSON.stringify(id)}];if(m)remove_monster(m,{method:'disappear',nospawn:!m.temp});return true;})()`).catch(()=>{});
   }
 }
 
@@ -198,7 +200,7 @@ async function targetingHuntCase(live:LiveGame,info:TestInfo,geometry:any){
   const P=geometry.point as {x:number;y:number},D=(geometry.drift||geometry.point) as {x:number;y:number};
   const [W]=fighters;
   const field=geometry.field as {x:number;y:number};
-  const removed=await live.admin(`output=(()=>{let n=0;for(const m of Object.values(instances.main.monsters))if(m.type==='bee'&&Math.hypot(m.x-${field.x},m.y-${field.y})<=900){remove_monster(m,{method:'disappear',nospawn:true});n++;}return n;})()`);
+  const removed=await live.admin(`output=(()=>{let n=0;for(const m of Object.values(instances.main.monsters))if(m.type==='bee'&&Math.hypot(m.x-${field.x},m.y-${field.y})<=900){remove_monster(m,{method:'disappear',nospawn:!m.temp});n++;}return n;})()`);
   const id=String(await live.admin(`output=(()=>{const m=new_monster('main',{type:'bee',position:[${P.x},${P.y}],radius:0,count:1},{temp:1});m.hp=m.max_hp=2000000;m.aggro=0;m.peaceful=true;
     const a={x:${P.x},y:${P.y}},b={x:${D.x},y:${D.y}};let to=b;globalThis.__e2eDrift=setInterval(()=>{if(m.dead||!instances.main.monsters[m.id])return clearInterval(globalThis.__e2eDrift);
       m.going_x=to.x;m.going_y=to.y;start_moving_element(m);to=to===a?b:a;},1500);return m.id;})()`));
@@ -229,7 +231,7 @@ async function targetingHuntCase(live:LiveGame,info:TestInfo,geometry:any){
     result.monsterHunt=state.monsterHunt??null;
   }catch(error){result.error=String(error).slice(0,400);}
   finally{
-    await live.admin(`output=(()=>{clearInterval(globalThis.__e2eDrift);const m=instances.main.monsters[${JSON.stringify(id)}];if(m)remove_monster(m,{method:'disappear',nospawn:true});
+    await live.admin(`output=(()=>{clearInterval(globalThis.__e2eDrift);const m=instances.main.monsters[${JSON.stringify(id)}];if(m)remove_monster(m,{method:'disappear',nospawn:!m.temp});
       for(const name of ${JSON.stringify(fighters)}){const p=get_player(name);delete p.s.monsterhunt;resend(p,'u+cid+reopen');}return true;})()`).catch(()=>{});
     await live.post('/farming-mode',{character:W,combatMode:'default',targetMode:'farming'}).catch(()=>{});
     await live.post('/focus',{monsterFocus:['bee'],monsterPriorities:{},monsterSearchRadius:400}).catch(()=>{});
@@ -314,7 +316,7 @@ export async function reflectListRow(live:LiveGame,info:TestInfo){
   }catch(error){result.error=String(error).slice(0,400);}
   finally{
     await write({}).catch(()=>{});
-    await live.admin(`output=(()=>{const m=instances.main.monsters[${JSON.stringify(id)}];if(m)remove_monster(m,{method:'disappear',nospawn:true});return true;})()`).catch(()=>{});
+    await live.admin(`output=(()=>{const m=instances.main.monsters[${JSON.stringify(id)}];if(m)remove_monster(m,{method:'disappear',nospawn:!m.temp});return true;})()`).catch(()=>{});
   }
   await info.attach('targeting-reflect-list',{body:JSON.stringify(result,null,2),contentType:'application/json'});
   console.log('TARGETING-REFLECT '+JSON.stringify(result));
@@ -344,6 +346,6 @@ export async function porcupineTargetCall(live:LiveGame){
     console.log('TARGETING-TG8 '+JSON.stringify(log));
     expect(log.filter(e=>e[0]==='emit'||e[2]==='target'),'TG8: the target call asks the survival band, then sends').toEqual([['band','survival','target',id,'send'],['emit','target',id]]);
   }finally{
-    await live.admin(`output=(()=>{const m=instances.main.monsters[${JSON.stringify(id)}];if(m)remove_monster(m,{method:'disappear',nospawn:true});return true;})()`).catch(()=>{});
+    await live.admin(`output=(()=>{const m=instances.main.monsters[${JSON.stringify(id)}];if(m)remove_monster(m,{method:'disappear',nospawn:!m.temp});return true;})()`).catch(()=>{});
   }
 }

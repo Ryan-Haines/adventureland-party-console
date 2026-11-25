@@ -35,7 +35,11 @@ export async function reward(live:LiveGame,before:Record<string,any>,timeout=240
   },{timeout,intervals:[250,500,1000],message:'Native quest kills and Daisy turn-in must yield exactly one real token for each owner'}).toBe(true);
   await live.post('/farming-mode',{character:W,mode:'default'});
 }
-export async function spawnGoo(live:LiveGame,name=W,observableCombatSeconds=0,ahead=0) {
+// `area` is a farm location's boundary [x1,y1,x2,y2]. The targeting owner picks a farm target from
+// the monsters inside the boundary while any are there (zones.ts `candidates`), so a plant for the
+// farm to fight goes inside it: final-gate-closing6's M04 goo stood 39 px north of main's goo
+// boundary, beside a warrior that shot field goos 200 px away, and no hit reached it in 45 s.
+export async function spawnGoo(live:LiveGame,name=W,observableCombatSeconds=0,ahead=0,area?:number[]) {
   let seeded: any;
   const seed = async () => {
   if(ahead&&!observableCombatSeconds){
@@ -60,8 +64,11 @@ export async function spawnGoo(live:LiveGame,name=W,observableCombatSeconds=0,ah
   })()`):null;
   return live.admin(`output=(()=>{const p=get_player(${JSON.stringify(name)}),goal=${JSON.stringify(goal)},distance=goal?Math.hypot(goal.x-p.x,goal.y-p.y):0,ahead=${ahead}?Math.min(${ahead},distance-35):0;
     if(${ahead}&&(!p.moving||ahead<35))return null;
-    const offsets=ahead?[[ahead*(goal.x-p.x)/distance,ahead*(goal.y-p.y)/distance]]:[[35,0],[-35,0],[0,35],[0,-35]];
-    for(const [dx,dy] of offsets){const x=p.x+dx,y=p.y+dy;if(can_move({map:p.map,x:p.x,y:p.y,going_x:x,going_y:y,base:p.base})){const m=new_monster(p.in,{type:'goo',__e2eAmbientExempt:true,position:[x,y],radius:0,count:1},{temp:1});m.e2eHunt=true;${observableCombatSeconds ? `m.hp=m.max_hp=Math.ceil(${JSON.stringify(fighters)}.map(get_player).reduce((sum,p)=>sum+Math.max(1,p.attack)*Math.max(0.1,p.frequency),0)*${observableCombatSeconds});` : ''}return {id:m.id,map:m.map,x:m.x,y:m.y,hp:m.hp,ahead,origin:{x:p.x,y:p.y},observableCombatSeconds:${observableCombatSeconds}};}}throw Error('No reachable encounter seed')})()`);
+    const offsets=ahead?[[ahead*(goal.x-p.x)/distance,ahead*(goal.y-p.y)/distance]]:[[35,0],[-35,0],[0,35],[0,-35]],area=${JSON.stringify(area??null)};
+    // Inside the area: the character's own spot pulled 35 px into it first, then the offsets that land inside.
+    const inside=(x,y)=>!area||x>area[0]&&x<area[2]&&y>area[1]&&y<area[3];
+    if(area)offsets.unshift([Math.min(Math.max(p.x,area[0]+35),area[2]-35)-p.x,Math.min(Math.max(p.y,area[1]+35),area[3]-35)-p.y]);
+    for(const [dx,dy] of offsets){const x=p.x+dx,y=p.y+dy;if(inside(x,y)&&can_move({map:p.map,x:p.x,y:p.y,going_x:x,going_y:y,base:p.base})){const m=new_monster(p.in,{type:'goo',__e2eAmbientExempt:true,position:[x,y],radius:0,count:1},{temp:1});m.e2eHunt=true;${observableCombatSeconds ? `m.hp=m.max_hp=Math.ceil(${JSON.stringify(fighters)}.map(get_player).reduce((sum,p)=>sum+Math.max(1,p.attack)*Math.max(0.1,p.frequency),0)*${observableCombatSeconds});` : ''}return {id:m.id,map:m.map,x:m.x,y:m.y,hp:m.hp,ahead,origin:{x:p.x,y:p.y},observableCombatSeconds:${observableCombatSeconds}};}}throw Error('No reachable encounter seed')})()`);
   };
   if(!ahead)return seed();
   // A client walking sample can precede a Town step or the server's next move
@@ -70,13 +77,19 @@ export async function spawnGoo(live:LiveGame,name=W,observableCombatSeconds=0,ah
     message:'Introduce one passing encounter on an actual native walking leg'}).toBe(true);
   return seeded;
 }
-// Removes every monster on the map without a respawn and drops the map's queued respawns, so only
-// the encounter a row seeds there stands.
-export async function clearMap(live:LiveGame,map:string){
-  await live.admin(`output=(()=>{const map=${JSON.stringify(map)};for(const m of Object.values(instances[map].monsters))remove_monster(m,{method:'disappear',nospawn:true});for(let i=monster_respawns.length-1;i>=0;i--)if(monster_respawns[i][0]?.map===map)monster_respawns.splice(i,1);return true;})()`);
-}
 // A native hit packet in which the attacker damages the monster; taunt's 1-damage hit does not count.
 export const nativeHit=(e:any,attacker:string,id:string)=>e.event==='hit'&&e.data?.hid===attacker&&String(e.data?.id)===id&&e.data?.damage>1&&e.data?.source!=='taunt';
+// A point lies off the bearing from `origin` to `target` when the character's collision box at that
+// point no longer covers the bearing's line. The box is the game's `base` (h each side, v above, vn
+// below; server.js:189 dbase {h:8,v:7,vn:2}), so its reach along the line's normal (nx,ny) is
+// h*|nx| plus v or vn, by the side the line lies on.
+export function offBearing(origin:{x:number;y:number},target:{x:number;y:number},base:{h:number;v:number;vn:number},point:{x:number;y:number}){
+  const dx=target.x-origin.x,dy=target.y-origin.y,length=Math.hypot(dx,dy),nx=-dy/length,ny=dx/length;
+  const offset=(point.x-origin.x)*nx+(point.y-origin.y)*ny;
+  // The line's nearest point sits at -offset along the normal, so a negative y step puts it above.
+  const reach=base.h*Math.abs(nx)+(-offset*ny<0?base.v:base.vn)*Math.abs(ny);
+  return Math.abs(offset)>reach;
+}
 // A combat position the member moves under its own independent approach.
 export const approachOwned=(p:any)=>p?.mode==='independent-approach'&&p.movementOwner==='combat-approach'&&!!p.approachId;
 // A combat position that combat owns, directly or through the member's own approach.

@@ -3,59 +3,6 @@ import {expect,type LiveGame} from './live-fixtures';
 
 export const groupOf=(read:any,name:string)=>read.groups.find((g:any)=>g.members.includes(name));
 export const snapshotsOf=(read:any,group:string,trigger:string)=>(read.snapshots[group]??[]).filter((s:any)=>s.trigger===trigger).length;
-const ask=(group:string,kind:string,owner:string,deadline?:number)=>({op:'request',args:[group,{kind,owner,...(deadline===undefined?{}:{deadline})}]});
-// The fill and churn tasks carry a deadline, so only the planted tasks break invariant 1.
-const bound=()=>Date.now()+600_000;
-
-// The planted breaks that prove the per-tick check. No provider asks in this row, so the row drives
-// the leader's group owner directly and ends every task it starts.
-export async function taskRecords(live:LiveGame,leader:string,replies:()=>string[]){
-  const group=`party:${leader}`;
-  await expect.poll(async()=>groupOf(await live.tasks(),leader)?.id,{timeout:30_000}).toBe(group);
-  const count=async(trigger:string)=>snapshotsOf(await live.tasks(),group,trigger);
-  const before={churn:await count('churn'),failed:await count('task-failed'),safe:await count('safe-point')};
-  // A live trip with no deadline, walk or due step, and a waiting Hunt with no expiry.
-  live.expectTaskBreak('manual has no deadline, walk or due ladder step');
-  live.expectTaskBreak('waiting hunt-mission e2e:f3 has no expiry');
-  const [trip]=await live.taskOps([ask(group,'manual','e2e:f1')]);
-  const [hunt]=await live.taskOps([ask(group,'hunt-mission','e2e:f3')]);
-  expect([trip.status,hunt.status]).toEqual(['granted','waiting']);
-  await expect.poll(async()=>{const read=await live.tasks();return [1,3].filter(n=>read.breaks.some((b:any)=>b.group===group&&b.invariant===n));},
-    {timeout:30_000,message:'The task tick must record both planted breaks'}).toEqual([1,3]);
-  await live.taskOps([{op:'release',args:[hunt]},{op:'release',args:[trip]}]);
-  // 150 asks of the live identity fill the ring past its bound of 128; a kept ask is a decision.
-  // The fill and churn tasks rank as add-on tasks (60), above the farming the party's own provider
-  // asks from the tasks owner step 3c, so each one takes the group.
-  const [fill]=await live.taskOps([ask(group,'addon:e2e','e2e:fill',bound())]);
-  expect(fill.status).toBe('granted');
-  const kept=await live.taskOps(Array.from({length:150},()=>ask(group,'addon:e2e','e2e:fill',bound())));
-  expect(kept.every((handle:any)=>handle.status==='kept')).toBe(true);
-  // Triggers 2 and 3 on the same task: the safe point rung (two failures with no alternative),
-  // then an end with failed:<code>.
-  await live.taskOps([{op:'fail',args:[fill,'e2e']},{op:'fail',args:[fill,'e2e']},{op:'release',args:[fill,'failed:e2e']}]);
-  // Trigger 4: an identity that takes the group a second time with no progress since it
-  // last held it loops, and writes one churn snapshot; distinct identities write none.
-  for(let i=0;i<3;i++){const [handle]=await live.taskOps([ask(group,'addon:e2e','e2e:once:'+i,bound())]);await live.taskOps([{op:'release',args:[handle]}]);}
-  for(let i=0;i<2;i++){const [handle]=await live.taskOps([ask(group,'addon:e2e','e2e:churn',bound())]);await live.taskOps([{op:'release',args:[handle]}]);}
-  // Decided 2026-10-29: a member on Manual refuses a merchant visit under Carries on, and
-  // under Follows me the merchant delivers where it stands (the Manual case).
-  const member=groupOf(await live.tasks(),leader).members.find((n:string)=>n!==leader)??leader;
-  const visits=await live.taskOps([{op:'allows',args:['merchant-visit',member]},
-    {op:'hold',args:[member,'manual',{reason:'On Manual',party:'carries-on'}]},{op:'allows',args:['merchant-visit',member]},{op:'hold',args:[member,'manual',null]},
-    {op:'hold',args:[member,'manual',{reason:'On Manual',party:'follows-me'}]},{op:'allows',args:['merchant-visit',member]},{op:'hold',args:[member,'manual',null]}]);
-  expect([visits[0],visits[2],visits[5]],'idle, Carries on, Follows me').toEqual([true,false,true]);
-  const read=await live.tasks(),ring=groupOf(read,leader).ring;
-  expect(ring).toHaveLength(128);
-  ring.forEach((entry:any,index:number)=>{expect(entry.part).toBe('tasks');if(index)expect(entry.seq).toBe(ring[index-1].seq+1);});
-  expect({churn:snapshotsOf(read,group,'churn')-before.churn,failed:snapshotsOf(read,group,'task-failed')-before.failed,
-    safe:snapshotsOf(read,group,'safe-point')-before.safe},'one snapshot per trigger').toEqual({churn:1,failed:1,safe:1});
-  // The party's own provider holds it again once the row's tasks end (farming from step 3c).
-  expect(groupOf(read,leader).live.owner,'the row ends every task it started').not.toMatch(/^e2e:/);
-  // The ring reaches neither the dashboard state nor the heartbeat replies.
-  expect(JSON.stringify(await live.state())).not.toContain('"part":"tasks"');
-  expect(replies().length).toBeGreaterThan(0);
-  for(const body of replies())expect(body).not.toContain('"part":"tasks"');
-}
 
 // Section 6 trigger 1 for a death the heartbeat reports: the dead member's group ring names it
 // once, and its group writes one death snapshot per death it names.

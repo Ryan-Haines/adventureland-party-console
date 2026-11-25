@@ -6,8 +6,8 @@ import { seedSmallGoobrawl } from './game/event-scenario';
 import { taskSeq, taskTrail, ringFrom, convoyWatch, reportTick } from './task-records';
 import { warrior as W, priest as P, quantity, observed, evidence, point, arrived, party, seedQuest, start, hunt } from './game/hunt-lifecycle';
 
-// Rows moved from live-game.spec.ts into the default fixture's table (01 step 8, the test cut):
-// the convoy interruption and the Goobrawl variants start from the default fixture, and each
+// Rows moved from live-game.spec.ts at 21fe30a2b in 01 step 8, the test cut. W10b plays the convoy
+// interruption. W34 and W35 play the Goobrawl variants (e2e/event-session-rows.ts), and each
 // Goobrawl row seeds its own arena.
 
 export async function convoyInterruptionRow(live: LiveGame, info: TestInfo) {
@@ -32,9 +32,10 @@ export async function convoyInterruptionRow(live: LiveGame, info: TestInfo) {
 
 // The event's tasks against the Hunt. The finished
 // variant starts the event before a finished Hunt's hand-in, so the event outranks the hand-in.
-export const goobrawlRows: Row[] = (['plain', 'restart', 'finished'] as const).map(variant => {
+// `staleMarker` false leaves out the restart variant's stale-marker half, a coordinator unit check
+// (test-windows DESIGN.md 4.3 T36), so W34 plays the rest.
+export async function goobrawlPlay(live: LiveGame, info: TestInfo, variant: 'plain' | 'restart' | 'finished', staleMarker = true) {
   const restart = variant === 'restart';
-  return [`Goobrawl interrupts Hunt and real event evacuation resumes it${restart ? ' across coordinator restart' : variant === 'finished' ? ' with a finished Hunt at the event start' : ''}`, async (live: LiveGame, info: TestInfo) => {
     const encounter = await seedSmallGoobrawl(live);
     await info.attach('goobrawl-initial-encounter', { body: JSON.stringify(encounter), contentType: 'application/json' });
     await party(live);
@@ -104,15 +105,19 @@ export const goobrawlRows: Row[] = (['plain', 'restart', 'finished'] as const).m
     // `/event-ended` notice, and the event poll (character/attend.ts `poll`) keeps the marker to retry
     // the notice.
     const keepMarker = (route: Route) => route.abort();
-    if (restart) for (const name of [W, P]) await live.clients[name].page.route('**/event-ended', keepMarker);
+    if (restart && staleMarker) for (const name of [W, P]) await live.clients[name].page.route('**/event-ended', keepMarker);
+    const killedSurvivor = async () => (await Promise.all([W,P].map(name => live.clients[name].events()))).flat().some((event: any) =>
+      survivors.some((monster: any) => String(monster.id) === String(event.data?.id)) && (event.event === 'death' || event.event === 'hit' && event.data?.kill));
+    // The finished Hunt's hand-in (rank 70) outranks the event return (68), so it walks the party
+    // out as soon as the event ends and no survivor is cleared after the timer. Its fight is
+    // read before the timer ends: in the step 14 rerun the timer ended 1 s after the first blow.
+    if (variant === 'finished') await expect.poll(killedSurvivor, { timeout: 180_000, message: 'Native clients must kill an observed event monster' }).toBe(true);
     await live.admin(`timers.goobrawl=new Date(0);output=true`);
     // Timer expiry leaves native survivors to kill before the ended-event
     // grace period and real transporter evacuation can begin.
     await expect.poll(async () => { const state=await observed(live);return [W,P].every(name=>state[name].map==='main'); }, { timeout: 180_000 }).toBe(true);
     const backOnMain = Date.now();
-    const combat = (await Promise.all([W,P].map(name => live.clients[name].events()))).flat();
-    expect(combat.some((event: any) => survivors.some((monster: any) => String(monster.id) === String(event.data?.id)) &&
-      (event.event === 'death' || event.event === 'hit' && event.data?.kill)), 'Native clients must kill an observed event monster').toBe(true);
+    expect(await killedSurvivor(), 'Native clients must kill an observed event monster').toBe(true);
     // The Hunt resumes the same mission it left for the event.
     const after = hunt(await live.state());
     if (variant !== 'finished') expect({ index: after.currentIndex, target: after.target }, 'the Hunt mission after the event').toEqual({ index: before.currentIndex, target: before.target });
@@ -149,7 +154,7 @@ export const goobrawlRows: Row[] = (['plain', 'restart', 'finished'] as const).m
       expect(walk.requester?.tier, 'the next walk is the Hunt mission walk').toBe('hunt-mission');
       expect(walk.startedAt - ended.at, 'the mission walk is asked for within one coordinator tick of the return end').toBeLessThanOrEqual(tick);
     }
-    if (restart) {
+    if (restart && staleMarker) {
       // A stale `joinedEvent` after a reload does not suspend the Hunt. The event marker is derived
       // (character/attend.ts `joined`): it names the event of the member's attendance assignment
       // from the last heartbeat while the member stands on that event's map. The Hunt has resumed
@@ -216,9 +221,11 @@ export const goobrawlRows: Row[] = (['plain', 'restart', 'finished'] as const).m
     if (variant === 'finished') await expect.poll(async () => ((await observed(live))[W].quest?.c ?? 0) > 0,
       { timeout: 60_000, message: 'The Hunt takes its next quest after the hand-in' }).toBe(true);
     const afterExit = (await observed(live))[W];
+    // Off the event map, wherever the Hunt's quest is: the game draws the next quest at random, and
+    // in final-gate-closing6 it drew osnake, which the Hunt fought in Spooky Forest.
     await expect.poll(async () => {
       const current = (await observed(live))[W];
-      return current.map === 'main' && ((current.quest?.id === afterExit.quest?.id &&
+      return current.map !== 'goobrawl' && ((current.quest?.id === afterExit.quest?.id &&
         current.quest?.c < afterExit.quest?.c) ||
         quantity(current.items, 'monstertoken') > quantity(afterExit.items, 'monstertoken'));
     }, { timeout: 150_000, message: 'Hunt must execute real combat or turn-in after leaving the event' }).toBe(true);
@@ -240,5 +247,7 @@ export const goobrawlRows: Row[] = (['plain', 'restart', 'finished'] as const).m
     await info.attach('goobrawl-tasks', { body: JSON.stringify(await taskTrail(live, group, 0), null, 1), contentType: 'application/json' });
     await evidence(live, info, 'live-event-hunt-handback', { restart, survivors, afterExit });
     } finally { await walks.stop(); }
-  }];
-});
+}
+export const goobrawlRows: Row[] = (['plain', 'restart', 'finished'] as const).map(variant => [
+  `Goobrawl interrupts Hunt and real event evacuation resumes it${variant === 'restart' ? ' across coordinator restart' : variant === 'finished' ? ' with a finished Hunt at the event start' : ''}`,
+  (live: LiveGame, info: TestInfo) => goobrawlPlay(live, info, variant)]);

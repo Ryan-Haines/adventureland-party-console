@@ -1,26 +1,18 @@
-import {expect,plantVitals,serverView,waitForGameplay,writeDelivered,type LiveGame} from './live-fixtures';
-import type {TestInfo} from '@playwright/test';
+import {expect,plantVitals,serverView,waitForGameplay,type LiveGame} from './live-fixtures';
 import {fighters,location,party} from './game/hunt-lifecycle';
 import {oneCall} from './call-budget-rows';
-import {tc11,replyStep,below,HEAL_FIRST_BELOW,skipStretch,SELECTION_MS,type SkipRecord} from './turns-tc11';
+import {tc11,replyStep,below,HEAL_FIRST_BELOW,type SkipRecord} from './turns-tc11';
 import {tc2} from './turns-tc2';
-import {addonSwitches,registerTurnsChargeAddon,TURNS_CHARGE_ADDON} from './fixtures/turns-hooks-addon';
-import {porcupineTargetCall} from './targeting-rows';
 import {W,P,M} from './hunt-interruption-helpers';
-import {HEALTHY_SHARE} from '../runtime/characters/survival/lines';
 import {HEAL_FIRST_BELOW as HEAL_FIRST_BELOW_PERCENT} from '../runtime/characters/turns/saved-fields';
 
-// The turns owner's rows of the default table: the priest's slot at the attack edge, and one potion in flight. Each
-// checks its failure modes by number after the row's measures, so a row on a tree without the
-// executor still measures. The modes later steps build are soft checks, so each row runs to its
-// end. The steps windows and the bee field read the same spend log for their measures.
-// The potion group: the server keeps one `player.last.potion` for all four (server.js:7807-7811,
-// 7856, 12042-12048).
-const POTION_SKILLS=['use_hp','use_mp','regen_hp','regen_mp'];
+// The turns owner's rows, which W01, W04, W06a and W08c play from: the priest's slot at the attack edge,
+// and one potion in flight. Each checks its failure modes by number after the row's measures, so a row on
+// a tree without the executor still measures. The modes later steps build are soft checks, so each row
+// runs to its end. The steps windows and the bee field read the same spend log for their measures.
 // A red run plants the break each named check exists to catch (E2E_TURNS_RED=tc1,tc5,...), so the
 // check is shown failing; a gate run plants none.
 export const red=(check:string)=>(process.env.E2E_TURNS_RED??'').split(',').includes(check);
-const attach=(info:TestInfo,name:string,body:unknown)=>info.attach(name,{body:JSON.stringify(body,null,1),contentType:'application/json'});
 
 // The spend log, on the game window so a CODE reload keeps it: every `attack`, `heal`, `skill`,
 // potion `equip` and regeneration `use` the character sends, with its MP, its target and each
@@ -165,7 +157,6 @@ export const spendsSince=(live:LiveGame,name:string,from:number)=>readLog(live,n
 // (functions.js:5486) and one round trip, the median of the client's own pings.
 export const timing=(live:LiveGame,name:string)=>live.clients[name]!.run(`(()=>{const p=(parent.pings||[]).filter(Number.isFinite).sort((a,b)=>a-b);
   return {cooldown:1000/(Number(character.frequency)||1),rtt:p.length?p[Math.floor(p.length/2)]:0,minRtt:p.length?p[0]:0,mpCost:character.mp_cost,range:character.range};})()`) as Promise<{cooldown:number;rtt:number;minRtt:number;mpCost:number;range:number}>;
-const inRange=(s:Spend,name:string)=>{const m=s.party[name];return !!m&&m.dist<=s.range;};
 const accepted=(r:Reply,place:string)=>r.place===place&&!r.failed;
 
 // 7.3's measures of one window, from the spend log: accepted attacks per second, `attack` calls
@@ -236,45 +227,6 @@ export async function fightingAtGoo(live:LiveGame){
   const from=await clock(live,P);
   await expect.poll(async()=>(await readLog(live,P,from)).replies.filter(r=>accepted(r,'attack')).length,{timeout:180_000,message:'The priest fights goo beside the warrior'}).toBeGreaterThanOrEqual(3);
 }
-// The plant on one member, held until the priest's own client shows it: its view of the member's
-// HP at or below the plant, a packet that carried it there (the spend log's `packets`), or a heal it
-// landed after the plant. A heal or the member's own gain can follow the packet before the poll,
-// which runs between test-side reads, reads the view.
-// The plant waits until the priest's client holds the member in its heal range. The independent
-// approach lets each fighter walk to its own target with no healer regroup (docs/testing-independent-
-// approach-coordinator.md: "Only cohort healer visibility/distance regroup and one-mover control are
-// removed for that mode"), so the warrior can farm outside the priest's view: a3 planted it 703 away
-// on y against a vision of 500, and the priest never saw the plant. A heal can only reach a member
-// in view and in range, the case each plant checks.
-async function plantSeen(live:LiveGame,name:string,vitals:{hp?:number;mp?:number;mpAt?:number}){
-  if(name!==P)await expect.poll(()=>live.clients[P]!.run(`(()=>{const e=parent.entities[${JSON.stringify(name)}];
-    return !!e&&!e.rip&&Math.hypot(e.real_x-character.real_x,e.real_y-character.real_y)<=character.range;})()`),
-    {timeout:60_000,intervals:[50],message:`${name} in the priest's view and heal range before the plant`}).toBe(true);
-  const sentAt=await clock(live,P),planted=await plantVitals(live,name,vitals);
-  const want=vitals.hp!==undefined?planted.hp:null;
-  await expect.poll(()=>live.clients[P]!.run(`(()=>{const e=${JSON.stringify(name)}===character.name?character:parent.entities[${JSON.stringify(name)}];
-    const healed=parent.__e2eTurns.replies.some(r=>r.at>=${sentAt}&&!r.failed&&(r.place==='heal'||r.place==='partyheal'));
-    const packet=parent.__e2eTurns.packets.some(p=>p.at>=${sentAt}&&p.name===${JSON.stringify(name)}&&typeof p.hp==='number'&&p.hp<=${want}+1);
-    return !!e&&(${want}===null||e.hp<=${want}+1||packet||healed);})()`),
-    {timeout:10_000,intervals:[50],message:`The priest sees the plant on ${name}`}).toBe(true).catch(async error=>{
-      // What the priest saw, for the failure's reading.
-      console.log('TURNS-PLANT '+JSON.stringify({name,want,planted,view:await live.clients[P]!.run(`(()=>{const e=${JSON.stringify(name)}===character.name?character:parent.entities[${JSON.stringify(name)}];
-        return {seen:!!e,hp:e&&e.hp,max:e&&e.max_hp,rip:character.rip,map:character.map,dist:e?Math.hypot(e.real_x-character.real_x,e.real_y-character.real_y):null,
-          replies:parent.__e2eTurns.replies.filter(r=>r.at>=${sentAt}).map(r=>[r.at-${sentAt},r.place,r.response])};})()`),
-        // Where each fighter stands by its own client, with its target, and the priest's samples of
-        // the member from 20 s before the plant.
-        at:Object.fromEntries(await Promise.all(fighters.map(async n=>[n,await live.clients[n]!.run(`(()=>({map:character.map,x:Math.round(character.real_x),y:Math.round(character.real_y),
-          target:parent.ctarget?String(parent.ctarget.id)+':'+parent.ctarget.mtype:null,moving:!!character.moving}))()`)]))),
-        samples:(await readLog(live,P,sentAt-20_000)).samples.filter((_,i)=>i%5===0).map(s=>[s.at-sentAt,s.target?1:0,s.party[name]?Math.round(s.party[name]!.dist):null]),
-        // The member's own client from 1 s before the plant: its HP samples, sends and replies, so a
-        // rise before the priest read the plant names its source.
-        own:await (async()=>{const o=await readLog(live,name,sentAt-1000);return {hp:o.samples.map(s=>[s.at-sentAt,s.party[name]?.hp??null]),
-          spends:o.spends.map(s=>[s.at-sentAt,s.method,s.name??s.item??s.id]),replies:o.replies.map(r=>[r.at-sentAt,r.place,r.response])};})(),
-        // The packets that carried the member's HP to the priest and to the member itself, with the
-        // server's side of each view.
-        priestView:await plantView(live,P,name,sentAt-1000),ownView:await plantView(live,name,name,sentAt-1000)}).slice(0,12000));throw error;});
-  return {...planted,seenAt:sentAt};
-}
 
 // A TC11 wait's reading: around each wait, from 1.5 s before its edge to
 // 500 ms after the send that ended it, the character's sends, replies, executor records, samples
@@ -312,376 +264,39 @@ export function longFlights(log:Pick<Log,'actions'|'hits'|'spends'>,from:number,
 export const offLock=(spends:Spend[],from:number,to:number,zero=from)=>spends.filter(s=>s.method==='attack'&&s.at>=from&&s.at<to&&s.lock&&s.id!==s.lock)
   .map(s=>({at:s.at-zero,id:s.id,lock:s.lock,threat:!!s.threat,grouped:s.grouped??null,mode:s.mode??null,passing:s.passing??null,reply:s.reply??null}));
 
-// Row T1: the priest's slot at the edge (TC1 to TC3, TC5, TC18, TC21, TC32, TC38).
-export async function turnsSlotRow(live:LiveGame,info:TestInfo){
-  const result:any={};
-  await fightingAtGoo(live);
-  const t=result.timing=await timing(live,P),margin=t.cooldown+t.rtt;
-  // TC1, TC2: the warrior planted to 70% five times over 60 s.
-  // TC1's red plant: the priest reads "Heal first below" as 1%, so its heal asks below the attack.
-  if(red('tc1'))await live.clients[P]!.run('(globalThis.__e2eLine=partyTurns.healFirstBelow.read(),partyTurns.healFirstBelow.reply({healFirstBelow:{[character.name]:1}}),true)');
-  const from=await clock(live,P),plants:any[]=[];
-  // The last plant
-  // leaves the warrior below "Heal first below" but missing less than the priest's own heal
-  // output, halfway between the two lines, where the warrior's maximum HP allows it; otherwise it
-  // stays at 70%, recorded.
-  const sv8=result.sv8Plant=await live.clients[P]!.run(`(()=>{const w=parent.entities['${W}'];if(!w)return null;const heal=Number(character.heal)||0,max=w.max_hp;
-    const least=1-heal/max;return {heal,max,ratio:least<${HEAL_FIRST_BELOW}?Math.round((least+${HEAL_FIRST_BELOW})/2*1000)/1000:null};})()`);
-  // SV7's reading of a failed plant: every pass's requests of the attack family on the priest, with
-  // the pass kind, so an edge that sends an attack with no heal request shows which pass asked what.
-  await live.clients[P]!.run(`(()=>{const h=globalThis.__partyHooks,f=h.skillRequests.bind(h),log=globalThis.__e2ePasses=[];
-    h.skillRequests=v=>{const out=f(v);const fam=out.filter(x=>['attack','heal','partyheal'].includes(x.answer.skill)).map(x=>x.registration+'/'+x.requester.name+':'+x.answer.skill+'@'+x.answer.rank);
-      log.push([Date.now(),v.kind,v.chain,v.roleLoop,fam.join(',')]);if(log.length>4000)log.splice(0,1000);return out;};return true;})()`);
-  // SV7: the coordinator's heartbeat HP of the warrior when the priest's client first sees each plant.
-  const heartbeat:any[]=result.sv7Heartbeat=[];
-  // TG21's live half: each goo the party kills in the window
-  // reaches the priest's queue client as one `death`. The wrap logs each queue death; the red
-  // plant adds b9b5c91e's second report of a `death` packet.
-  await live.clients[P]!.run(`(()=>{const q=globalThis.partyQueueClient,log=globalThis.__e2eQueueDeaths=[];if(!q||!q.death)return false;const d=q.death;
-    q.death=function(id,...rest){log.push({at:Date.now(),id:String(id)});return d.call(this,id,...rest);};
-    if(${red('tg21')})parent.socket.on('death',x=>{if(x&&x.id&&x.id!==character.name)globalThis.partyQueueClient.death(x.id);});return true;})()`);
-  for(let i=0;i<5;i++){
-    plants.push(await plantSeen(live,W,{hp:i===4&&sv8?.ratio?sv8.ratio:0.7}));
-    {const c=(await live.state()).characters?.[W];heartbeat.push(c?{hp:c.hp,max:c.max_hp??null}:null);}
-    await waitForGameplay(12_000);
-    // TC11's red plants, once the plant's heal is done: a raw attack the moment an attack is
-    // accepted (a send before its edge); then, at the family's next accepted attack or heal, the
-    // client's attack edge held 2.5 s past the server's (a ready family that waits), which the
-    // game's own later write does not move.
-    // TG16's red plant: the priest's skip passes nothing over for the first two plants.
-    if(red('tg16')&&i===0)await live.clients[P]!.run('(()=>{const k=globalThis.__partyTargeting.skip;globalThis.__e2eCovers=k.covers;k.covers=()=>false;return true;})()');
-    if(red('tg16')&&i===2)await live.clients[P]!.run('(globalThis.__partyTargeting.skip.covers=globalThis.__e2eCovers,true)');
-    if(red('tc11')&&i===1)await live.clients[P]!.run(`(()=>{const s=parent.socket,on=d=>{if(d&&d.place==='attack'&&!d.failed){s.off('game_response',on);attack(parent.ctarget);}};s.on('game_response',on);return true;})()`);
-    if(red('tc11')&&i===3)await live.clients[P]!.run(`(()=>{const s=parent.socket,on=d=>{if(d&&(d.place==='attack'||d.place==='heal')&&!d.failed){s.off('game_response',on);
-      const ns=parent.next_skill,until=new Date(Date.now()+2500);Object.defineProperty(ns,'attack',{configurable:true,enumerable:true,get:()=>until,set:()=>{}});
-      globalThis.__e2eHeldEdge={at:Date.now(),place:d.place,reads:[]};const read=()=>globalThis.__e2eHeldEdge.reads.push([Date.now(),Number(parent.next_skill.attack),__partyTurns.ready('attack').ready]);
-      setTimeout(read,500);setTimeout(read,1500);setTimeout(()=>{delete ns.attack;ns.attack=new Date(0);},2500);}};s.on('game_response',on);return true;})()`);
-  }
-  if(red('tc1'))await live.clients[P]!.run('(partyTurns.healFirstBelow.reply({healFirstBelow:{[character.name]:globalThis.__e2eLine}}),true)');
-  const to=await clock(live,P),log=await readLog(live,P,from);
-  const spends=log.spends.filter(s=>s.at<to),replies=log.replies.filter(r=>r.at<to);
-  const healReplies=replies.filter(r=>accepted(r,'heal')),attackReplies=replies.filter(r=>accepted(r,'attack'));
-  // The gameplay clock delivers replies on a step, read from the
-  // row's own replies as the smallest gap between two of them, and an edge's slot ends one step later.
-  const step=result.step=replyStep(replies);
-  const slot=margin+(Number.isFinite(step)?step:0);
-  // A plant reaches the priest with the server's next packet, one more step.
-  const healSlot=slot+(Number.isFinite(step)?step:0);
-  // TC1: an attack sent while the stand-in's heal choice asks to
-  // heal a member below the line breaks owner the turns owner's rank rule. Attacks while the heartbeat has not
-  // yet carried a hit to the choice (`attacksBelowInRange`) are owner the survival owner's case, kept as a reading.
-  result.tc1={attacksWhileHealAsked:spends.filter(s=>s.method==='attack'&&s.healAsk!=null&&s.healAsk<HEAL_FIRST_BELOW).map(s=>({at:s.at-from,healAsk:s.healAsk})),
-    attacksBelowInRange:spends.filter(s=>s.method==='attack'&&below(s,W,HEAL_FIRST_BELOW)&&inRange(s,W)).map(s=>({at:s.at-from,hp:s.party[W]})),
-    attacks:spends.filter(s=>s.method==='attack').length,heals:spends.filter(s=>s.method==='heal').length,
-    healed:plants.map(p=>{const h=healReplies.find(r=>r.at>=p.seenAt);return h?h.at-p.seenAt:null;}),slot:healSlot};
-  // No `heal` on a member whose client HP at
-  // the send is above the heal line, which is "Heal first below" or missing less
-  // than the priest's own heal.
-  result.sv9=spends.filter(s=>s.method==='heal'&&s.id&&s.party[s.id]).filter(s=>{const m=s.party[s.id!]!;
-    return m.hp/m.max>=HEAL_FIRST_BELOW&&m.max-m.hp<(s.healOut??0);}).map(s=>({at:s.at-from,id:s.id,hp:s.party[s.id!],healOut:s.healOut}));
-  // The priest's Curse waits while its own client reads a
-  // member below survival's healthy share, whatever the heartbeat says.
-  result.sv47=spends.filter(s=>s.method==='skill'&&s.name==='curse'&&Object.values(s.party).some(m=>m.hp/m.max<HEALTHY_SHARE))
-    .map(s=>({at:s.at-from,party:s.party}));
-  // SV7: after each plant, the first attack family send at which the
-  // priest's own client reads the warrior below "Heal first below" is a heal, not an attack.
-  {const passes=await live.clients[P]!.run('globalThis.__e2ePasses??[]') as any[];
-    result.passes=plants.map(p=>passes.filter(x=>x[0]>=p.seenAt&&x[0]<p.seenAt+3000).map(x=>[x[0]-p.seenAt,...x.slice(1)]));}
-  result.sv7=plants.map((p,i)=>{const next=i+1<plants.length?plants[i+1].seenAt:to;
-    const first=spends.find(s=>s.at>=p.seenAt&&s.at<next&&(s.method==='attack'||s.method==='heal')&&below(s,W,HEAL_FIRST_BELOW));
-    return first?{at:first.at-p.seenAt,method:first.method,heartbeat:heartbeat[i]}:{at:null,method:null,heartbeat:heartbeat[i]};});
-  const actions=[from,...[...healReplies,...attackReplies].map(r=>r.at).sort((a,b)=>a-b),to];
-  result.tc2={...tc2({actions,samples:log.samples,replies,spends,cooldown:t.cooldown,rtt:t.rtt,step,busy:s=>s.target||below(s,W,HEAL_FIRST_BELOW),from}),actions:actions.length-2};
-  // The party's spread over the window as the priest's samples read it, for a failed row's reading:
-  // samples with the warrior out of the priest's view, beyond its range, and the largest distance.
-  {const w=log.samples.filter(s=>s.at<to),d=w.map(s=>s.party[W]?.dist??null);
-    result.spread={samples:w.length,unseen:d.filter(x=>x===null).length,beyondRange:d.filter(x=>x!==null&&x>t.range).length,max:Math.round(Math.max(0,...d.filter((x):x is number=>x!==null)))};}
-  result.tc11=tc11(log,from,to,step,t.cooldown,t.minRtt,true);
-  // A pass is the clock step alone, as in tc11 (turns-tc11.ts).
-  result.tg16=longFlights(log,from,to,Number.isFinite(step)?step:0);
-  {const deaths=await live.clients[P]!.run(`(globalThis.__e2eQueueDeaths||[]).filter(e=>e.at>=${from}&&e.at<${to}).map(e=>e.id)`) as string[],per:Record<string,number>={};
-    for(const id of deaths)per[id]=(per[id]??0)+1;
-    result.tg21={deaths:Object.keys(per).length,twice:Object.entries(per).filter(([,n])=>n>1)};}
-  // The window's targeting readings, logged before the later plants so a later failure keeps them.
-  result.shots=await live.clients[P]!.run('(()=>{const l=parent.__e2eTurns,last=a=>a.length?a[a.length-1].at:null;return {actions:l.actions.length,lastAction:last(l.actions),hits:l.hits.length,lastHit:last(l.hits),hitListeners:parent.socket.listeners?parent.socket.listeners("hit").length:null};})()');
-  console.log('TARGETING-T1 '+JSON.stringify({shots:result.shots,tg16:result.tg16,tg21:result.tg21,tc2:result.tc2.missed,tc2Skipped:result.tc2.skipped?.length,tc11:result.tc11.waitsWithoutNotNow.length,tc11Skipped:result.tc11.skipped?.length}));
-  await tc11View(live,P,'T1',log,from,result.tc11.waitsWithoutNotNow);
-  if(red('tc11'))result.heldEdge=await live.clients[P]!.run('globalThis.__e2eHeldEdge??null');
-  // The attack family's sends and replies over the window, for the reading of TC2 and TC11.
-  result.attackTrace={sends:spends.filter(s=>s.method==='attack'||s.method==='heal').map(s=>[s.at-from,s.method,s.id,s.edge?s.edge-from:null]),
-    replies:replies.filter(r=>r.place==='attack'||r.place==='heal').map(r=>[r.at-from,r.place,r.response,r.target??r.id??null])};
-  // TC3: at 85%, above the line, the priest keeps attacking at its steps windows rate and tops off
-  // only on edges with no target.
-  const above=await clock(live,P);
-  for(let i=0;i<7;i++){await plantSeen(live,W,{hp:0.85});await waitForGameplay(3_000);}
-  const aboveTo=await clock(live,P),aboveLog=await readLog(live,P,above);
-  const sampleAt=(at:number)=>aboveLog.samples.filter(s=>s.at<=at).at(-1);
-  // TC3's rate half: the gaps between accepted attacks while the priest held a target the whole
-  // gap (every page sample between them), so time with no target never counts, and a rate at most
-  // one per cooldown.
-  const acceptedAbove=aboveLog.replies.filter(r=>r.at<aboveTo&&accepted(r,'attack')).map(r=>r.at);
-  const pass=Number.isFinite(result.step)?result.step:0,tc3Skipped:any[]=[];
-  const gaps=acceptedAbove.slice(1).map((at,n)=>[acceptedAbove[n]!,at] as const).filter(([a,b])=>{
-    const inside=aboveLog.samples.filter(s=>s.at>a&&s.at<b);if(!(inside.length>0&&inside.every(s=>s.target)))return false;
-    // Decided 2026-11-09: a gap longer than one cooldown, round trip and pass, which the
-    // overkill skip held from within a pass of the attack's cooldown to within a pass of the next
-    // send, is no fault, and is recorded.
-    const skip=skipStretch(inside,SELECTION_MS+(Number.isFinite(result.step)?result.step:0));
-    if(skip&&b-a>margin+pass&&skip.first.at-(a+t.cooldown)<=pass&&b-skip.last.at<=pass+margin){tc3Skipped.push({at:a-above,gap:b-a,target:skip.first.skip!.target,damage:skip.first.skip!.damage,hp:skip.first.skip!.hp});return false;}
-    return true;}).map(([a,b])=>b-a);
-  const gapMs=gaps.reduce((s,g)=>s+g,0);
-  result.tc3={acceptedPerSecond:acceptedAbove.length/((aboveTo-above)/1000),windowSeconds:(aboveTo-above)/1000,
-    perTargetSecond:gapMs?gaps.length/(gapMs/1000):null,gaps:gaps.length,skipped:tc3Skipped,
-    healsWithTarget:aboveLog.replies.filter(r=>r.at<aboveTo&&accepted(r,'heal')&&sampleAt(r.at)?.target).length};
-  await plantVitals(live,P,{hp:1});await plantVitals(live,W,{hp:1});
-  // The warrior and the priest each planted to miss more than partyheal's output at the priest's level.
-  // Partyheal goes when the HP it restores across the members, each one's missing HP up to that
-  // output, is at least one heal (`character.heal`), or when two members are below "Heal first
-  // below" (80% here), whatever the heal; otherwise the single heal goes. The fixture's priest heals
-  // 21189 against two outputs of 800, so the plant at 85% (above the line, where neither member
-  // misses a whole heal) reads no partyheal, and the plant at 70% (both below it) reads
-  // partyheal; the unit rows in survival-needs.test.cjs read the restored-HP half.
-  {const out=await live.clients[P]!.run(`(()=>{const d=G.skills.partyheal||{};let o=Number(d.output)||0;for(const [l,v] of d.levels||[])if(character.level>=l)o=v;return o;})()`) as number;
-    const heal=await live.clients[P]!.run('Number(character.heal)||0') as number;
-    // Both members are planted in one server call: planted one after the other, the priest's heal
-    // choice saw one member below the line and healed it before the second plant (one run: six
-    // heals and no partyheal at 70%), so two members were never below the line together. The one
-    // call still reaches the priest's client in two packets: its own HP in the `player` packet at
-    // once (server.js:4670, `resend`), the warrior's in the next instance update, at most every 75
-    // ms. A heal pass between them read one member below the line and healed it (another run:
-    // five heals, no partyheal at 70%), so the plant goes in under the
-    // console Pause, and Play follows once the priest's client reads both members planted.
-    const held=(on:boolean)=>expect.poll(()=>live.clients[P]!.run('!!__partyHooks.ask("lifecycle.held")'),{timeout:60_000,message:`SV10: the console Pause ${on?'holds':'releases'} the priest`}).toBe(on);
-    const inRange=`(()=>{const e=parent.entities[${JSON.stringify(W)}];return !!e&&!e.rip&&Math.hypot(e.real_x-character.real_x,e.real_y-character.real_y)<=character.range;})()`;
-    // The Pause holds new steps but not a walk already sent: in confirm-52f254a4b the priest's kite
-    // step (steps.ts `kiteIfNeeded`, 0.6 of its speed) went out in the Pause's own clock step and
-    // carried it from 469 to 532 from the warrior, which left the priest's view (`disappear`,
-    // outside) before the plant. The range read therefore comes once both members stand still
-    // under the Pause. A Pause that settles them out of range gives way to Play until the next one.
-    const pauseInRange=async()=>{
-      for(;;){
-        await expect.poll(()=>live.clients[P]!.run(inRange),
-          {timeout:60_000,intervals:[50],message:`${W} in the priest's view and heal range before the SV10 plant`}).toBe(true);
-        const at=await clock(live,P);
-        await live.post('/console-control/pause',{});await held(true);
-        await expect.poll(()=>live.clients[P]!.run(`(()=>{const e=parent.entities[${JSON.stringify(W)}];return !character.moving&&!(e&&e.moving);})()`),
-          {timeout:60_000,intervals:[50],message:'SV10: the walks in flight at the Pause end'}).toBe(true);
-        if(await live.clients[P]!.run(inRange))return at;
-        await live.post('/console-control/play',{});await held(false);}};
-    const plant=async(ratio:number)=>{
-      const at=await pauseInRange();
-      await live.admin(`output=(()=>{for(const n of ${JSON.stringify([P,W])}){const p=get_player(n);p.hp=Math.max(1,Math.round(p.max_hp*${ratio}));resend(p,'u+cid');}return true;})()`);
-      await expect.poll(()=>live.clients[P]!.run(`(()=>{const e=parent.entities[${JSON.stringify(W)}];return !!e&&e.hp<=e.max_hp*${ratio}+1&&character.hp<=character.max_hp*${ratio}+1;})()`),
-        {timeout:15_000,intervals:[50],message:"SV10: the priest's client reads both members planted"}).toBe(true);
-      await live.post('/console-control/play',{});await held(false);
-      await waitForGameplay(Math.ceil(3*margin));
-      const l=await readLog(live,P,at);
-      const read={ratio,partyheals:l.spends.filter(s=>s.method==='skill'&&s.name==='partyheal').length,
-        heals:l.spends.filter(s=>s.name==='heal'||s.method==='heal').length,
-        first:(()=>{const s=l.spends.find(x=>x.method==='skill'&&x.name==='partyheal');return s?{at:s.at-at,party:s.party}:null;})()};
-      await plantVitals(live,P,{hp:1});await plantVitals(live,W,{hp:1});return read;};
-    result.sv10={output:out,heal,restores:2*out,above:await plant(0.85),below:await plant(0.7)};}
-  // TC5: the server drops one accepted `attack` reply of the priest and holds that reply's target
-  // alive, before the attack's projectile lands, so neither its `death` nor its `disappear` frees
-  // the family and only the lost-reply rule can. The red run frees the family another way: a
-  // `disappear` naming the attack as the drop happens.
-  // Each goo the priest targets is made unkillable as it becomes the target, and the drop takes the
-  // first accepted attack on one made unkillable at least a second before, once the priest's client
-  // holds that HP. A goo with its old HP is covered by the dropped attack's damage in flight, so the
-  // overkill skip passed over it and the executor dropped the flight on the selection change
-  // (13.4 run G read no lost reply); TC5 checks the lost-reply rule alone.
-  await live.admin(`output=(()=>{const p=get_player('${P}'),s=p.socket,emit=s.emit,planted=globalThis.__e2eTc5Planted={};globalThis.__e2eDropped=null;
-    const find=id=>{for(const i of Object.values(instances))for(const m of Object.values(i.monsters||{}))if(String(m.id)===String(id))return m;return null;};
-    globalThis.__e2eTc5=setInterval(()=>{const m=p.target&&find(p.target);if(m&&!planted[m.id]){m.hp=m.max_hp=10000000;m.u=true;planted[m.id]=Date.now();}},100);
-    s.emit=function(event,data){if(event==='game_response'&&data&&data.place==='attack'&&!data.failed&&!globalThis.__e2eDropped&&planted[data.target]&&Date.now()-planted[data.target]>=1000){
-      globalThis.__e2eDropped=String(data.target);clearInterval(globalThis.__e2eTc5);s.emit=emit;return true;}return emit.apply(this,arguments);};return true;})()`);
-  await expect.poll(()=>live.admin('output=globalThis.__e2eDropped'),{timeout:30_000,message:'TC5: one attack reply is dropped'}).toBeTruthy();
-  const held=await live.admin('output=globalThis.__e2eDropped') as string;
-  const mortal=(hp:string)=>live.admin(`output=(()=>{for(const i of Object.values(instances))for(const m of Object.values(i.monsters||{}))if(String(m.id)===${JSON.stringify(held)}){${hp};m.u=true;return true;}return false;})()`);
-  if(red('tc5'))await live.clients[P]!.run(`(()=>{for(const fn of parent.socket.listeners('disappear'))fn({id:${JSON.stringify(held)},place:'attack',reason:'not_found'});return true;})()`);
-  const droppedAt=await clock(live,P);
-  await waitForGameplay(Math.ceil(4*t.cooldown)+2000);
-  const next=(await readLog(live,P,droppedAt)).replies.find(r=>accepted(r,'attack'));
-  // The family is free once the cooldown and the margin, the largest round trip of the last 4 s,
-  // have passed, and the next reply takes one more round trip.
-  const largest=await live.clients[P]!.run('Math.max(0,...(parent.pings||[]).filter(Number.isFinite))') as number;
-  // The bound is the executor's own lost-reply time from its ring (the cooldown and the margin it
-  // read then), then the next reply's round trip, at most the largest the game measured (the
-  // margin's own bound, 3.4), and the clock's step.
-  const lost=(await live.clients[P]!.run('globalThis.__partyTurns?.records?.()??[]') as any[]).find(r=>r.kind==='lost'&&r.at>=droppedAt-2000);
-  await mortal('m.hp=1');
-  // Every other goo the plant made unkillable dies at its next hit.
-  await live.admin(`output=(()=>{clearInterval(globalThis.__e2eTc5);const planted=globalThis.__e2eTc5Planted||{};
-    for(const i of Object.values(instances))for(const m of Object.values(i.monsters||{}))if(planted[m.id]){m.hp=1;m.u=true;}return true;})()`);
-  // TG17: a goo the priest's shot covers lives through the hit.
-  // The server raises the target's HP as the attack's reply goes, after the `action` packet, so the
-  // priest's damage in flight covers the HP its client holds; the hit lands and the goo lives. The
-  // skip ends at that hit, so the priest attacks the goo again after it. The red plant keeps the
-  // skip passing over the goo after the hit.
-  {await live.admin(`output=(()=>{const s=get_player('${P}').socket,emit=s.emit;globalThis.__e2eLived=null;
-      s.emit=function(event,data){if(event==='game_response'&&data&&data.place==='attack'&&!data.failed&&!globalThis.__e2eLived){
-        for(const i of Object.values(instances))for(const m of Object.values(i.monsters||{}))if(String(m.id)===String(data.target)&&m.hp<=1000){m.hp=m.max_hp=10000000;m.u=true;globalThis.__e2eLived=String(m.id);s.emit=emit;}}
-        return emit.apply(this,arguments);};return true;})()`);
-    const livedFrom=await clock(live,P);
-    await expect.poll(()=>live.admin('output=globalThis.__e2eLived'),{timeout:30_000,message:'TG17: a covered goo lives through the hit'}).toBeTruthy();
-    const lived=await live.admin('output=globalThis.__e2eLived') as string;
-    if(red('tg17'))await live.clients[P]!.run(`(()=>{const k=globalThis.__partyTargeting.skip,c=k.covers;globalThis.__e2eCovers=c;k.covers=t=>String(t.id)===${JSON.stringify(lived)}||c(t);return true;})()`);
-    await waitForGameplay(Math.ceil(3*t.cooldown)+2000);
-    const l=await readLog(live,P,livedFrom),first=l.hits.find(h=>h.id===lived);
-    result.tg17={id:lived,hits:l.hits.filter(h=>h.id===lived).map(h=>[h.at-livedFrom,h.kill,h.miss]),
-      attacks:l.spends.filter(s=>s.method==='attack'&&s.id===lived).map(s=>s.at-livedFrom),
-      afterHit:first?l.spends.filter(s=>s.method==='attack'&&s.id===lived&&s.at>first.at).length:null,
-      skipped:(await live.clients[P]!.run('globalThis.__partyTargeting?.records?.()??[]') as any[]).filter(e=>e.kind==='skipped'&&e.target===lived).length};
-    if(red('tg17'))await live.clients[P]!.run('(globalThis.__partyTargeting.skip.covers=globalThis.__e2eCovers,true)');
-    console.log('TARGETING-T1-TG17 '+JSON.stringify(result.tg17));
-    await live.admin(`output=(()=>{for(const i of Object.values(instances))for(const m of Object.values(i.monsters||{}))if(String(m.id)===${JSON.stringify(lived)}){m.hp=1;m.u=true;}return true;})()`);}
-  result.tc5={held,nextAfterMs:next?next.at-droppedAt:null,lostAfterMs:lost?lost.at-droppedAt:null,
-    bound:(lost?Math.max(0,lost.at-droppedAt):t.cooldown+largest)+largest+(Number.isFinite(result.step)?result.step:0)};
-  // TC32: a target reset with an attack in flight and its reply held one round trip.
-  await live.admin(`output=(()=>{const s=get_player('${P}').socket,emit=s.emit;globalThis.__e2eHeld=null;
-    s.emit=function(event,data){if(event==='game_response'&&data&&data.place==='attack'&&!globalThis.__e2eHeld){globalThis.__e2eHeld=Date.now();s.emit=emit;const args=arguments;setTimeout(()=>emit.apply(s,args),${Math.max(50,Math.round(t.rtt))});return true;}return emit.apply(this,arguments);};return true;})()`);
-  const resetFrom=await clock(live,P);
-  await live.clients[P]!.run('(parent.__e2eTurns.resetOnAttack=true,true)');
-  await expect.poll(async()=>(await readLog(live,P,resetFrom)).resets.length,{timeout:15_000,message:'TC32: a reset with an attack in flight'}).toBe(1);
-  await waitForGameplay(Math.ceil(2*margin)+1000);
-  const resetLog=await readLog(live,P,resetFrom),reset=resetLog.resets[0]!;
-  // A later selection may pick the old monster again; only a note before the first attack sent
-  // to it after the reset is the held reply's.
-  const again=resetLog.spends.find(s=>s.at>reset.at&&s.method==='attack'&&s.id===reset.old);
-  const near=(x:{at:number})=>x.at>=reset.at-2000&&x.at<=reset.at+3000;
-  result.tc32trace={reset:reset.at,sends:resetLog.spends.filter(s=>s.method==='attack'&&near(s)).map(s=>[s.at-reset.at,s.id]),
-    replies:resetLog.replies.filter(r=>r.place==='attack'&&near(r)).map(r=>[r.at-reset.at,r.response,r.failed,r.target??r.id??null]),
-    notes:resetLog.notes.filter(near).map(n=>[n.at-reset.at,n.id])};
-  result.tc32={old:reset.old,notesOfOld:resetLog.notes.filter(n=>n.at>reset.at&&n.id===reset.old&&n.at<(again?.at??Infinity)).length,
-    engaged:await live.clients[P]!.run('partyRoleRunner.engagedTargetId()'),again:!!again};
-  // TC18: the priest's MP planted to the forecast plus half an attack's cost.
-  const forecast=await live.clients[P]!.run('globalThis.__partyTurns?.forecast?.() ?? null') as number|null;
-  result.tc18={forecast};
-  if(forecast!==null){
-    const at=await clock(live,P);
-    await plantVitals(live,P,{mpAt:forecast+t.mpCost/2});
-    await waitForGameplay(5000);
-    const l=await readLog(live,P,at);
-    result.tc18.attacksBelow=l.spends.filter(s=>s.method==='attack'&&s.mp<forecast+t.mpCost).length;
-    result.tc18.resumed=l.spends.some(s=>s.method==='attack'&&s.mp>=forecast+t.mpCost);
-  }
-  // TC38: "Heal first below" written to 60 mid-fight with the warrior at 70%, then back to 80.
-  // A write reaches the priest with its next report reply, so each part of
-  // TC38 starts once the priest reads the written value.
-  const setting=(value:number)=>writeDelivered(live,'healFirstBelow',P,value,'partyTurns.healFirstBelow.read()','TC38');
-  result.tc38={written60:await setting(60)};
-  if(result.tc38.written60===true){
-    // The window holds only while the warrior stays in the priest's range, as the SV10 plants do: in
-    // fix14-tc38's run the priest stood 488 to 586 from the warrior through the whole window, so no
-    // attack there could tell the line. A window the warrior leaves gives way to the next plant,
-    // which starts with it in range (`plantSeen`). The range is the priest's own `character.range`.
-    let at=0;
-    for(;;){
-      at=await clock(live,P);await plantSeen(live,W,{hp:0.7});await waitForGameplay(Math.ceil(3*margin));
-      const l=await readLog(live,P,at),reach=await live.clients[P]!.run('character.range') as number;
-      if(!l.samples.every(s=>!!s.party[W]&&s.party[W]!.dist<=reach))continue;
-      result.tc38.attacksAt70=l.spends.filter(s=>s.method==='attack'&&s.line===60&&below(s,W,0.75)&&inRange(s,W)).length;break;}
-    result.tc38.written80=await setting(80);
-    const back=await clock(live,P);await plantSeen(live,W,{hp:0.7});await waitForGameplay(Math.ceil(margin)+500);
-    const l=await readLog(live,P,back);
-    result.tc38.healedAt80=l.replies.some(r=>accepted(r,'heal'));
-    // The gameplay clock moves in 250 ms steps, so an attack can share `back`'s step and still go out
-    // before the reply that carries 80 (fix13-sv10's run: the attack at `back`, with the heal ask still
-    // at maintenance). The check counts each attack by the line it went out under.
-    result.tc38.attacksAt80=l.spends.filter(s=>s.method==='attack'&&s.line===80&&below(s,W,HEAL_FIRST_BELOW)&&inRange(s,W)).length;
-    // A miss's reading: from the 60 half on, the priest's sends with their lines, replies, executor records, samples
-    // of the warrior and the heal need's answers.
-    if(!result.tc38.healedAt80||result.tc38.attacksAt80>0){const all=await readLog(live,P,at);
-      console.log('TURNS-TC38-VIEW '+JSON.stringify({back:back-at,end:(await clock(live,P))-at,
-        spends:all.spends.map(s=>[s.at-at,s.method,s.name??s.id??s.item,s.party[W]?Math.round(s.party[W]!.hp/s.party[W]!.max*1000)/10:null,s.party[W]?Math.round(s.party[W]!.dist):null,s.line??null]),
-        replies:all.replies.map(r=>[r.at-at,r.place,r.response,r.failed]),ring:all.ring.map((r:any)=>[r.at-at,r.kind,r.family,r.skill,r.reason??r.waitedMs??null]),
-        samples:all.samples.filter((_,i)=>i%2===0).map(s=>[s.at-at,s.target?1:0,s.party[W]?Math.round(s.party[W]!.hp/s.party[W]!.max*1000)/10:null,s.party[W]?Math.round(s.party[W]!.dist):null]),
-        needs:((await needsSince(live,P,at)) as any)?.calls?.filter((c:any[])=>c[1]==='heal')}));}
-  }
-  await plantVitals(live,W,{hp:1});
-  // TC21: the fixture add-on asks the warrior's Charge at `task` while its
-  // target is out of weapon range; its diagnostic names the add-on. One registration, switched on
-  // through the saved add-on settings, and no core edit.
-  const chargeFrom=await clock(live,W);
-  result.tc21={registered:await live.clients[W]!.run(registerTurnsChargeAddon)};
-  const addonsOn=await live.clients[W]!.run(addonSwitches(true));
-  await live.post('/settings',{changes:[{field:'addons',value:addonsOn}]});
-  try{
-    await expect.poll(async()=>(await readLog(live,W,chargeFrom)).diags.filter(d=>d.skill==='charge'&&d.status==='accepted').length,
-      {timeout:90_000,intervals:[1000],message:"TC21: the fixture add-on's Charge is accepted"}).toBeGreaterThan(0);
-  }catch(error){result.tc21.error=String(error).slice(0,200);}
-  const chargeLog=await readLog(live,W,chargeFrom);
-  result.tc21.charge=chargeLog.diags.filter(d=>d.skill==='charge').map(d=>({status:d.status,by:d.by,rank:d.rank}));
-  result.tc21.sends=chargeLog.spends.filter(s=>s.method==='skill'&&s.name==='charge').length;
-  await live.post('/settings',{changes:[{field:'addons',value:await live.clients[W]!.run(addonSwitches(false))}]});
-  // The priest's turns ring, for the reading of any failed row.
-  // The default table fights on Auto, where each fighter
-  // picks its own goo (in one run the priest held no grouped lock in the window), so the row ends
-  // with a grouped window on Default at the same goos: the priest attacks the lock target or its
-  // successor and no other goo while its skip passes over the lock. The red plant sends one raw
-  // attack on another goo while a lock holds.
-  {const switchAt=await clock(live,P);
-    for(const name of [W,P])await live.post('/farming-mode',{character:name,combatMode:'default',targetMode:'farming'});
-    await expect.poll(()=>live.clients[P]!.run('(()=>{const q=globalThis.__partyGroupedCombat;return !!(q&&q.target);})()'),{timeout:60_000,message:'TG18: the priest holds a grouped lock'}).toBe(true);
-    const lockFrom=await clock(live,P);
-    if(red('tg18'))result.tg18Plant=await live.clients[P]!.run(`(()=>{const q=globalThis.__partyGroupedCombat,lock=q&&q.target?String(q.target.id):null,me=parent.character;
-      const other=Object.values(parent.entities).filter(e=>e&&e.type==='monster'&&!e.dead&&String(e.id)!==lock&&!${JSON.stringify([W,P])}.includes(e.target))
-        .sort((a,b)=>Math.hypot(a.x-me.real_x,a.y-me.real_y)-Math.hypot(b.x-me.real_x,b.y-me.real_y))[0];
-      if(!lock||!other)return null;parent.socket.emit('attack',{id:other.id});return {id:String(other.id),lock};})()`);
-    await waitForGameplay(20_000);
-    // The check reads from the switch, so an attack under a lock before the window's first lock
-    // read counts too; its `at` is then negative.
-    const lockTo=await clock(live,P),l=await readLog(live,P,switchAt),attacks=l.spends.filter(s=>s.method==='attack'&&s.at>=lockFrom&&s.at<lockTo);
-    result.tg18={attacks:attacks.length,withLock:attacks.filter(s=>s.lock).length,offLock:offLock(l.spends,switchAt,lockTo,lockFrom),
-      skipped:(await live.clients[P]!.run('globalThis.__partyTargeting?.records?.()??[]') as any[]).filter(e=>e.kind==='skipped'&&e.at>=lockFrom).length,plant:result.tg18Plant??null};
-    // The gate reading: every status reply from the switch to Default to the window's end, the reply
-    // that first carried a lock and the one that first carried the Default mode, and at each
-    // attack the gate's inputs, so an attack off the lock names which input let it through.
-    const status=(await live.clients[P]!.run(`(parent.__e2eTurns.status||[]).filter(s=>s.at>=${switchAt}&&s.at<${lockTo})`) as any[]).map(s=>({...s,at:s.at-lockFrom}));
-    result.tg18.reading={switchAt:switchAt-lockFrom,status,lockReply:status.find(s=>s.lock)?.seq??null,modeReply:status.find(s=>s.mode==='default')?.seq??null,
-      attacks:attacks.slice(0,12).map(s=>({at:s.at-lockFrom,id:s.id,lock:s.lock,grouped:s.grouped,mode:s.mode,passing:s.passing,reply:s.reply}))};
-    console.log('TARGETING-T1-TG18 '+JSON.stringify(result.tg18));
-    for(const name of [W,P])await live.post('/farming-mode',{character:name,combatMode:'auto',targetMode:'farming'});}
-  result.ring=await live.clients[P]!.run('globalThis.__partyTurns?.records?.()??null');
-  await attach(info,'turns-t1',result);
-  console.log('TURNS-T1 '+JSON.stringify(result));
-  expect.soft(result.tc1.attacksWhileHealAsked,"TC1: priest attacks while the stand-in's heal choice asks to heal below 80%").toEqual([]);
-  // SV7 and SV8: owner the survival owner's half of TC1's case.
-  for(const [i,p] of result.sv7.entries())expect.soft(p.method,`SV7: plant ${i+1}, the first send once the priest's client sees the warrior below 80%`).toBe('heal');
-  expect.soft(result.tc1.attacksBelowInRange,"SV8: priest attacks while its client sees the warrior below 80% in heal range").toEqual([]);
+// T43's plain half (play window W01): the priest's slot read over the measured goo windows, with no
+// plant. TC2, TC11, TG16, TG18, TG21 and SV9 judge ordinary farming, so they read W01's play; the
+// planted checks stay in turnsSlotRow until W04 and W05 take them. slotPlainStart wraps the queue
+// client's death before the play, as TG21's live half in the row does.
+export const slotPlainStart=(live:LiveGame)=>live.clients[P]!.run(`(()=>{const q=globalThis.partyQueueClient,log=globalThis.__e2eQueueDeaths=[];if(!q||!q.death)return false;const d=q.death;
+    q.death=function(id,...rest){log.push({at:Date.now(),id:String(id)});return d.call(this,id,...rest);};return true;})()`);
+export async function slotPlainRead(live:LiveGame,from:number,to:number){
+  const t=await timing(live,P),log=await readLog(live,P,from);
+  const spends=log.spends.filter(s=>s.at<to),replies=log.replies.filter(r=>r.at<to),step=replyStep(replies);
+  const actions=[from,...replies.filter(r=>accepted(r,'heal')||accepted(r,'attack')).map(r=>r.at).sort((a,b)=>a-b),to];
+  const deaths=await live.clients[P]!.run(`(globalThis.__e2eQueueDeaths||[]).filter(e=>e.at>=${from}&&e.at<${to}).map(e=>e.id)`) as string[],per:Record<string,number>={};
+  for(const id of deaths)per[id]=(per[id]??0)+1;
+  const attacks=spends.filter(s=>s.method==='attack');
+  return {from,to,step,timing:t,
+    tc2:tc2({actions,samples:log.samples,replies,spends,cooldown:t.cooldown,rtt:t.rtt,step,busy:s=>s.target||below(s,W,HEAL_FIRST_BELOW),from}),
+    tc11:tc11(log,from,to,step,t.cooldown,t.minRtt,true),
+    tg16:longFlights(log,from,to,Number.isFinite(step)?step:0),
+    tg18:{attacks:attacks.length,withLock:attacks.filter(s=>s.lock).length,offLock:offLock(spends,from,to)},
+    tg21:{deaths:Object.keys(per).length,twice:Object.entries(per).filter(([,n])=>n>1)},
+    sv9:spends.filter(s=>s.method==='heal'&&s.id&&s.party[s.id]).filter(s=>{const m=s.party[s.id!]!;
+      return m.hp/m.max>=HEAL_FIRST_BELOW&&m.max-m.hp<(s.healOut??0);}).map(s=>({at:s.at-from,id:s.id,hp:s.party[s.id!],healOut:s.healOut}))};
+}
+export function slotPlainVerdict(result:Awaited<ReturnType<typeof slotPlainRead>>){
   expect.soft(result.sv9,'SV9: heals on a member the client sees above the heal line').toEqual([]);
-  expect.soft(result.sv47,'SV47: priest Curses while its client sees a member below 90%').toEqual([]);
-  if(result.sv10.restores>=result.sv10.heal)expect.soft(result.sv10.above.partyheals,'SV10: partyheal for two members each missing its output, restoring at least a heal').toBeGreaterThanOrEqual(1);
-  else expect.soft(result.sv10.above.partyheals,'SV10: no partyheal above the line that restores less than one heal (SRV-Q40 (b))').toBe(0);
-  expect.soft(result.sv10.below.partyheals,'SV10: partyheal for two members below "Heal first below", whatever the heal (SRV-Q43 (c))').toBeGreaterThanOrEqual(1);
-  for(const [i,ms] of result.tc1.healed.entries())expect.soft(ms,`TC1: plant ${i+1} healed`).not.toBeNull();
   expect.soft(result.tc2.missed,'TC2: attack edges with neither an attack nor a heal').toBe(0);
-  // TG16's long flights, TG17's lived goo and TG18's lock.
   expect.soft(result.tg16.flights,'TG16: the window holds long flights, so the check fires').toBeGreaterThan(0);
   expect.soft(result.tg16.second,"TG16: priest attacks on a goo between its own killing shot's action and hit packets").toEqual([]);
   expect.soft(result.tg18.withLock,'TG18: priest attacks under a grouped lock, so the check fires').toBeGreaterThan(0);
   expect.soft(result.tg18.offLock,'TG18: priest attacks on a goo other than the lock target').toEqual([]);
-  expect.soft(result.tg21.deaths,'TG21: goo deaths reach the priest\'s queue client in the window').toBeGreaterThan(0);
+  expect.soft(result.tg21.deaths,"TG21: goo deaths reach the priest's queue client in the window").toBeGreaterThan(0);
   expect.soft(result.tg21.twice,"TG21: a goo's death reaching the priest's queue client more than once").toEqual([]);
-  expect.soft(result.tg17.skipped,'TG17: the skip passed over the covered goo before its hit').toBeGreaterThan(0);
-  expect.soft(result.tg17.afterHit,'TG17: the priest attacks the goo that lived after its hit lands').toBeGreaterThan(0);
   expect.soft(result.tc11.sendsBeforeEdge,"TC11: sends before their family's edge").toEqual([]);
   expect.soft(result.tc11.waitsWithoutNotNow,'TC11: a ready attack family that waits more than one pass with no not-now').toEqual([]);
-  expect.soft(result.tc3.healsWithTarget,'TC3: top-off heals on edges with a target').toBe(0);
-  // Step 1's priest spread on the steps windows: 0.83 to 0.84 a second.
-  expect.soft(result.tc3.perTargetSecond,'TC3: accepted attacks a second with a target, at 85%').toBeGreaterThanOrEqual(0.83);
-  expect.soft(result.tc5.lostAfterMs,'TC5: the executor counts the dropped reply lost').not.toBeNull();
-  expect.soft(result.tc5.nextAfterMs,'TC5: an accepted attack after the lost reply').not.toBeNull();
-  if(result.tc5.nextAfterMs!==null)expect.soft(result.tc5.nextAfterMs,'TC5: the next accepted attack within the cooldown and two round trips').toBeLessThanOrEqual(result.tc5.bound);
-  expect.soft(result.tc32.notesOfOld,'TC32: noteAttack names the old target after the reset').toBe(0);
-  if(!result.tc32.again)expect.soft(result.tc32.engaged,'TC32: the stale reply books no attack on the old target').not.toBe(result.tc32.old);
-  expect.soft(result.tc18.forecast,'TC18: the A8 forecast (step 3a)').not.toBeNull();
-  if(forecast!==null){expect.soft(result.tc18.attacksBelow,'TC18: attacks below the forecast plus a cost').toBe(0);expect.soft(result.tc18.resumed,'TC18: attacks resume').toBe(true);}
-  expect.soft(result.tc38.written60,'TC38: "Heal first below" takes a write (step 2)').toBe(true);
-  if(result.tc38.written60===true){expect.soft(result.tc38.attacksAt70,'TC38: at 60 the priest attacks at 70%').toBeGreaterThan(0);
-    expect.soft(result.tc38.healedAt80,'TC38: back at 80 it heals').toBe(true);expect.soft(result.tc38.attacksAt80,'TC38: back at 80 no attack below it').toBe(0);}
-  expect.soft(result.tc21.charge.filter((d:any)=>d.status==='accepted').map((d:any)=>[d.by,d.rank])[0],"TC21: the fixture add-on's Charge, accepted, by the add-on at task (step 3b)")
-    .toEqual([TURNS_CHARGE_ADDON+'/charge','task']);
 }
 
 // One spend each of the turns executor's
@@ -691,8 +306,38 @@ export async function turnsSlotRow(live:LiveGame,info:TestInfo){
 // here. The console Pause refuses every spend, a push included, since a Pause stops all console
 // code (13-lifecycle-design LF1): its hold field carries Combat and Use potions off (runtime/tasks/
 // coordinator/holds.ts `response`). Manual moves nobody, and in the town square with no focus and
-// full vitals the console has nothing of its own to spend on, so each call's quiet window holds.
-const push=(ask:string)=>`(globalThis.__e2eTc15=globalThis.__e2eTc15||[],globalThis.__partyTurns.spend({rank:'survival',category:'survival',reason:'TC15',by:'e2e:TC15',...${ask}}).then(()=>__e2eTc15.push('accepted'),e=>__e2eTc15.push(e&&(e.reason||e.response)||String(e))),true)`;
+// full vitals the console's only spend of its own is the warrior's Warcry upkeep, which a plant
+// holds off (below), so each call's quiet window holds.
+// A refused push keeps what the executor read at its answer: the family's readiness, the game's
+// potion edge, the time since the last draw (executor.ts `update`) and the call ring's last answers,
+// so a `waiting` names its cause.
+const push=(ask:string)=>`(globalThis.__e2eTc15=globalThis.__e2eTc15||[],globalThis.__e2eTc15Why=globalThis.__e2eTc15Why||[],globalThis.__partyTurns.spend({rank:'survival',category:'survival',reason:'TC15',by:'e2e:TC15',...${ask}}).then(()=>__e2eTc15.push('accepted'),e=>{const t=globalThis.__partyTurns,now=Date.now();
+  __e2eTc15.push(e&&(e.reason||e.response)||String(e));__e2eTc15Why.push({at:now,mp:[character.mp,character.max_mp],ready:t.ready('use_mp'),edge:+(parent.next_skill.use_hp||0)-now,draw:now-(+parent.last_draw),
+    turns:t.records().slice(-6),calls:(globalThis.__partyCalls?.records?.()??[]).slice(-6)});}),true)`;
+// The heal's target resend runs when the plight lands (server.js complete_attack `resend(target,'u+cid')`),
+// and add_call_cost books each of its charges on `current_socket`. The heal handler lands an eta-0
+// plight itself (commence_attack `projectiles_loop()`), so the priest's socket holds them. A plight in
+// flight lands in the projectile tick, where `current_socket` is false_socket (server.js:5054), and
+// the charges reach no player. The record keeps, for each landing of the priest's heal on the
+// warrior, where it ran and each charge it booked, so TC15 prices the heal whichever way it landed.
+const healLanding=(on:boolean)=>on?`output=(()=>{const g=globalThis;if(g.__e2eHealLanding)return true;
+  const list=[],land=complete_attack,charge=add_call_cost,priest=get_player('${P}').socket;let open=null;
+  add_call_cost=function(socket,num){if(open){const to=is_number(socket)||!socket?current_socket:socket.socket||socket;
+    open.charges.push({n:is_number(socket)?socket:num||1,on:to===false_socket?'none':to===priest?'${P}':'other'});}return charge.apply(this,arguments);};
+  complete_attack=function(attacker,target,info){if(open||!(attacker&&attacker.name==='${P}'&&target&&target.name==='${W}'&&info&&info.heal))return land.apply(this,arguments);
+    open={where:current_socket===false_socket?'tick':current_socket===priest?'handler':'other',charges:[]};
+    try{return land.apply(this,arguments);}finally{list.push(open);open=null;}};
+  g.__e2eHealLanding={off:()=>{add_call_cost=charge;complete_attack=land;delete g.__e2eHealLanding;return list;}};return true;})()`
+  :`output=globalThis.__e2eHealLanding?globalThis.__e2eHealLanding.off():null`;
+// The heal handler runs under the call modifier 1 (server.js:4982 names no `heal`), so each charge of
+// the landing counts 1 at the heal's own modifier, whatever modifier the tick keeps from the last handler.
+const HEAL_MODIFIER=1;
+// The heal's largest charge, which the ledger books (call-budget.ts `price`, a heal on another
+// player): the priest's entry, plus the landing's charges when the tick booked them on no player.
+function healLargest(r:{server:number;landings?:{where:string;charges:unknown[]}[]|null}){
+  const ticked=(r.landings??[]).filter(l=>l.where==='tick').reduce((sum,l)=>sum+l.charges.length*HEAL_MODIFIER,0);
+  return Math.round((r.server+ticked)*100)/100;
+}
 async function turnsCallCosts(live:LiveGame){
   const manual=async(on:boolean)=>{for(const n of [W,P]){await live.post('/formation',{character:n,handControl:{on}});
     await expect.poll(()=>live.clients[n]!.run(`partyTasks.holds.handControl()?.by??null`),{timeout:30_000,message:`TC15: ${n} ${on?'on':'off'} Manual`}).toBe(on?'manual':null);}};
@@ -701,11 +346,26 @@ async function turnsCallCosts(live:LiveGame){
 }
 async function callCosts(live:LiveGame){
   const results:any[]=[];
-  const report=async()=>console.log('TURNS-TC15 '+JSON.stringify({calls:results.map(r=>[r.label,r.server,r.ledger,r.refused]),answers:await live.clients[W]!.run('globalThis.__e2eTc15??null'),priest:await live.clients[P]!.run('globalThis.__e2eTc15??null'),ring:await live.clients[W]!.run('(globalThis.__partyTurns?.records?.()??[]).slice(-6)')}));
-  results.push(await oneCall(live,P,'heal (the executor)','heal',push(`{skill:'heal',targets:[parent.entities['${W}']]}`)));
-  results.push(await oneCall(live,P,'potion equip (the executor)','equip',push(`{skill:'use_mp'}`)));
-  results.push(await oneCall(live,P,'regeneration use (the executor)','use',push(`{skill:'regen_hp'}`),'true',async()=>{await waitForGameplay(2500);}));
-  const ready=(name:string,skill:string)=>expect.poll(()=>live.clients[name]!.run(`globalThis.__partyTurns.ready('${skill}').ready`),{timeout:120_000,message:`TC15: ${skill} is ready`}).toBe(true);
+  const report=async()=>console.log('TURNS-TC15 '+JSON.stringify({calls:results.map(r=>[r.label,r.server,r.ledger,r.refused,r.landings??null]),answers:await live.clients[W]!.run('globalThis.__e2eTc15??null'),priest:await live.clients[P]!.run('globalThis.__e2eTc15??null'),why:await live.clients[P]!.run('globalThis.__e2eTc15Why??null'),ring:await live.clients[W]!.run('(globalThis.__partyTurns?.records?.()??[]).slice(-6)')}));
+  await live.admin(healLanding(true));
+  try{const heal=await oneCall(live,P,'heal (the executor)','heal',push(`{skill:'heal',targets:[parent.entities['${W}']]}`));
+    results.push({...heal,landings:await live.admin(healLanding(false))});}
+  finally{await live.admin(healLanding(false));}
+  // A skill that never readies leaves its last answer, the server's next_skill edge, the
+  // character's MP against the skill's cost and the turns ring's last sends of it in the log, so
+  // the reading names why.
+  const ready=async(name:string,skill:string)=>{let last:unknown=null;
+    try{await expect.poll(async()=>!!((last=await live.clients[name]!.run(`({answer:globalThis.__partyTurns.ready('${skill}'),edge:+(parent.next_skill['${skill}']||0),now:Date.now(),mp:character.mp,cost:G.skills['${skill}'].mp??null,sends:(globalThis.__partyTurns?.records?.()??[]).filter(r=>JSON.stringify(r).includes('${skill}')).slice(-4)})`)) as {answer?:{ready?:boolean}}).answer?.ready,{timeout:120_000,message:`TC15: ${skill} is ready`}).toBe(true);}
+    catch(error){console.log('TURNS-TC15-READY '+JSON.stringify({name,skill,last}));throw error;}};
+  // The heal spends the priest's MP, and the console's regeneration drinks regen_mp while MP is
+  // below its max (survival/needs.ts `regenerationOrder`). That drink holds the potion family for
+  // regen_mp's 4 s (use_mp's cooldown times regen_mp's cooldown_multiplier), the same span as the
+  // call window, so the quiet window ends on that edge: W06a's run of 2026-11-24 pushed both potion
+  // calls into it and each answered `waiting`. The priest's MP back at its max ends the
+  // regeneration, and each push waits for the family to be ready.
+  await plantVitals(live,P,{mp:1});
+  results.push(await oneCall(live,P,'potion equip (the executor)','equip',push(`{skill:'use_mp'}`),'true',()=>ready(P,'use_mp')));
+  results.push(await oneCall(live,P,'regeneration use (the executor)','use',push(`{skill:'regen_hp'}`),'true',()=>ready(P,'regen_hp')));
   // Warcry's reach: the server counts a player
   // by the gap between the two boxes, and the game client keeps no entity outside its 700 by 500
   // view. The priest stands 610 east of the warrior, in view and 584 from its box; the merchant
@@ -713,6 +373,13 @@ async function callCosts(live:LiveGame){
   // 0.3. The plant ends with both back where they stood.
   const stood=await live.admin(`output=(()=>{const at=n=>{const p=get_player(n);return {map:p.map,x:p.x,y:p.y};};return {w:at('${W}'),p:at('${P}'),m:at('${M}')};})()`) as Record<'w'|'p'|'m',{map:string;x:number;y:number}>;
   const place=(name:string,to:{map:string;x:number;y:number})=>live.admin(`output=(()=>{transport_player_to(get_player('${name}'),${JSON.stringify(to.map)},[${to.x},${to.y}]);return true;})()`);
+  // The warrior's console keeps Warcry up on every pass while Combat is on, target or not
+  // (skills/protection.ts `combatBuffSupport`, as b9b5c91e's warrior.ts `beforeTarget`), so it casts
+  // the skill as soon as it readies: W06a's run of 2026-11-24 read the edge 42 s ahead after a
+  // 120 s wait. A planted Warcry effect on the warrior leaves its upkeep nothing to refresh until
+  // the push. It lasts the quiet window (30 s), one Warcry cooldown (game data) and the placement
+  // (15 s), the three waits before the push.
+  await live.admin(`output=(()=>{const p=get_player('${W}');p.s.warcry={ms:45000+G.skills.warcry.cooldown,f:'${W}'};resend(p,'u+cid');return true;})()`);
   try{results.push(await oneCall(live,W,'Warcry (the executor)','skill',push(`{skill:'warcry'}`),'true',async()=>{
     await ready(W,'warcry');
     await place(P,{...stood.w,x:stood.w.x+610});await place(M,{...stood.w,y:stood.w.y-560});
@@ -793,21 +460,11 @@ async function attackCallCost(live:LiveGame){
   }
 }
 
-// Row T2: one potion in flight.
-export async function turnsPotionRow(live:LiveGame,info:TestInfo){
-  const result:any={};
-  for(const n of fighters)await live.clients[n]!.run(spendLog);
-  // TC9's first half: game data puts the four potion skills in one group, and the executor's
-  // family table names them one family.
-  result.families=await live.clients[P]!.run(`(()=>{const k=${JSON.stringify(POTION_SKILLS)};
-    return {data:k.map(s=>G.skills[s].cooldown_group??G.skills[s].share??s),table:globalThis.__partyTurns?.family?k.map(s=>__partyTurns.family(s)):null};})()`);
-  // TC13: the server's heal rule, live: the paused priest planted below `mp_cost` heals the warrior
-  // once (server.js:3354-3356 heals with no MP check; consume_mp floors MP at 0).
-  await party(live);
-  // The console Pause runs no `act` registration of the priest (the lifecycle owner's run scope), so neither a
-  // potion nor regeneration raises the planted MP before the heal.
+// TC13's heal under a console Pause that already holds the priest: the paused priest planted
+// below `mp_cost` heals the warrior once (server.js:3354-3356 heals with no MP check; consume_mp
+// floors MP at 0). turnsPotionRow presses its own Pause first; W06a runs it inside E64's Pause.
+export async function tc13Heal(live:LiveGame,result:any){
   try{
-    await live.post('/console-control/pause',{});
     await expect.poll(()=>live.clients[P]!.run('!!__partyHooks.ask("lifecycle.held")'),{timeout:30_000,message:'TC13: the console Pause holds the priest'}).toBe(true);
     const t=await timing(live,P);
     await live.clients[P]!.run(`(()=>{const w=parent.entities['${W}'];if(w&&Math.hypot(w.real_x-character.real_x,w.real_y-character.real_y)>character.range*0.8)move(w.real_x,w.real_y);return true;})()`);
@@ -820,53 +477,32 @@ export async function turnsPotionRow(live:LiveGame,info:TestInfo){
     // refuses as "disabled" (server.js:9785-9786 at the pin).
     if(red('tc13a'))await live.admin(`output=(()=>{const p=get_player('${P}');p.s.stunned={ms:5000};p.u=true;resend(p,'u+cid');return true;})()`);
     const before=await live.admin(`output=(()=>{const w=get_player('${W}'),p=get_player('${P}');return {w:w.hp,p:p.mp,cost:p.mp_cost};})()`);
-    const answer=await live.clients[P]!.run(`heal(parent.entities['${W}']).then(r=>({accepted:true,reply:r&&{response:r.response,place:r.place}}),e=>({accepted:false,reason:e&&(e.reason||e.response||e.message)}))`);
-    const after=await live.admin(`output=(()=>{const w=get_player('${W}'),p=get_player('${P}');return {w:w.hp,p:p.mp};})()`);
+    const answer=await live.clients[P]!.run(`heal(parent.entities['${W}']).then(r=>({accepted:true,reply:r&&{response:r.response,place:r.place,eta:r.eta??0}}),e=>({accepted:false,reason:e&&(e.reason||e.response||e.message)}))`) as {accepted:boolean;reply?:{eta:number}};
+    // The heal lands when its plight does: the reply carries the flight's `eta` (server.js
+    // commence_attack), and an eta of 0 lands inside the handler. The read waits that flight and
+    // one call margin for the landing's packet, so a heal in the air is not read as no heal.
+    const read=()=>live.admin(`output=(()=>{const w=get_player('${W}'),p=get_player('${P}');return {w:w.hp,p:p.mp};})()`) as Promise<{w:number;p:number}>;
+    const margin=Number(await live.clients[P]!.run('__partyCalls.view().margin??0'));
+    let after=await read();
+    if(answer.accepted)await expect.poll(async()=>(after=await read()).w>before.w,{timeout:(answer.reply?.eta??0)+margin,intervals:[50]}).toBe(true).catch(()=>{});
     result.tc13={planted:{mp:planted.mp,mp_cost:planted.mp_cost},before,answer,after,healed:after.w>before.w,mpAfter:after.p};
   }catch(error){result.tc13={error:String(error).slice(0,400)};console.log('TURNS-T2-TC13 '+result.tc13.error);}
-  finally{
-    await live.post('/console-control/play',{}).catch(()=>{});
-    await expect.poll(()=>live.clients[P]!.run('!__partyHooks.ask("lifecycle.held")'),{timeout:60_000,message:'Play releases the priest'}).toBe(true).catch(()=>{});
-    await plantVitals(live,P,{hp:1,mp:1});await plantVitals(live,W,{hp:1});
-  }
+}
+// TC15: one spend of each executor method against the call budget's ledger, then the attack's.
+export async function tc15Play(live:LiveGame,result:any){
   try{result.tc15=await turnsCallCosts(live);}catch(error){result.tc15error=String(error).slice(0,300);console.log('TURNS-TC15-ERROR '+result.tc15error);}
   try{(result.tc15??=[]).unshift(await attackCallCost(live));}catch(error){result.tc15error=String(error).slice(0,300);console.log('TURNS-TC15-ERROR '+result.tc15error);}
   console.log('TURNS-TC15-ATTACK '+JSON.stringify(result.tc15?.[0]&&[result.tc15[0].label,result.tc15[0].server,result.tc15[0].ledger]));
-  // TC9: MP at 15% and HP at 45% while the priest walks to the goo field and fights.
-  const from=await clock(live,P),plantAts:number[]=[];
-  const farm=await location(live,'goo');
-  await live.post('/merchant/routine-priorities',{priorities:{},enabled:{'merchant idle':false,'stand maintenance':false}});
-  await live.post('/navigate-to-monster',{monsterId:'goo',location:farm});
-  await live.post('/focus',{monsterFocus:['goo'],monsterPriorities:{},monsterSearchRadius:400});
-  await expect.poll(()=>live.clients[P]!.run('!!character.moving'),{timeout:60_000,message:'The priest walks'}).toBe(true);
-  // Two plants while it walks (the pulse's regeneration is eligible), four while it fights (the
-  // role loop's class potion runs; the role loop stops it in travel).
-  for(let i=0;i<2;i++){await plantVitals(live,P,{hp:0.45,mp:0.15});plantAts.push(await clock(live,P));await waitForGameplay(10_000);}
-  await expect.poll(async()=>(await readLog(live,P,from)).replies.filter(r=>accepted(r,'attack')).length,{timeout:120_000,message:'The priest fights goo'}).toBeGreaterThanOrEqual(2);
-  const fightFrom=plantAts.length;
-  for(let i=0;i<4;i++){await plantVitals(live,P,{hp:0.45,mp:0.15});plantAts.push(await clock(live,P));await waitForGameplay(10_000);}
-  const to=await clock(live,P),log=await readLog(live,P,from);
-  const family=(s:Spend)=>s.method==='use'||(s.method==='equip'&&/^[hm]pot/.test(String(s.item)));
-  const firsts=plantAts.map(at=>log.spends.find(s=>s.at>=at&&family(s))).map(s=>s?{method:s.method,item:s.item,at:s.at,hp:s.party[P]?.hp,max:s.party[P]?.max,mp:s.mp,maxMp:s.maxMp}:null);
-  result.tc9={notReady:log.replies.filter(r=>r.at<to&&(r.response==='not_ready'||r.reason==='not_ready')&&['equip','use'].includes(String(r.place))),
-    lines:log.lines.filter(l=>l.at<to),potionCalls:log.spends.filter(s=>s.at<to&&family(s)).length,firsts,fightFrom};
-  const t2=await timing(live,P);
-  result.tc11=tc11(log,from,to,replyStep(log.replies.filter(r=>r.at<to)),t2.cooldown,t2.minRtt,true);
-  await tc11View(live,P,'T2',log,from,result.tc11.waitsWithoutNotNow);
-  await plantVitals(live,P,{hp:1,mp:1});
-  // The porcupine's target call asks the call budget first.
-  await porcupineTargetCall(live);
-  await attach(info,'turns-t2',result);
-  console.log('TURNS-T2 '+JSON.stringify(result));
-  expect(result.families.data,'TC9: game data puts the four potion skills in one group').toEqual(POTION_SKILLS.map(()=>'potion'));
-  expect(result.families.table,"TC9: the executor's family table names the four potion skills one family").toEqual(POTION_SKILLS.map(()=>'potion'));
+}
+export function tc13tc15Verdict(result:any){
   expect.soft(result.tc13.answer?.accepted,`TC13: the server accepts the heal below mp_cost: ${JSON.stringify(result.tc13)}`).toBe(true);
   expect.soft(result.tc13.healed,'TC13: the heal below mp_cost heals the warrior').toBe(true);
-  expect.soft(result.tc9.notReady,'TC9: potion family calls refused not_ready').toEqual([]);
-  expect.soft(result.tc11.sendsBeforeEdge,"TC11: sends before their family's edge").toEqual([]);
-  expect.soft(result.tc11.waitsWithoutNotNow,'TC11: a ready attack family that waits more than one pass with no not-now').toEqual([]);
-  expect.soft(result.tc9.lines,'TC9: "Recovery failed" and "Potion failed" lines').toEqual([]);
-  for(const r of result.tc15??[])expect.soft([r.label,r.ledger],`TC15: ${r.label} entries ${JSON.stringify(r.entries)} ledger ${JSON.stringify(r.ledgerEntries)} refused ${JSON.stringify(r.refused)}`).toEqual([r.label,r.server]);
+  for(const r of result.tc15??[])if(!r.landings)expect.soft([r.label,r.ledger],`TC15: ${r.label} entries ${JSON.stringify(r.entries)} ledger ${JSON.stringify(r.ledgerEntries)} refused ${JSON.stringify(r.refused)}`).toEqual([r.label,r.server]);
+  // The heal: one landing, in the priest's handler or in the projectile tick, never on another
+  // player's socket, and the ledger at its largest charge.
+  for(const r of (result.tc15??[]).filter((r:any)=>r.landings)){
+    expect.soft(r.landings.map((l:any)=>l.where),`TC15: ${r.label} lands once, in the priest's handler or the projectile tick: ${JSON.stringify(r.landings)}`).toEqual([expect.stringMatching(/^(handler|tick)$/)]);
+    expect.soft([r.label,r.ledger],`TC15: ${r.label} entries ${JSON.stringify(r.entries)} landings ${JSON.stringify(r.landings)} ledger ${JSON.stringify(r.ledgerEntries)} refused ${JSON.stringify(r.refused)}`).toEqual([r.label,healLargest(r)]);}
   // A regeneration `use` costs nothing on the server, so its reach is the executor's answer.
   for(const r of result.tc15??[])if(!/regeneration/.test(r.label))expect.soft(r.server,`TC15: ${r.label} reached the server`).toBeGreaterThan(0);
   expect.soft(result.tc15error,'TC15: every call ran').toBeUndefined();

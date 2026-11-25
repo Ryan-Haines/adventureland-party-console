@@ -22,32 +22,30 @@ export const bosses={
   checkpointPumpkin:{type:'mrpumpkin',map:'halloween',x:-495,y:685},
 } as const;
 
-// Every ambient monster turns peaceful, so the only death is the scripted one. The
-// fixture's reset() restores aggro and peaceful before the next test (e2e/game/bootstrap.cjs),
-// and the default table's row reset before its next row (live-fixtures.ts defaultFixtureReset).
+// Every ambient monster turns peaceful, so the only death is the scripted one.
 // The server's own event lineup stays off for the scenario, so only the events it seeds go live
 // (an Ice Golem the lineup started during one step 11 run kept a cant_join seed from running);
 // the live fixture's teardown turns it back on. A pursuit ends through reduce_targets: a bare
 // m.target=null leaves the player's targets count raised, and above 5 the server refuses Town and
 // every door (node/server.js "cant_escape").
-// It keeps the catalog's own aggro and peaceful before the first change and registers their restore
-// on the catalog and on every live monster, so a later row or scenario in the same game pool seeds
-// monsters that take a target (node/server.js target_player returns for a peaceful monster).
+// The window runner puts the catalog's aggro and peaceful back at the window's end (windows.ts
+// serverData). A catalog undo kept in a server global was lost when a session play's eventScrub
+// deleted that global before the window's undo ran, and W29a left every catalog monster peaceful
+// for W44 and W48 (2026-11-24).
 export async function peacefulWorld(live:LiveGame){
   await live.admin(`output=(()=>{if(!globalThis.__e2eLineup){globalThis.__e2eLineup=event_schedule_tick;event_schedule_tick=function(){};}return true;})()`);
   return peacefulMonsters(live);
 }
-// Every catalog monster and every live one peaceful with no aggro, with the restore registered.
+// Every catalog monster and every live one peaceful with no aggro. The live monsters are not game
+// data, so the row's undo puts back their own values, read from the catalog before the change.
 export async function peacefulMonsters(live:LiveGame){
-  live.undo('the aggro and peaceful of the catalog and live monsters',()=>live.admin(catalogBehaviourRestore));
-  return live.admin(`output=(()=>{globalThis.__e2eMonsterBehaviour||=Object.fromEntries(Object.entries(G.monsters).map(([type,d])=>[type,{aggro:d.aggro,peaceful:d.peaceful}]));
-    for(const type of Object.keys(G.monsters)){G.monsters[type].aggro=0;G.monsters[type].peaceful=true;}
+  const kept=await live.admin(`output=Object.fromEntries(Object.entries(G.monsters).map(([type,d])=>[type,{aggro:d.aggro,peaceful:d.peaceful}]))`);
+  live.undo('the aggro and peaceful of the live monsters',()=>live.admin(liveBehaviourRestore(kept)));
+  return live.admin(`output=(()=>{for(const type of Object.keys(G.monsters)){G.monsters[type].aggro=0;G.monsters[type].peaceful=true;}
     for(const i of Object.values(instances))for(const m of Object.values(i.monsters||{})){m.aggro=0;m.peaceful=true;
       if(m.target){const p=players[name_to_id[m.target]];m.target=null;if(p)reduce_targets(p,m);}}return true;})()`);
 }
-const catalogBehaviourRestore=`output=(()=>{const kept=globalThis.__e2eMonsterBehaviour;if(!kept)return 0;let restored=0;
-    for(const [type,own] of Object.entries(kept)){const d=G.monsters[type];if(!d)continue;
-      for(const key of ['aggro','peaceful']){if(own[key]===undefined){if(key in d){delete d[key];restored++;}}else if(d[key]!==own[key]){d[key]=own[key];restored++;}}}
+const liveBehaviourRestore=(kept:unknown)=>`output=(()=>{const kept=${JSON.stringify(kept)};let restored=0;
     for(const instance of Object.values(instances))for(const m of Object.values(instance.monsters||{})){const own=kept[m.type];if(!own)continue;
       if(m.peaceful!==own.peaceful){if(own.peaceful===undefined)delete m.peaceful;else m.peaceful=own.peaceful;restored++;}
       if(own.aggro!==undefined&&m.aggro!==own.aggro){m.aggro=own.aggro;restored++;}}

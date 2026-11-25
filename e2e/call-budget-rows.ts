@@ -1,14 +1,13 @@
-import {expect,callMeasures,trackerReplyAge,plantVitals,type LiveGame,type CallSample,reloadCode} from './live-fixtures';
+import {expect,callMeasures,trackerReplyAge,type LiveGame,type CallSample,reloadCode} from './live-fixtures';
 import type {TestInfo} from '@playwright/test';
-import {fighters,location,party} from './game/hunt-lifecycle';
+import {fighters,party} from './game/hunt-lifecycle';
 import {waitForGameplay} from './network-clock';
-import {spendLog,spendsSince,red} from './turns-rows';
-import {killNativeCharacter} from './hunt-interruption-helpers';
 import {CALL_LIMIT as LIMIT,CALL_WINDOW_MS as WINDOW_MS,bandLimits,READ_PICKS} from '../runtime/characters/call-budget-limits.ts';
 
-// The call budget's rows of the default table: row A, the merchant's bursts and its Tracktrix read;
-// row B, survival first while jobs fill the window; row C, a forced limitdc. Each checks its failure
-// modes by number after the row's measures, so a row on a tree without the budget still measures.
+// The call budget's rows, which W05, W14, W19 and W60 play from: row A, the merchant's bursts and its
+// Tracktrix read; row B, survival first while jobs fill the window; row C, a forced limitdc. Each checks
+// its failure modes by number after the row's measures, so a row on a tree without the budget still
+// measures.
 const M='E2EMerchant',W='E2EWarrior',P='E2EPriest';
 // The server's window (server_functions.js:5481) and limit (server.js:262).
 // The Tracktrix read's waits (runtime/characters/call-budget-reads.ts): a reply schedules the next
@@ -34,117 +33,16 @@ export async function holdTracktrix(live:LiveGame,name:string,page=true){
   if(page)await expect.poll(()=>live.clients[name]!.run(`character.items.some(i=>i&&i.name==='tracker')`),{timeout:15_000}).toBe(true);
   return displaced;
 }
-// The Tracktrix taken from the bag, as banking it would.
-async function dropTracktrix(live:LiveGame,name:string){
-  await live.admin(`output=(()=>{const p=get_player('${name}');p.items=p.items.map(i=>i&&i.name==='tracker'?null:i);cache_player_items(p);resend(p,'reopen+cid');return true;})()`);
-  await expect.poll(()=>live.clients[name]!.run(`!character.items.some(i=>i&&i.name==='tracker')`),{timeout:15_000}).toBe(true);
-}
 
-// CB15 and CB16 on the merchant's native client. The page logs each `tracker` emit at the
-// top of the socket's emit chain and each tracker window the game draws (`render_tracker` draws it
-// with `show_modal`, js/html.js:3212), so the checks read the game's own calls, not the read's
-// state. Lost replies come from the server's own `tracker` listener taken off the merchant's
-// socket, and put back after.
-async function trackerChecks(live:LiveGame){
-  const page=live.clients[M]!,now=()=>page.run('Date.now()') as Promise<number>;
-  await page.run(`(()=>{const s=parent.socket,emit=s.emit,show=parent.show_modal,log=globalThis.__e2eTracker={asks:[],windows:[],emit,show};
-    s.emit=log.mine=function(method,...rest){if(method==='tracker')log.asks.push(Date.now());return emit.apply(this,[method,...rest]);};
-    if(typeof show==='function')parent.show_modal=log.mineShow=function(html,...rest){if(String(html).includes('trackerm'))log.windows.push(Date.now());return show.apply(this,[html,...rest]);};
-    return {render:typeof parent.render_tracker,show:typeof show};})()`);
-  const log=()=>page.run('({asks:globalThis.__e2eTracker.asks,windows:globalThis.__e2eTracker.windows})') as Promise<{asks:number[];windows:number[]}>;
-  const replies=async(from:number)=>(await page.events()).filter((e:any)=>e.event==='tracker-arrived'&&e.at>=from).length;
-  const out:any={};
-  try{
-    // CB16: a lost Tracktrix asks nothing.
-    await dropTracktrix(live,M);
-    const goneAt=await now();
-    await waitForGameplay(5000);
-    out.whileGone=(await log()).asks.filter(at=>at>goneAt);
-    // CB16 and CB15: a gained Tracktrix asks at once, and its automatic reply opens no window.
-    const gainFrom=await now();
-    await holdTracktrix(live,M);
-    const gainedAt=await now();
-    await expect.poll(async()=>replies(gainFrom),{timeout:15_000,message:'CB15: the automatic request is answered'}).toBeGreaterThan(0).catch(()=>{});
-    await waitForGameplay(1000);
-    out.gain={gainFrom,gainedAt,asks:(await log()).asks.filter(at=>at>=gainFrom),windows:(await log()).windows.filter(at=>at>=gainFrom),replies:await replies(gainFrom)};
-    // CB15: the player's own request (an untagged emit from the page) opens the next window.
-    const manualFrom=await now();
-    await page.run(`(parent.socket.emit('tracker'),true)`);
-    await expect.poll(async()=>replies(manualFrom),{timeout:15_000,message:'CB15: the manual request is answered'}).toBeGreaterThan(0).catch(()=>{});
-    await expect.poll(async()=>(await log()).windows.filter(at=>at>=manualFrom).length,{timeout:5_000,message:'CB15: the manual request shows the tracker window'}).toBeGreaterThan(0).catch(()=>{});
-    out.manual={manualFrom,windows:(await log()).windows.filter(at=>at>=manualFrom),replies:await replies(manualFrom)};
-    await page.run('(parent.hide_modal?.(),true)').catch(()=>null);
-    // CB16 and CB30: with replies lost, a gained Tracktrix asks at once, again one margin later,
-    // then at the 30 s refresh. Each request is a background question, which goes when the window
-    // has room for it. The gained and manual reads above sit in the merchant's window, so the
-    // section starts once the window has room for a request and its retry with no wait above the
-    // read: the triage run started 250 ms after the manual read, and the retry waited for the
-    // gained read to leave the window.
-    await dropTracktrix(live,M);
-    const cost=Number(await live.admin('output=CC.tracker'));
-    await expect.poll(()=>page.run(`(()=>{const v=globalThis.__partyCalls?.view?.();return !!v&&v.used+2*${cost}<=v.limits.background&&!v.waiting.length;})()`),
-      {timeout:15_000,intervals:[250],message:"CB30: the merchant's window has room for a request and its retry"}).toBe(true);
-    await live.admin(`output=(()=>{const s=get_player('${M}').socket;globalThis.__e2eTrackerListeners=s.listeners('tracker');s.removeAllListeners('tracker');return globalThis.__e2eTrackerListeners.length;})()`);
-    try{
-      const lostFrom=await now();
-      await holdTracktrix(live,M);
-      // The window runs from the first request, past the third's due time by a few seconds.
-      let first=0;
-      await expect.poll(async()=>(first=(await log()).asks.find(at=>at>=lostFrom)??0),{timeout:15_000,message:'CB16: the gained Tracktrix asks'}).toBeGreaterThan(0).catch(()=>{});
-      const margin=Number(await page.run('globalThis.__partyCalls?.view?.().margin ?? 0'))||0;
-      await waitForGameplay(Math.max(0,first+margin+TRACKER_REFRESH_MS+WINDOW_MS-await now()));
-      out.lost={lostFrom,margin,asks:(await log()).asks.filter(at=>at>=lostFrom),replies:await replies(lostFrom)};
-    }finally{
-      // The server's own `socket.on` wraps each handler in its call charge (server.js:4966-5058),
-      // and the kept listener is that wrapper, so the restore registers it through socket.io's
-      // `on`: a second wrap charged each later tracker request twice (50 and 51, row A of fix3).
-      await live.admin(`output=(()=>{const s=get_player('${M}').socket;for(const l of globalThis.__e2eTrackerListeners||[])Object.getPrototypeOf(s).on.call(s,'tracker',l);delete globalThis.__e2eTrackerListeners;return s.listeners('tracker').length;})()`);
-    }
-    // CB30: a `kill_credit` raises its monster's count by 1 on the reply the game client holds as
-    // its `tracker`, with no read. The server sends the packet to the credited socket as its kill
-    // paths do (server.js:2778), here for a goo.
-    const creditFrom=await now();
-    await page.run(`(parent.socket.emit('tracker'),true)`);
-    await expect.poll(async()=>replies(creditFrom),{timeout:15_000,message:'CB30: a reply arrives before the credit'}).toBeGreaterThan(0).catch(()=>{});
-    const count=()=>page.run('Number(parent.tracker?.monsters?.goo)||0') as Promise<number>;
-    const before=await count(),asksBefore=(await log()).asks.length;
-    await live.admin(`output=(get_player('${M}').socket.emit('kill_credit',{mtype:'goo'}),true)`);
-    await expect.poll(count,{timeout:5_000,message:'CB30: the credit raises the count'}).toBe(before+1).catch(()=>{});
-    out.credit={before,after:await count(),asks:(await log()).asks.length-asksBefore};
-    out.ring=((await page.run('globalThis.__partyCalls?.records?.() ?? []')) as any[]).filter(r=>r.method==='tracker'&&r.decision==='read-job');
-  }finally{
-    await page.run(`(()=>{const log=globalThis.__e2eTracker;if(!log)return true;if(parent.socket.emit===log.mine)parent.socket.emit=log.emit;if(log.mineShow&&parent.show_modal===log.mineShow)parent.show_modal=log.show;delete globalThis.__e2eTracker;return true;})()`).catch(()=>null);
-    await holdTracktrix(live,M).catch(()=>{});
-  }
-  return out;
-}
-function trackerHolds(t:any){
-  expect(t,'CB15, CB16: the Tracktrix checks ran').toBeTruthy();
-  expect(t.whileGone,'CB16: a lost Tracktrix asks nothing').toEqual([]);
-  expect(t.gain.asks.length,`CB16: a gained Tracktrix asks: ${JSON.stringify(t.gain)}`).toBeGreaterThan(0);
-  expect(t.gain.asks[0]-t.gain.gainedAt,'CB16: a gained Tracktrix asks at once').toBeLessThanOrEqual(2*STEP_MS);
-  expect(t.gain.replies,'CB15: the automatic request is answered').toBeGreaterThan(0);
-  expect(t.gain.windows,'CB15: an automatic reply opens no tracker window').toEqual([]);
-  expect(t.manual.windows.length,`CB15: a manual request shows the tracker window: ${JSON.stringify(t.manual)}`).toBeGreaterThan(0);
-  const asks=t.lost.asks as number[],gaps=asks.slice(1).map((at,i)=>at-asks[i]!);
-  expect(t.lost.replies,'CB16: the server answers no request while its listener is off').toBe(0);
-  expect(asks.length,`CB16: requests at 0, one margin and the refresh with replies lost: ${JSON.stringify(asks.map(a=>a-t.lost.lostFrom))}`).toBe(3);
-  expect(gaps[0],`CB30: a lost reply is asked again one margin (${t.lost.margin} ms) after the request`).toBeLessThanOrEqual(t.lost.margin+2*STEP_MS);
-  expect(gaps[1],'CB16: the next lost reply waits the 30 s refresh').toBeGreaterThanOrEqual(TRACKER_REFRESH_MS);
-  expect(gaps[1],'CB16: the next lost reply waits the 30 s refresh').toBeLessThanOrEqual(TRACKER_REFRESH_MS+2*STEP_MS);
-  expect(t.credit.after,'CB30: a kill_credit raises its count on the game client tracker by 1').toBe(t.credit.before+1);
-  expect(t.credit.asks,'CB30: with no tracker read').toBe(0);
-  expect(t.ring,'CB30: no tracker read in the job band').toEqual([]);
-}
 // The sampler's measures and CB1's bound for each sampled character, attached and logged.
-async function sampled(info:TestInfo,label:string,samples:CallSample[],names:string[]){
+export async function sampled(info:TestInfo,label:string,samples:CallSample[],names:string[]){
   const measures=Object.fromEntries(names.map(n=>[n,callMeasures(samples,n)]));
   await attach(info,label+'-call-samples',{measures,samples});
   console.log('CALL-SAMPLES '+JSON.stringify({label,measures:Object.fromEntries(Object.entries(measures).map(([n,m])=>[n,{...m,above:m.above?.length??null}]))}));
   return measures;
 }
 // CB1: each server sample is at most the largest `used` the character held within one margin of it.
-function boundHolds(measures:Record<string,ReturnType<typeof callMeasures>>,names:string[]){
+export function boundHolds(measures:Record<string,ReturnType<typeof callMeasures>>,names:string[]){
   for(const n of names){
     expect(measures[n]!.usedSamples,`CB1: ${n}'s budget answers the sampler`).toBeGreaterThan(0);
     expect(measures[n]!.above,`CB1: ${n}'s server sum above its used`).toEqual([]);
@@ -212,7 +110,7 @@ export async function oneCall(live:LiveGame,name:string,label:string,method:stri
   },{timeout:3_500,intervals:[100],message:`CB4: ${label} booked at the server's charge`}).toBe(true).catch(()=>{});
   return result;
 }
-async function perCallCosts(live:LiveGame,info:TestInfo){
+export async function perCallCosts(live:LiveGame,info:TestInfo){
   const doors=await live.admin(`output=(()=>{const doors=G.maps.main.doors,bank=doors.find(d=>d[4]==='bank'),
     plain=doors.find(d=>G.maps[d[4]]&&!G.maps[d[4]].mount&&!G.maps[d[4]].instance&&!G.maps[d[4]].irregular&&G.maps[d[4]].doors.some(b=>b[4]==='main'));
     const back=m=>G.maps[m].doors.find(d=>d[4]==='main');
@@ -268,7 +166,7 @@ async function perCallCosts(live:LiveGame,info:TestInfo){
 async function partyCosts(live:LiveGame){
   await party(live);
   const together=`character.party==='${W}'`;
-  await expect.poll(()=>live.clients[P]!.run(together),{timeout:60_000,message:'The priest is in the warrior\'s party'}).toBe(true);
+  await expect.poll(()=>live.clients[P]!.run(together),{timeout:60_000,message:"The priest is in the warrior's party"}).toBe(true);
   for(const n of [P,W])await quiet(live,n,'the party leave');
   const read=async(n:string)=>({server:await serverCalls(live,n),ledger:(await budgetView(live,n))?.ledger??[]});
   const before:Record<string,Awaited<ReturnType<typeof read>>>={[P]:await read(P),[W]:await read(W)};
@@ -289,7 +187,7 @@ async function partyCosts(live:LiveGame){
     const most=(r:any[]|undefined)=>r?r[0].server+r[0].ledger:-1;
     if(most(results)>=most(kept))kept=results;
     return formed&&results[0].ledgerEntries.length>0&&results.every(r=>r.server===r.ledger);
-  },{timeout:15_000,intervals:[100],message:'CB4: the party leave and its rejoin booked at the server\'s charge'}).toBe(true).catch(()=>{});
+  },{timeout:15_000,intervals:[100],message:"CB4: the party leave and its rejoin booked at the server's charge"}).toBe(true).catch(()=>{});
   console.log('CALL-BUDGET-CB4-PARTY '+JSON.stringify(reads));
   await party(live);
   return kept??results;
@@ -347,8 +245,8 @@ export async function mageCosts(live:LiveGame,info:TestInfo,mage:string,target:s
   return results;
 }
 // CB4's checks, after the row's measures, so a row on a tree with no budget still measures its bursts.
-function costsHold({results,server}:Awaited<ReturnType<typeof perCallCosts>>){
-  expect(server,'CB4: the table\'s CC and limit are the running server\'s').toEqual({CC:{move:1.5,players:12,secondhands:16,tracker:50,equip:3,unequip:6,send_updates:12,auth:2,friend:24,cruise:10},calls:200});
+export function costsHold({results,server}:Awaited<ReturnType<typeof perCallCosts>>){
+  expect(server,"CB4: the table's CC and limit are the running server's").toEqual({CC:{move:1.5,players:12,secondhands:16,tracker:50,equip:3,unequip:6,send_updates:12,auth:2,friend:24,cruise:10},calls:200});
   chargesHold(results);
 }
 export function chargesHold(results:any[]){
@@ -448,155 +346,128 @@ export async function headlessBound(live:LiveGame,info:TestInfo,name:string,ms:n
   return result;
 }
 
-// CB26: a runtime stop with no next install, the player's Disengage, retires the install
-// and drains its held emits as the window frees. The plant holds an untagged `players` read in
-// the merchant's hold queue; the game's own `stop_runner` removes the CODE frame, whose `stop`
-// runs on its pagehide (runtime/lifecycle/character/loader.ts `dispose`). The stop key a Disengage writes
-// (runtime/lifecycle/roster/recovery.ts) keeps the Steam recovery from starting the next install until the
-// check ends, so the drain runs from the record's timer on the game window alone. Then the key
-// goes and the page starts the CODE again, as CB17's reload does.
-async function stopRetires(live:LiveGame){
-  const frame=live.clients[M]!.frame,key='party-code-stopped:'+M;
-  const margin=(await budgetView(live,M))?.margin??WINDOW_MS;
-  await live.plantCallCost(M,199);
-  await live.admin(`output=(()=>{resend(get_player('${M}'),'u');return true;})()`);
-  await expect.poll(()=>live.clients[M]!.run('(__partyCalls.view().cc??0)>=199'),{timeout:10_000,message:'CB26: the planted figure arrives'}).toBe(true);
-  let stopped:any;
-  try{
-    stopped=await frame.evaluate((key:string)=>{
-      const w=window as any,record=w.__partyCallBudget,install=record.install,socket=w.socket;
-      // The run scope puts its own wrapper of each listener on the socket, so the row counts the
-      // socket's listeners per event, as CB17 does. `stop_runner` ends the whole CODE runtime, so
-      // the other owners' run scope listeners leave with the install's (the status owner's
-      // `kill_credit`, telemetry.ts): the stop takes off at least as many as the install owns.
-      const own:Record<string,number>={};
-      for(const [event] of install.listeners as [string,unknown][])own[event]=(own[event]??0)+1;
-      const count=()=>Object.fromEntries(Object.keys(own).map(event=>[event,socket.listeners(event).length]));
-      w.localStorage.setItem(key,'1');
-      socket.emit('players',{});
-      const held=record.held.length,at=Date.now(),before=count();
-      w.stop_runner();
-      const after=count();
-      return {at,held,installAfter:record.install===undefined?null:'live',retired:install.retired,before,after,
-        listenersLeft:Object.keys(own).filter(event=>after[event]>before[event]-own[event]),
-        wrapperOnTop:socket.emit===install.wrapper};
-    },key);
-  }finally{await live.plantCallCost(M,0);}
-  let drained:any=null;
-  await expect.poll(async()=>(drained=await frame.evaluate(()=>{const w=window as any,r=w.__partyCallBudget;
-    return {at:Date.now(),held:r.held.length,install:r.install===undefined?null:'live',ring:r.ring.entries.filter((e:any)=>e.decision==='held').slice(-1)};})).held,
-    {timeout:2*WINDOW_MS+10_000,intervals:[100],message:'CB26: the held emit goes with no install'}).toBe(0).catch(()=>{});
-  const charged=(await serverCalls(live,M)).calls.filter(([,method])=>method==='players');
-  await frame.evaluate((key:string)=>{(window as any).localStorage.removeItem(key);},key);
-  await reloadCode(live,M);
-  await merchantReporting(live);
-  console.log('CALL-BUDGET-CB26 '+JSON.stringify({stopped,drained,charged}));
-  return {stopped:{...stopped,margin},drained,charged};
-}
-function stopHolds({stopped,drained,charged}:Awaited<ReturnType<typeof stopRetires>>){
-  expect(stopped.held,'CB26: the planted figure holds the players read').toBeGreaterThan(0);
-  expect(stopped.installAfter,'CB26: the stop retires the install').toBeNull();
-  expect(stopped.retired,'CB26: the stopped wrapper passes every emit on').toBe(true);
-  expect(stopped.listenersLeft,'CB26: the stopped install\'s listeners leave the socket').toEqual([]);
-  expect(stopped.wrapperOnTop,'CB26: the stopped wrapper is not the socket\'s emit').toBe(false);
-  expect(drained?.held,'CB26: the held emit goes after the stop').toBe(0);
-  expect(drained?.install,'CB26: it goes with no install').toBeNull();
-  expect(drained.at-stopped.at,'CB26: within one window and the margin of the stop').toBeLessThanOrEqual(WINDOW_MS+stopped.margin+1+2*STEP_MS);
-  expect(charged.map(([,,num])=>num),'CB26: the server charges the held players read').toContain(12);
-}
-
 // The merchant comes back after a disconnect when its status report is fresh again.
-async function merchantReporting(live:LiveGame){
+export async function merchantReporting(live:LiveGame){
   await expect.poll(async()=>{const c=(await live.state()).characters[M];return !!c&&c.runtime==='native'&&Date.now()-c.seenAt<3000;},
     {timeout:180_000,message:'The merchant reports again'}).toBe(true);
   await expect.poll(()=>live.admin(`output=!!get_player('${M}')`),{timeout:60_000,message:'The merchant is on the server again'}).toBe(true);
 }
 
-// Row A, "call budget: the merchant's bursts stay under the limit": 13 Ponty reads at Ponty (13
-// listings planted in the server's `csold`, a manual Ponty order for all of them, INV-015) and a
-// 16-slot stand reconcile (unlisted items seeded in trade1 to trade16, INV-099) beside the requests
-// that land with it at login, while the merchant holds a Tracktrix; then the Tracktrix read's render
-// half and its waits, and a runtime stop with no next install. CB1, CB3, CB4, CB7, CB8, CB10,
-// CB15, CB16, CB22, CB26.
-export async function burstsRow(live:LiveGame,info:TestInfo){
-  const names=[M,W,P],result:any={};
+// T40's Ponty burst: 13 planted listings at Ponty, read while the dashboard's market watch is open
+// and bought in one manual order, to the order's end.
+export async function pontyBurst(live:LiveGame,result:any){
+  // The merchant reads Ponty only while a reader needs the listings, so the row holds the
+  // dashboard's market watch open, as a viewer with the market panel open does.
+  const watch=new AbortController();
+  live.undo('the market watch of the Ponty burst',()=>watch.abort());
+  const watching=await fetch(live.deploymentPaths.apiUrl+'/party-api/market-watch',{signal:watch.signal});
+  expect(watching.ok,'The market watch opens').toBe(true);
+  await live.admin(`output=(()=>{const p=get_player('${M}');p.gold=Math.max(p.gold,2e9);resend(p,'u+cid');
+    for(let i=0;i<13;i++)csold.push({name:'staff',level:0,rid:'e2ecb'+i});return true;})()`);
+  await live.clients[M]!.run(`smart_move(find_npc('secondhands'),undefined,{request:{kind:'errand',owner:'e2e:call-budget'}}).then(()=>true,()=>false)`);
+  let listings:any[]=[];
+  await expect.poll(async()=>{listings=((await live.state(true)).ponty?.listings??[]).filter((l:any)=>String(l.key).includes(':e2ecb'));return listings.length;},
+    {timeout:60_000,message:'The merchant reads the 13 planted listings'}).toBe(13);
+  const order=await live.post('/merchant/ponty-order',{keys:listings.map(l=>l.key),quantity:13,unitPrice:listings[0].unitPrice});
+  result.ponty={order};
+  await expect.poll(async()=>{const s=await live.state();return [s.merchantCurrent,...(s.merchantQueue??[])].some((j:any)=>j&&order.jobIds.includes(j.id));},
+    {timeout:180_000,intervals:[1000],message:'The Ponty job runs to its end'}).toBe(false);
+  watch.abort();
   await merchantReporting(live);
-  await holdTracktrix(live,M);
-  const sampler=live.sampleCalls(names);
-  const limitdcsBefore=live.clients[M]!.limitdcs().length,from=await live.clients[M]!.run('Date.now()') as number;
-  let samples:CallSample[]=[],costs:Awaited<ReturnType<typeof perCallCosts>>|undefined;
-  try{
-    // The Ponty burst. The merchant reads Ponty only while a reader needs the listings, so the row
-    // holds the dashboard's market watch open, as a viewer with the market panel open does.
-    const watch=new AbortController();
-    live.undo('the market watch of the Ponty burst',()=>watch.abort());
-    const watching=await fetch(live.deploymentPaths.apiUrl+'/party-api/market-watch',{signal:watch.signal});
-    expect(watching.ok,'The market watch opens').toBe(true);
-    await live.admin(`output=(()=>{const p=get_player('${M}');p.gold=Math.max(p.gold,2e9);resend(p,'u+cid');
-      for(let i=0;i<13;i++)csold.push({name:'staff',level:0,rid:'e2ecb'+i});return true;})()`);
-    await live.clients[M]!.run(`smart_move(find_npc('secondhands'),undefined,{request:{kind:'errand',owner:'e2e:call-budget'}}).then(()=>true,()=>false)`);
-    let listings:any[]=[];
-    await expect.poll(async()=>{listings=((await live.state(true)).ponty?.listings??[]).filter((l:any)=>String(l.key).includes(':e2ecb'));return listings.length;},
-      {timeout:60_000,message:'The merchant reads the 13 planted listings'}).toBe(13);
-    const order=await live.post('/merchant/ponty-order',{keys:listings.map(l=>l.key),quantity:13,unitPrice:listings[0].unitPrice});
-    result.ponty={order};
-    await expect.poll(async()=>{const s=await live.state();return [s.merchantCurrent,...(s.merchantQueue??[])].some((j:any)=>j&&order.jobIds.includes(j.id));},
-      {timeout:180_000,intervals:[1000],message:'The Ponty job runs to its end'}).toBe(false);
-    watch.abort();
-    await merchantReporting(live);
-    // The stand burst as at login (13.2 correction 4): 16 trade slots no listing names, which the
-    // reconcile takes down one by one, and the requests that landed beside it at login, sent from
-    // the page the moment the first slot comes down: a tracker request, the player list and the
-    // background Ponty read away from Ponty (1.4, bug 8). On b9b5c91e the server's own report
-    // summed 224 there, with one merged unequip entry of 128.
-    // The page watches the seeded slots from before the seed lands, and sends the login requests
-    // on the first tick that shows fewer than the most it has seen, so a reconcile that starts as
-    // soon as the slots land is caught too.
-    const beside=live.clients[M]!.run(`new Promise(r=>{let most=0;const t=setInterval(()=>{const n=[...Array(16)].filter((_,i)=>character.slots['trade'+(i+1)]?.price===100000+i+1).length;
-      most=Math.max(most,n);if(most>0&&n<most){clearInterval(t);parent.socket.emit('tracker');parent.socket.emit('players',{});parent.socket.emit('secondhands');r({at:Date.now(),most});}},10);
-      setTimeout(()=>{clearInterval(t);r(null);},180000);})`);
-    await live.admin(`output=(()=>{const p=get_player('${M}');if(!p.items.some(i=>i&&i.name==='stand0')){const k=p.items.findIndex((i,n)=>!i&&n<p.isize);p.items[k]={name:'stand0'};}
-      for(let i=1;i<=16;i++)p.slots['trade'+i]={name:'feather0',q:1,price:100000+i,rid:'e2ecbt'+i};cache_player_items(p);resend(p,'reopen+cid');return true;})()`);
-    await live.post('/merchant/force-stand',{enabled:true});
-    await expect.poll(()=>live.admin(`output=(()=>{const p=get_player('${M}');return !p||[...Array(16)].every((_,i)=>!p.slots['trade'+(i+1)]||p.slots['trade'+(i+1)].rid!=='e2ecbt'+(i+1));})()`),
-      {timeout:180_000,intervals:[1000],message:'The reconcile takes the 16 slots down'}).toBe(true);
-    result.besideAt=await beside.catch(error=>String(error));
-    await live.post('/merchant/force-stand',{enabled:false});
-    await merchantReporting(live);
-    costs=await perCallCosts(live,info);
-    result.tracker=await trackerChecks(live);
-    result.stop=await stopRetires(live);
-  }catch(error){
-    // A row that stops keeps its server samples and the merchant's ledger reads: a limitdc run
-    // lost them once, and its trace had only the server's report.
-    samples=await sampler.stop();
-    await sampled(info,'row-a',samples,names).catch(()=>{});
-    throw error;
-  }finally{
-    if(!samples.length)samples=await sampler.stop();
-    await live.post('/merchant/force-stand',{enabled:false}).catch(()=>{});
-    await live.admin(`output=(()=>{for(let i=csold.length-1;i>=0;i--)if(String(csold[i].rid).startsWith('e2ecb'))csold.splice(i,1);return true;})()`).catch(()=>{});
-    // A seeded trade slot the reconcile left would be the next login's burst.
-    await live.admin(`output=(()=>{const p=get_player('${M}');if(!p)return false;for(let i=1;i<=16;i++)if(p.slots['trade'+i]&&String(p.slots['trade'+i].rid).startsWith('e2ecbt'))p.slots['trade'+i]=null;resend(p,'reopen+cid');return true;})()`).catch(()=>{});
-  }
-  const measures=await sampled(info,'row-a',samples,names);
-  const limitdcs=live.clients[M]!.limitdcs().slice(limitdcsBefore),bands=await bandsRead(live,M);
-  result.measures=measures;result.limitdcs=limitdcs;result.bands={view:bands.view,ring:bands.ring,meter:meterOf(bands)};
-  await attach(info,'call-budget-row-a',result);
-  console.log('CALL-BUDGET-ROW-A '+JSON.stringify({merchant:{peak:measures[M]!.peak,p95:measures[M]!.p95},limitdc:limitdcs.filter((e:any)=>e.event==='limitdcreport').length,
-    besideAt:result.besideAt,held:bands.ring.filter((r:any)=>r.decision==='held').length,spent:bands.view?.spent,limits:bands.view?.limits,meter:meterOf(bands)}));
-  boundHolds(measures,names.filter(n=>live.clients[n]));
-  costsHold(costs!);
-  trackerHolds(result.tracker);
-  stopHolds(result.stop);
-  // CB3: the merchant's server sum never passes the limit, at which the server disconnects the socket
-  // (server.js:5022-5026), and no limitdc.
-  expect(result.besideAt?.most,'CB3: the login requests went beside the reconcile').toBeGreaterThan(0);
-  expect(measures[M]!.peak,'CB3: the merchant\'s peak server sum per 4 s').toBeLessThanOrEqual(LIMIT);
-  expect(limitdcs.filter((e:any)=>e.event==='limitdcreport'),'CB3: no limitdc in the bursts').toEqual([]);
-  bandsHold(M,bands,from);
+}
+// T40's stand burst: 16 unlisted trade slots the reconcile takes down, beside the login requests.
+export async function standBurst(live:LiveGame,result:any){
+  // The stand burst as at login (13.2 correction 4): 16 trade slots no listing names, which the
+  // reconcile takes down one by one, and the requests that landed beside it at login, sent from
+  // the page the moment the first slot comes down: a tracker request, the player list and the
+  // background Ponty read away from Ponty (1.4, bug 8). On b9b5c91e the server's own report
+  // summed 224 there, with one merged unequip entry of 128.
+  // The page watches the seeded slots from before the seed lands, and sends the login requests
+  // on the first tick that shows fewer than the most it has seen, so a reconcile that starts as
+  // soon as the slots land is caught too.
+  const beside=live.clients[M]!.run(`new Promise(r=>{let most=0;const t=setInterval(()=>{const n=[...Array(16)].filter((_,i)=>character.slots['trade'+(i+1)]?.price===100000+i+1).length;
+    most=Math.max(most,n);if(most>0&&n<most){clearInterval(t);parent.socket.emit('tracker');parent.socket.emit('players',{});parent.socket.emit('secondhands');r({at:Date.now(),most});}},10);
+    setTimeout(()=>{clearInterval(t);r(null);},180000);})`);
+  await live.admin(`output=(()=>{const p=get_player('${M}');if(!p.items.some(i=>i&&i.name==='stand0')){const k=p.items.findIndex((i,n)=>!i&&n<p.isize);p.items[k]={name:'stand0'};}
+    for(let i=1;i<=16;i++)p.slots['trade'+i]={name:'feather0',q:1,price:100000+i,rid:'e2ecbt'+i};cache_player_items(p);resend(p,'reopen+cid');return true;})()`);
+  await live.post('/merchant/force-stand',{enabled:true});
+  await expect.poll(()=>live.admin(`output=(()=>{const p=get_player('${M}');return !p||[...Array(16)].every((_,i)=>!p.slots['trade'+(i+1)]||p.slots['trade'+(i+1)].rid!=='e2ecbt'+(i+1));})()`),
+    {timeout:180_000,intervals:[1000],message:'The reconcile takes the 16 slots down'}).toBe(true);
+  result.besideAt=await beside.catch(error=>String(error));
+  await live.post('/merchant/force-stand',{enabled:false});
+  await merchantReporting(live);
 }
 
+// CB3: the merchant's server sum never passes the limit, at which the server disconnects the socket
+// (server.js:5022-5026), and no limitdc.
+export function burstsHold(result:any,measures:Record<string,ReturnType<typeof callMeasures>>,limitdcs:any[]){
+  expect(result.besideAt?.most,'CB3: the login requests went beside the reconcile').toBeGreaterThan(0);
+  expect(measures[M]!.peak,"CB3: the merchant's peak server sum per 4 s").toBeLessThanOrEqual(LIMIT);
+  expect(limitdcs.filter((e:any)=>e.event==='limitdcreport'),'CB3: no limitdc in the bursts').toEqual([]);
+}
+// CB6: the test client asks job `players` reads while the warrior fights; survival never waits.
+export async function cb6Play(live:LiveGame,info:TestInfo,result:any){
+  const before6=await bandsRead(live,W),from6=await live.clients[W]!.run('Date.now()') as number;
+  // Each survival question answered not-now, with the budget's view at the answer.
+  await live.clients[W]!.run(`(()=>{const calls=globalThis.__partyHooks.calls,budget=globalThis.__partyCalls,band=calls.__e2eBand??=calls.band,log=globalThis.__e2eSurvival=[];
+    calls.band=q=>{const a=band(q);if(q.band==='survival'&&a!=='send'){const v=budget.view();log.push({at:Date.now(),method:q.method,used:v.used,cc:v.cc,ccAge:v.ccAge,margin:v.margin,held:v.held,heldHead:v.heldHead,limits:v.limits,
+      ledger:v.ledger.filter(e=>e.at>Date.now()-6000).map(e=>[e.at-Date.now(),e.method,e.cost])});}return a;};return true;})()`);
+  // CB22: the warrior's own Dash in a fight (characters/shared.js `dashToward`) leaves it unable
+  // to walk (old_common_functions.js:782), and the game's `move` then refuses with no emit
+  // (runner_functions.js:1409-1412). The page holds the Dash state for the first 6 s of the fight,
+  // so a movement step sent in it shows as an admission no emit took.
+  await live.clients[W]!.run(`(()=>{const end=Date.now()+6000,t=setInterval(()=>{if(Date.now()>end){clearInterval(t);delete character.s.dash;return;}character.s.dash={ms:150};},50);return true;})()`);
+  const asked=await live.clients[W]!.run(`(async()=>{const out={send:0,notNow:0,none:0};const end=Date.now()+20000;
+    while(Date.now()<end){const a=globalThis.__partyCalls?.band?.({band:'job',method:'players',data:{}});
+      if(a==='send'){out.send++;parent.socket.emit('players',{});}else if(a==='not-now')out.notNow++;else out.none++;
+      await new Promise(r=>setTimeout(r,250));}return out;})()`);
+  const after6=await bandsRead(live,W);
+  result.cb6={before:before6,after:after6};
+  result.asked=asked;
+  result.survivalNotNow=await live.clients[W]!.run(`(()=>{const calls=globalThis.__partyHooks.calls;if(calls.__e2eBand){calls.band=calls.__e2eBand;delete calls.__e2eBand;}return globalThis.__e2eSurvival;})()`);
+  result.ring6=after6.ring.filter((r:any)=>r.at>=from6);
+  await attach(info,'call-budget-row-b-cb6',{asked,survivalNotNow:result.survivalNotNow,ring:result.ring6,before:before6.view,after:after6.view});
+  const waits6=result.survivalNotNow as any[];
+  console.log('CALL-BUDGET-CB6 '+JSON.stringify({asked,survivalNotNow:waits6.length,heldHeads:waits6.map(w=>w.heldHead)}));
+}
+export function cb6Hold(result:any){
+  const {asked,cb6:{before:before6,after:after6}}=result,waits6=result.survivalNotNow as any[];
+  expect(asked.none,'CB6: calls.band answers the job questions').toBe(0);
+  expect(asked.send,'CB6: job reads go while the warrior fights').toBeGreaterThan(0);
+  expect(answered(before6,after6,'survival','move').send,'CB6: combat steps go while jobs fill the window').toBeGreaterThan(0);
+  // The console's own tracker request and player list ask the background band (3.7), so no held
+  // read holds a survival question: every survival wait is CB6's failure.
+  expect(waits6,'CB6: survival questions answered not-now').toEqual([]);
+}
+// CB24's age half on the warrior, which holds a Tracktrix and fights goo: `from` is the window
+// start and `unplanted` the end of its last planted figure.
+export async function trackerAgePlay(live:LiveGame,from:number,unplanted:number,result:any){
+  // CB24: the Tracktrix holder's reply age in the fight. A planted figure shuts every band by
+  // construction, so the age is read after the last plant: from the first reply a window after
+  // it to the next one, while the warrior keeps farming goo.
+  const margin=(await budgetView(live,W))?.margin??WINDOW_MS,bound=TRACKER_REFRESH_MS+2*(WINDOW_MS+margin);
+  const arrivals=async()=>(await live.clients[W]!.events()).filter((e:any)=>e.event==='tracker-arrived').map((e:any)=>Number(e.at));
+  const after=unplanted+WINDOW_MS+margin;
+  let first=0,next=0;
+  await expect.poll(async()=>(first=(await arrivals()).find(at=>at>=after)??0),{timeout:TRACKER_REFRESH_MS+30_000,intervals:[500],message:'CB24: a reply after the last plant'}).toBeGreaterThan(0).catch(()=>{});
+  if(first)await expect.poll(async()=>(next=(await arrivals()).find(at=>at>first)??0),{timeout:bound+10_000,intervals:[500],message:'CB24: the next reply in the fight'}).toBeGreaterThan(0).catch(()=>{});
+  const to=await live.clients[W]!.run('Date.now()') as number;
+  result.trackerAge={...await trackerReplyAge(live,W,from,to),first,next,age:next&&first?next-first:null,bound,
+    kills:(await live.clients[W]!.events()).filter((e:any)=>e.event==='hit'&&e.data?.hid===W&&(e.data.kill||e.data.dead)&&e.at>=first).length,
+    // What the tracker read did after the plant: the Tracktrix in the bag on both sides, the call
+    // ring's tracker answers and the figure the budget reads, so a missing reply names its side.
+    read:await live.clients[W]!.run(`({holds:character.items.some(i=>i&&i.name==='tracker'),cc:__partyCalls.view().cc??null,
+      calls:__partyCalls.records().filter(r=>r.method==='tracker'&&r.at>=${unplanted-60_000}).slice(-12),
+      probe:globalThis.__e2eTrackerProbe?{emits:__e2eTrackerProbe.emits.slice(-12),received:(__e2eTrackerProbe.received||[]).slice(-12),answers:__e2eTrackerProbe.answers.slice(-20),count:__e2eTrackerProbe.count}:null,arrivals:${JSON.stringify((await arrivals()).filter(at=>at>=unplanted-60_000))}})`),
+    page:await live.clients[W]!.run(`({sid:parent.socket.id,connected:parent.socket.connected,buffered:parent.socket.sendBuffer?.length??null,trackerListeners:parent.socket.listeners('tracker').length})`),
+    server:await live.admin(`output=(()=>{const p=get_player('${W}'),log=globalThis.__e2eTrackerServer;return {tracker:p.tracker??null,holds:p.items.some(i=>i&&i.name==='tracker'),sid:p.socket.id,
+      listeners:p.socket.listeners('tracker').length,probe:log?{sid:log.sid,received:log.received.slice(-12),sent:log.sent.slice(-12)}:null};})()`)};
+}
+export function trackerAgeHold(result:any){
+  expect(result.trackerAge.age,`CB24: the reply age in the fight: ${JSON.stringify(result.trackerAge)}`).not.toBeNull();
+  expect(result.trackerAge.age,'CB24: the reply age in the fight').toBeLessThanOrEqual(result.trackerAge.bound);
+  expect(result.trackerAge.kills,'CB24: the warrior fights while the age is read').toBeGreaterThan(0);
+}
 // Row B, "call budget: survival goes first while jobs fill the window": the warrior walks to goo
 // and fights it with a Tracktrix in its bag. CB1, CB5, CB6, CB7, CB8, CB9, CB10, CB22, CB23, CB24.
 // The plant raises only the warrior's packet figure; the server's limit check keeps
@@ -614,285 +485,8 @@ export async function rowUndoRow(live:LiveGame){
   expect(await client.run(`(()=>{const b=globalThis.__e2eBuilt;delete globalThis.__e2eBuilt;delete globalThis.__e2eUndoProbe;
     return {band:globalThis.__partyHooks.calls.band===b.band,emit:parent.socket.emit===b.emit};})()`),'the row end puts back both as the client built them').toEqual({band:true,emit:true});
 }
-export async function survivalRow(live:LiveGame,info:TestInfo){
-  const names=[W,P],result:any={};
-  await holdTracktrix(live,W);
-  await live.post('/merchant/routine-priorities',{priorities:{},enabled:{'merchant idle':false,'stand maintenance':false}});
-  await party(live);
-  const sampler=live.sampleCalls(names);
-  let samples:CallSample[]=[];
-  const clock=()=>live.clients[W]!.run('Date.now()') as Promise<number>;
-  const packet=()=>live.admin(`output=(()=>{resend(get_player('${W}'),'u');return true;})()`);
-  const from=await clock(),start=await bandsRead(live,W);
-  let unplanted=from;
-  // Each question answered `send`, with the frames that asked it, so an unmatched admission names
-  // its asker.
-  // The page's socket also logs each emit above the layer, in one sequence with the sends and the
-  // end of each send's turn, so a send with no emit of its method before its turn ends shows.
-  await live.clients[W]!.run(`(()=>{const calls=globalThis.__partyHooks.calls,band=calls.band,log=globalThis.__e2eSends=[];let seq=0;
-    calls.band=q=>{const a=band(q);if(a==='send'){const id=++seq;log.push({seq:id,at:Date.now(),kind:'send',band:q.band,method:q.method,site:String(new Error().stack).split(String.fromCharCode(10)).slice(2,10).map(l=>l.trim())});
-      queueMicrotask(()=>log.push({seq:++seq,kind:'turn',of:id}));if(log.length>600)log.splice(0,100);}return a;};
-    const socket=parent.socket,emit=socket.emit;socket.emit=function(method,...rest){log.push({seq:++seq,at:Date.now(),kind:'emit',method});return emit.call(this,method,...rest);};
-    globalThis.__e2eSendsUndo=()=>{calls.band=band;socket.emit=emit;delete globalThis.__e2eSendsUndo;};return true;})()`);
-  live.undo(`the send log's calls.band and socket.emit on ${W}`,()=>live.clients[W]!.run('globalThis.__e2eSendsUndo?.()'));
-  try{
-    // CB23: a fresh figure of 190 holds the warrior's travel moves to the goo field, and the walk
-    // still arrives with no stall and no stuck record.
-    const farm=await location(live,'goo');
-    const walkFrom=await clock();
-    await live.post('/navigate-to-monster',{monsterId:'goo',location:farm});
-    await live.post('/focus',{monsterFocus:['goo'],monsterPriorities:{},monsterSearchRadius:400});
-    await expect.poll(()=>live.clients[W]!.run('!!(__partyMovement.live()?.journey&&character.moving)'),{timeout:60_000,message:'The warrior walks to the goo field'}).toBe(true);
-    // A figure of 190 in every packet, and a stop from the page's own client (a move to where the
-    // warrior stands, as a click sends): the walk's step stops, its reissue asks the job band, and
-    // the planted figure holds it. Packets come only when something changes, so each poll sends one.
-    await live.plantCallCost(W,190);
-    await packet();
-    await expect.poll(()=>live.clients[W]!.run('(__partyCalls.view().cc??0)>=190'),{timeout:10_000,intervals:[50],message:'CB23: the planted figure arrives'}).toBe(true);
-    await live.clients[W]!.run('(parent.move(character.real_x,character.real_y),true)');
-    // The walk's first send can be its Town or a door as well as a move.
-    const travel=['move','town','transport','leave'];
-    let held23:any=null;
-    await expect.poll(async()=>{await packet();const read=await bandsRead(live,W);
-      held23={answers:read.view?.answers,used:read.view?.used,cc:read.view?.cc,ccAge:read.view?.ccAge,held:read.view?.held,limits:read.view?.limits,
-        live:await live.clients[W]!.run('({live:__partyMovement.live(),moving:character.moving,map:character.map,x:character.real_x,y:character.real_y})')};
-      return travel.reduce((sum,method)=>sum+answered(start,read,'job',method).notNow,0);},
-      {timeout:15_000,intervals:[250],message:'CB23: a fresh figure of 190 holds a travel send'}).toBeGreaterThan(0).catch(async error=>{await attach(info,'cb23-held',held23);throw error;});
-    result.held23=held23;
-    await live.plantCallCost(W,0);
-    await packet();
-    unplanted=await clock();
-    await expect.poll(async()=>{const c=(await live.state()).characters[W];return c?.map===farm.map&&Math.hypot(c.x-farm.x,c.y-farm.y)<400;},
-      {timeout:120_000,message:'The warrior reaches the goo field'}).toBe(true);
-    // The movement owner writes a stall as a 'stuck' incident (runtime/movement/character/owner.ts
-    // incident), never as a ring record decision.
-    const walk=((await live.clients[W]!.run('__partyMovement.records()')) as any[]).filter(r=>r.at>=walkFrom&&r.decision==='ended');
-    const stuck=((await live.clients[W]!.run('__partyMovement.incidents()')) as any[]).filter(i=>i.at>=walkFrom&&i.kind==='stuck');
-    result.walk=walk;result.stuck=stuck;
-    expect(walk.filter(r=>String(r.code).startsWith('failed:')),'CB23: the held walk ends with no failed journey').toEqual([]);
-    expect(stuck,'CB23: the held walk records no stuck incident').toEqual([]);
-    // CB6: the test client asks job `players` reads while the warrior fights; survival never waits.
-    const before6=await bandsRead(live,W),from6=await clock();
-    // Each survival question answered not-now, with the budget's view at the answer.
-    await live.clients[W]!.run(`(()=>{const calls=globalThis.__partyHooks.calls,budget=globalThis.__partyCalls,band=calls.__e2eBand??=calls.band,log=globalThis.__e2eSurvival=[];
-      calls.band=q=>{const a=band(q);if(q.band==='survival'&&a!=='send'){const v=budget.view();log.push({at:Date.now(),method:q.method,used:v.used,cc:v.cc,ccAge:v.ccAge,margin:v.margin,held:v.held,heldHead:v.heldHead,limits:v.limits,
-        ledger:v.ledger.filter(e=>e.at>Date.now()-6000).map(e=>[e.at-Date.now(),e.method,e.cost])});}return a;};return true;})()`);
-    // CB22: the warrior's own Dash in a fight (characters/shared.js `dashToward`) leaves it unable
-    // to walk (old_common_functions.js:782), and the game's `move` then refuses with no emit
-    // (runner_functions.js:1409-1412). The page holds the Dash state for the first 6 s of the fight,
-    // so a movement step sent in it shows as an admission no emit took.
-    await live.clients[W]!.run(`(()=>{const end=Date.now()+6000,t=setInterval(()=>{if(Date.now()>end){clearInterval(t);delete character.s.dash;return;}character.s.dash={ms:150};},50);return true;})()`);
-    const asked=await live.clients[W]!.run(`(async()=>{const out={send:0,notNow:0,none:0};const end=Date.now()+20000;
-      while(Date.now()<end){const a=globalThis.__partyCalls?.band?.({band:'job',method:'players',data:{}});
-        if(a==='send'){out.send++;parent.socket.emit('players',{});}else if(a==='not-now')out.notNow++;else out.none++;
-        await new Promise(r=>setTimeout(r,250));}return out;})()`);
-    const after6=await bandsRead(live,W);
-    result.asked=asked;
-    result.survivalNotNow=await live.clients[W]!.run(`(()=>{const calls=globalThis.__partyHooks.calls;if(calls.__e2eBand){calls.band=calls.__e2eBand;delete calls.__e2eBand;}return globalThis.__e2eSurvival;})()`);
-    result.ring6=after6.ring.filter((r:any)=>r.at>=from6);
-    await attach(info,'call-budget-row-b-cb6',{asked,survivalNotNow:result.survivalNotNow,ring:result.ring6,before:before6.view,after:after6.view});
-    expect(asked.none,'CB6: calls.band answers the job questions').toBe(0);
-    expect(asked.send,'CB6: job reads go while the warrior fights').toBeGreaterThan(0);
-    expect(answered(before6,after6,'survival','move').send,'CB6: combat steps go while jobs fill the window').toBeGreaterThan(0);
-    // The console's own tracker request and player list ask the background band (3.7), so no held
-    // read holds a survival question: every survival wait is CB6's failure.
-    const waits6=result.survivalNotNow as any[];
-    console.log('CALL-BUDGET-CB6 '+JSON.stringify({asked,survivalNotNow:waits6.length,heldHeads:waits6.map(w=>w.heldHead)}));
-    expect(waits6,'CB6: survival questions answered not-now').toEqual([]);
-    // CB5: a figure of 199 in one player packet holds survival questions until a newer packet
-    // arrives or 4000 ms pass, and job questions while it is fresh.
-    await live.plantCallCost(W,199);
-    await packet();
-    await expect.poll(()=>live.clients[W]!.run('(__partyCalls.view().cc??0)>=199'),{timeout:10_000,message:'CB5: the planted figure arrives'}).toBe(true);
-    await live.plantCallCost(W,0);
-    const cb5=await live.clients[W]!.run(`(async()=>{const first=__partyCalls.view(),arrived=Date.now()-first.ccAge,out={margin:first.margin,job:[],survival:null};
-      const ask=band=>{const a=__partyCalls.band({band,method:'players',data:{}});if(a==='send')parent.socket.emit('players',{});return a;};
-      while(Date.now()-arrived<8000){const v=__partyCalls.view(),planted=v.cc>=199&&v.ccAge<4000;
-        out.job.push({ms:Date.now()-arrived,planted,answer:ask('job')});
-        const s=ask('survival');if(s==='send'){const after=__partyCalls.view();out.survival={ms:Date.now()-arrived,planted,cc:after.cc};break;}
-        await new Promise(r=>setTimeout(r,50));}return out;})()`);
-    result.cb5=cb5;
-    expect(cb5.survival,'CB5: a survival question goes once the figure is newer or old').toBeTruthy();
-    expect(cb5.survival.planted,'CB5: no survival question goes while the planted figure is the fresh one').toBe(false);
-    expect(cb5.survival.ms,'CB5: the longest survival wait').toBeLessThanOrEqual(WINDOW_MS+cb5.margin);
-    expect(cb5.job.filter((j:any)=>j.planted&&j.answer!=='not-now'),'CB5: job questions while the planted figure is fresh').toEqual([]);
-    // TC14: a figure of 199 on the priest holds its attacks and heals, which
-    // ask the survival band: none reaches the server while the figure is fresh, each family's wait
-    // closes with its send in the turns ring, and the priest attacks again within one window.
-    try{
-      await live.clients[P]!.run(spendLog);
-      // Every question the priest asks the call budget, with its answer and the figure it read,
-      // for the reading of a send inside the hold.
-      await live.clients[P]!.run(`(()=>{const calls=globalThis.__partyHooks.calls,budget=globalThis.__partyCalls;if(calls.__e2eBand14)return true;const band=calls.band,log=globalThis.__e2eBands14=[];
-        calls.__e2eBand14=true;calls.band=q=>{const v=budget.view(),a=band(q);log.push({at:Date.now(),band:q.band,method:q.method,answer:a,cc:v.cc,ccAge:v.ccAge,used:v.used});if(log.length>400)log.shift();return a;};
-        globalThis.__e2eBand14Undo=()=>{calls.band=band;delete calls.__e2eBand14;delete globalThis.__e2eBand14Undo;};return true;})()`);
-      live.undo(`CB14's calls.band log on ${P}`,()=>live.clients[P]!.run('globalThis.__e2eBand14Undo?.()'));
-      const before14=await live.clients[P]!.run('(globalThis.__partyTurns?.records?.()??[]).at(-1)?.seq??0') as number;
-      // The figure holds every survival question, the priest's moves included, so a priest
-      // whose goo died with no other goo in range asks no attack until the hold ends (13.4b's run
-      // G: its own hit killed its goo 750 ms after the plant, and it stood 470 units from the next
-      // one for 12 s). The priest at 60% HP asks a heal on itself, which needs no move, so the
-      // hold always holds a spend. The red plant is that run's case: the priest in town, out of
-      // every goo's range, at full HP.
-      if(red('tc14'))await live.admin(`output=(()=>{transport_player_to(get_player('${P}'),'main',[0,0]);return true;})()`);
-      else await plantVitals(live,P,{hp:0.6});
-      await live.plantCallCost(P,199);
-      await live.admin(`output=(()=>{resend(get_player('${P}'),'u');return true;})()`);
-      await expect.poll(()=>live.clients[P]!.run('(__partyCalls.view().cc??0)>=199'),{timeout:10_000,intervals:[50],message:'TC14: the planted figure arrives'}).toBe(true);
-      // The figure stays in every packet until the priest's budget has answered one attack or
-      // heal question `not-now`, so the hold holds a real spend; the page reads when it ends.
-      const from14=await live.clients[P]!.run('Date.now()-__partyCalls.view().ccAge') as number;
-      const asked=(v:any)=>['attack','heal'].reduce((n,m)=>n+(v?.answers?.survival?.[m]?.notNow??0),0);
-      const base14=asked(await live.clients[P]!.run('__partyCalls.view()'));
-      await expect.poll(async()=>asked(await live.clients[P]!.run('__partyCalls.view()')),{timeout:WINDOW_MS*3,intervals:[50],message:'TC14: an attack or heal waits on the figure'}).toBeGreaterThan(base14);
-      await live.plantCallCost(P,0);
-      const hold=await live.clients[P]!.run(`(async()=>{while(__partyCalls.view().cc>=199&&__partyCalls.view().ccAge<4000)await new Promise(r=>setTimeout(r,20));return {from:${from14},to:Date.now()};})()`) as {from:number;to:number};
-      await waitForGameplay(WINDOW_MS*2);
-      const log=await spendsSince(live,P,hold.from);
-      const ring=(await live.clients[P]!.run('globalThis.__partyTurns?.records?.()??[]') as any[]).filter(r=>r.seq>before14);
-      // The hold ends at the budget's first survival send after a wait (its `waited` record); the
-      // page's poll reads the end up to one poll later, when the waited send has already gone.
-      const released=(await live.clients[P]!.run('__partyCalls.records()') as any[]).find(r=>r.decision==='waited'&&r.band==='survival'&&r.at>=hold.from)?.at??hold.to;
-      // A held send is an attack or heal the budget let go while the planted figure was the fresh
-      // one, read from the band log's own view at each question. The budget's records keep the game
-      // window's clock, which after a CODE reload runs a gameplay clock step from the page's (TC14
-      // in step 3's gate: its waited record at 1500 ms for the send the page logged at 1250 ms).
-      const bandLog=await live.clients[P]!.run('globalThis.__e2eBands14??[]') as any[];
-      const heldSends=bandLog.filter(q=>q.at>=hold.from&&q.answer==='send'&&['attack','heal'].includes(q.method)&&q.cc>=199&&q.ccAge<4000);
-      const held=heldSends.map(q=>({at:q.at,method:q.method,id:undefined}));
-      const next=log.spends.find(s=>s.at>=hold.to&&s.method==='attack');
-      // The budget's own records around the hold and each held send's time, for a failure's reading.
-      const budgetRing=(await live.clients[P]!.run('__partyCalls.records()') as any[]).filter(r=>r.at>=hold.from-500&&r.at<=hold.to+500);
-      const bands14=(await live.clients[P]!.run('globalThis.__e2eBands14??[]') as any[]).filter(q=>q.at>=hold.from-500&&q.at<=released+500).map(q=>[q.at-hold.from,q.band,q.method,q.answer,q.cc,q.ccAge,q.used]);
-      result.tc14={hold,released,held:held.map(s=>[s.at-hold.from,s.method,s.id]),ring,budgetRing,bands:bands14,nextAfterMs:next?next.at-hold.to:null};
-      if(held.length)console.log('TURNS-TC14-BANDS '+JSON.stringify(bands14).slice(0,3000));
-      console.log('TURNS-TC14 '+JSON.stringify({holdMs:hold.to-hold.from,releasedMs:released-hold.from,held:result.tc14.held,waits:ring.filter(r=>r.kind==='wait'),budgetRing:budgetRing.map((r:any)=>[r.at-hold.from,r.decision,r.method,r.band,r.used,r.limit,r.waitedMs]),nextAfterMs:result.tc14.nextAfterMs}));
-      expect.soft(hold.to-hold.from,'TC14: the planted figure holds survival before a newer packet').toBeGreaterThan(0);
-      expect.soft(held.map(s=>s.method),"TC14: the priest's attacks and heals sent while the figure holds survival").toEqual([]);
-      // A wait ends with its send, or with no record when its family asks nothing more (its target
-      // died or its member healed), so the ring's waits are each closed within one window.
-      expect.soft(ring.filter(r=>r.kind==='wait'&&!(r.waitedMs<=WINDOW_MS)).map(r=>r.waitedMs),'TC14: a turns wait left open past one window').toEqual([]);
-      expect.soft(result.tc14.nextAfterMs,'TC14: the next attack within one window after the hold').not.toBeNull();
-      if(result.tc14.nextAfterMs!==null)expect.soft(result.tc14.nextAfterMs,'TC14: the next attack within one window after the hold').toBeLessThanOrEqual(WINDOW_MS);
-    }finally{
-      // A plant left on a throw holds the priest's moves, and the next row's reset convoy then
-      // never ends (13.4b's run G).
-      await live.plantCallCost(P,0).catch(()=>{});
-      await plantVitals(live,P,{hp:1}).catch(()=>{});
-    }
-    // CB9: with the figure at 199, two untagged potion uses wait in the hold queue, and movement's
-    // survival stop asked after them waits too; each goes in the order it was made, so each use's
-    // promise takes its own reply and the server walks no point the client left.
-    await live.plantCallCost(W,199);
-    await packet();
-    await expect.poll(()=>live.clients[W]!.run('(__partyCalls.view().cc??0)>=199&&__partyCalls.view().ccAge<1000'),{timeout:10_000,message:'CB9: the planted figure arrives'}).toBe(true);
-    const plantedAt=await clock();
-    const queued=await live.clients[W]!.run(`(()=>{const s=globalThis.__e2eCb9={};const settle=p=>Promise.resolve(p).then(v=>({ok:v}),e=>({failed:e&&(e.reason||e.message)||String(e)}));
-      const madeAt=Date.now(),margin=__partyCalls.view().margin,before=__partyCalls.view().held;s.uses=Promise.all([settle(use('hp')),settle(use('mp'))]).then(v=>s.usesDone=v);const held=__partyCalls.view().held-before;
-      s.stop=settle(stop()).then(v=>{s.stopDone={at:Date.now(),v};});return {held,before,heldHead:__partyCalls.view().heldHead,after:__partyCalls.view().held,madeAt,margin};})()`);
-    await live.plantCallCost(W,0);
-    await packet();
-    await expect.poll(()=>live.clients[W]!.run('!!(globalThis.__e2eCb9?.usesDone&&globalThis.__e2eCb9?.stopDone)'),{timeout:15_000,message:'CB9: the held uses and the owed stop go'}).toBe(true);
-    const cb9=await live.clients[W]!.run('({uses:globalThis.__e2eCb9.usesDone,stop:globalThis.__e2eCb9.stopDone})');
-    const server=await live.admin(`output=get_player('${W}').socket.calls.filter(c=>+c[0]>=${plantedAt}).map(c=>[+c[0],c[1],c[2]])`) as [number,string,number][];
-    let going:any=null;
-    await expect.poll(async()=>{
-      const [client,serverGoing]=await Promise.all([live.clients[W]!.run('({x:character.going_x,y:character.going_y})'),live.admin(`output=(()=>{const p=get_player('${W}');return {x:p.going_x,y:p.going_y};})()`)]);
-      going={client,server:serverGoing};return Math.hypot(client.x-serverGoing.x,client.y-serverGoing.y)<1;
-    },{timeout:5_000,intervals:[100],message:'CB9: the server walks to the point the client holds'}).toBe(true).catch(()=>{});
-    result.cb9={queued,...cb9,server,going};
-    // The game client's own ping (`ping_trig`, untagged) can wait in the queue ahead of the uses
-    // while the figure is fresh (the budget's ring records it `held`), so the check counts what
-    // the two uses add, read in their own synchronous turn.
-    expect(queued.held,'CB9: the two uses wait in the hold queue').toBe(2);
-    expect(cb9.uses.length,'CB9: each use settles with its reply').toBe(2);
-    const firstEquip=server.findIndex(([,method])=>method==='equip');
-    expect(firstEquip,'CB9: the held uses reach the server').toBeGreaterThanOrEqual(0);
-    // A move the server dates more than one round trip after the uses were made was made after
-    // them, so it must reach the server after them.
-    expect(server.slice(0,firstEquip).filter(([at,method])=>method==='move'&&at>queued.madeAt+queued.margin),'CB9: no move reaches the server ahead of the uses made before it').toEqual([]);
-    expect(Math.hypot(going.client.x-going.server.x,going.client.y-going.server.y),'CB9: the server\'s going point is the client\'s').toBeLessThan(1);
-    // CB24's band half: a figure of 199 in every packet holds every band, so a background
-    // question waits from its first ask. It asks for a Ponty read (`secondhands`, 16), a method
-    // the budget's own reads never ask, since a wait is kept per band and method and the player
-    // list's own read would share and end it. Once it has waited one window and the margin it is judged
-    // in the job band; the plant goes, and the question goes with a `read-job` ring entry. The
-    // figure stays fresh while the server sends packets, so each poll sends one. The plant goes
-    // half a second past the margin the budget holds then, since a later ping can raise it.
-    await live.plantCallCost(W,199);
-    await packet();
-    await expect.poll(()=>live.clients[W]!.run('(__partyCalls.view().cc??0)>=199'),{timeout:10_000,message:'CB24: the planted figure arrives'}).toBe(true);
-    await live.clients[W]!.run(`(()=>{const out=globalThis.__e2eRise={first:null,sent:null,margin:__partyCalls.view().margin};const end=Date.now()+30000;
-      (async()=>{while(Date.now()<end){const a=__partyCalls.band({band:'background',method:'secondhands'});if(a==='send'){parent.socket.emit('secondhands');out.sent=Date.now();break;}
-        out.first??=Date.now();await new Promise(r=>setTimeout(r,100));}out.ring=__partyCalls.records().filter(r=>r.decision==='read-job'&&r.method==='secondhands'&&r.at>=(out.first??0));out.done=true;})();return true;})()`);
-    await expect.poll(async()=>{await packet();return live.clients[W]!.run(`(()=>{const r=globalThis.__e2eRise;return !!r.first&&Date.now()-r.first>=${WINDOW_MS}+__partyCalls.view().margin+500;})()`);},
-      {timeout:30_000,intervals:[250],message:'CB24: the background question waits one window under the figure'}).toBe(true);
-    // The figure drops to 45 under the job limit, which background shares: room for the Ponty
-    // read, the player list's own read that rose to the job band under the same figure (12), and
-    // the fight's own calls in flight. The question has waited one window, so it goes judged in
-    // the job band, whichever margin the budget holds when it asks; each poll keeps the figure
-    // fresh. At 30 under, the list's read took the room in the gate run.
-    const held=await budgetView(live,W),lower=Math.max(0,Math.round(held.limits.job-45-(held.used-199)));
-    await live.plantCallCost(W,lower);
-    await expect.poll(async()=>{await packet();return live.clients[W]!.run('!!globalThis.__e2eRise.done');},{timeout:30_000,intervals:[250],message:'CB24: the risen question ends'}).toBe(true);
-    await live.plantCallCost(W,0);
-    await packet();
-    const rise=await live.clients[W]!.run('globalThis.__e2eRise');
-    unplanted=await clock();
-    result.rise=rise;
-    await attach(info,'call-budget-row-b-cb24',{rise,held,lower,view:await budgetView(live,W)});
-    expect(rise.first,'CB24: a background question waits under the planted figure').toEqual(expect.any(Number));
-    expect(rise.sent,'CB24: the waiting background question goes in the job band').toEqual(expect.any(Number));
-    expect(rise.sent-rise.first,'CB24: it rises after one window').toBeGreaterThanOrEqual(WINDOW_MS);
-    expect(rise.ring.length,`CB24: the rise writes a read-job entry: ${JSON.stringify(rise)}`).toBe(1);
-    // CB24: the Tracktrix holder's reply age in the fight. A planted figure shuts every band by
-    // construction, so the age is read after the last plant: from the first reply a window after
-    // it to the next one, while the warrior keeps farming goo.
-    const margin=(await budgetView(live,W))?.margin??WINDOW_MS,bound=TRACKER_REFRESH_MS+2*(WINDOW_MS+margin);
-    const arrivals=async()=>(await live.clients[W]!.events()).filter((e:any)=>e.event==='tracker-arrived').map((e:any)=>Number(e.at));
-    const after=unplanted+WINDOW_MS+margin;
-    let first=0,next=0;
-    await expect.poll(async()=>(first=(await arrivals()).find(at=>at>=after)??0),{timeout:TRACKER_REFRESH_MS+30_000,intervals:[500],message:'CB24: a reply after the last plant'}).toBeGreaterThan(0).catch(()=>{});
-    if(first)await expect.poll(async()=>(next=(await arrivals()).find(at=>at>first)??0),{timeout:bound+10_000,intervals:[500],message:'CB24: the next reply in the fight'}).toBeGreaterThan(0).catch(()=>{});
-    const to=await clock();
-    result.trackerAge={...await trackerReplyAge(live,W,from,to),first,next,age:next&&first?next-first:null,bound,
-      kills:(await live.clients[W]!.events()).filter((e:any)=>e.event==='hit'&&e.data?.hid===W&&(e.data.kill||e.data.dead)&&e.at>=first).length};
-    expect(result.trackerAge.age,`CB24: the reply age in the fight: ${JSON.stringify(result.trackerAge)}`).not.toBeNull();
-    expect(result.trackerAge.age,'CB24: the reply age in the fight').toBeLessThanOrEqual(bound);
-    expect(result.trackerAge.kills,'CB24: the warrior fights while the age is read').toBeGreaterThan(0);
-    // A planted death and one respawn through survival's
-    // hook; the budget books the respawn at its price (call-budget.ts, `CROSSING + 2`) and the
-    // server's entries charge the same. The death recovery's own ask goes through the same hook, so
-    // every respawn entry is survival's. Last in the row: the warrior respawns in Main. The death
-    // comes before CB4's quiet window: the fighting warrior sends a call in every 4 s window, and a
-    // dead one sends none until its respawn, `rip_time` later.
-    await killNativeCharacter(live,W);
-    result.sv46=await oneCall(live,W,'respawn (survival)','respawn',`globalThis.__partySurvival.death.respawnWhenAllowed('sv46').then(()=>true,()=>false)`,'!character.rip');
-    console.log('SURVIVAL-SV46 '+JSON.stringify(result.sv46));
-    chargesHold([result.sv46]);
-  }finally{
-    await live.plantCallCost(W,0).catch(()=>{});
-    await live.plantCallCost(P,0).catch(()=>{});
-    samples=await sampler.stop();
-  }
-  const measures=await sampled(info,'row-b',samples,names),end=await bandsRead(live,W);
-  const sends=await live.clients[W]!.run('globalThis.__e2eSends') as any[],unmatched=end.ring.filter((r:any)=>r.at>=from&&r.decision==='unmatched');
-  // A send whose turn ended with no emit of its method after it.
-  const lone=sends.filter(x=>x.kind==='send'&&!sends.some(e=>e.kind==='emit'&&e.method===x.method&&e.seq>x.seq&&e.seq<(sends.find(t=>t.kind==='turn'&&t.of===x.seq)?.seq??Infinity)));
-  await attach(info,'call-budget-row-b-unmatched',{unmatched,lone,around:lone.map(x=>sends.filter(e=>e.seq>=x.seq-3&&e.seq<=x.seq+6))});
-  result.measures=measures;result.bands={view:end.view,ring:end.ring,meter:meterOf(end)};
-  await attach(info,'call-budget-row-b',result);
-  console.log('CALL-BUDGET-ROW-B '+JSON.stringify({asked:result.asked,cb5:{survival:result.cb5?.survival},cb9:{queued:result.cb9?.queued},spent:end.view?.spent,limits:end.view?.limits,meter:meterOf(end)}));
-  boundHolds(measures,names);
-  bandsHold(W,end,from,unplanted);
-}
 
-// Row C, "call budget: a forced limitdc saves one snapshot": five `tracker` emits through the
-// record's stored game emit, past the layer, as a fault. It declares its one limitdc and ends
-// when the merchant reports again. CB18: one snapshot with the trigger `limitdc` at the coordinator,
-// holding the server's report, the ledger and the ring, and no local copy left; a copy planted in
-// the merchant's local storage before the console's own relog is posted by the next install (3.8).
-export async function forcedLimitdcRow(live:LiveGame,info:TestInfo){
+export async function forcedLimitdcPlay(live:LiveGame,info:TestInfo){
   await merchantReporting(live);
   const key='party-call-budget-limitdc:'+M;
   const records=async()=>((await (await fetch(`${live.url}/party-api/diagnostics/records?character=${M}&rings=movement`)).json()).snapshots??[]).filter((s:any)=>s.trigger==='limitdc');
@@ -914,9 +508,11 @@ export async function forcedLimitdcRow(live:LiveGame,info:TestInfo){
   const report=live.clients[M]!.limitdcs().slice(before).find(e=>e.event==='limitdcreport')?.data as any;
   await attach(info,'call-budget-row-c',{limitdcs:live.clients[M]!.limitdcs().slice(before),snapshots:bodies,left});
   console.log('CALL-BUDGET-ROW-C '+JSON.stringify({snapshots:fresh.length,real:real.length,planted:copy.length,left,reportCalls:entry(real[0]??{})?.report?.calls?.length??null}));
+  return {real,copy,left,report,saved:entry(real[0]??{})};
+}
+export function forcedLimitdcHold({real,copy,left,report,saved}:Awaited<ReturnType<typeof forcedLimitdcPlay>>){
   expect(real.length,'CB18: one limitdc snapshot at the coordinator').toBe(1);
-  const saved=entry(real[0]);
-  expect(saved.report,'CB18: the snapshot holds the server\'s report').toEqual(report);
+  expect(saved.report,"CB18: the snapshot holds the server's report").toEqual(report);
   expect(Array.isArray(saved.ledger),'CB18: the snapshot holds the ledger').toBe(true);
   expect((real[0].records??[]).every((r:any)=>r.part==='calls'),'CB18: the snapshot holds the call ring').toBe(true);
   expect(copy.length,'CB18: the copy left in local storage is posted by the next install').toBe(1);

@@ -1,7 +1,7 @@
 // The targeting owner's fixture add-on: one add-on that answers the targeting owner's four decision hooks and hears every 04 notice, and
-// reads the published reads at each notice, so e2e/live-targeting-hooks.spec.ts proves each `HOOKS`
-// row is told at its change and answers its read. Each answer stays unset until the spec sets it in
-// the page (`__e2eTargeting`), so registering it changes no play. The character half registers on a
+// reads the published reads at each notice, so W08b (e2e/windows/W08b-unreachable-plant.spec.ts) proves
+// each `HOOKS` row is told at its change and answers its read. Each answer stays unset until the window
+// sets it in the page (`__e2eTargeting`), so registering it changes no play. The character half registers on a
 // character's page (`registerCharacterHalf`); the coordinator half joins the live coordinator's
 // registry through e2e/live-coordinator.cjs `/party-api/e2e-targeting-hooks`, as the survival fixture
 // does. The payload types come from the add-on API only.

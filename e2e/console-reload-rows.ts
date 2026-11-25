@@ -2,22 +2,18 @@ import {waitForGameplay} from './network-clock';
 import {codeReloadReads} from './call-budget-rows';
 import {expect,type LiveGame,reloadCode} from './live-fixtures';
 import type {TestInfo} from '@playwright/test';
-import type {Row} from './scenario-table';
 import {W,P,M,evidence,killNativeCharacter} from './hunt-interruption-helpers';
 import {holdHalloweenSeason} from './game/hunt-events';
+import {plantedRead,watchPursuit} from './escape-rows';
 import {existsSync,readFileSync} from 'node:fs';
 import path from 'node:path';
 
-// The console reload rows, moved from live-console-safe-reload.spec.ts
-// into the Arena table (live-farm-death-escape.spec.ts), which logs in on the same combat-range
-// loadout. Each row first puts the trio where that file's fixture logged them in, and makes the
+// The console reload rows, moved from live-console-safe-reload.spec.ts at 21fe30a2b. W06a and W48 play
+// them. Each row first puts the trio where that spec's fixture logged them in, and makes the
 // spot both fighters' saved point with a party travel there: the player-trip row saves the
 // priest's own point elsewhere, and in the first merged run the priest walked back to it, so the
 // warrior's formation waited and never reached the next goo.
 const reloadSpot={map:'main',x:1260,y:-70};
-// Hunt cancellation returns to the configured native Goo farm, so the turnover row seeds its
-// fight there and the successor stays observable after the mode turnover (aac30d45).
-const gooFarmSpot={map:'main',x:0,y:787};
 export async function toReloadSpot(live:LiveGame,spot=reloadSpot){
   await live.post('/focus',{monsterFocus:[],monsterPriorities:{},monsterSearchRadius:300});
   await live.post('/formation',{leader:W});
@@ -31,10 +27,12 @@ export async function toReloadSpot(live:LiveGame,spot=reloadSpot){
   await expect.poll(async()=>(await live.tasks()).groups.find((g:any)=>g.id===`party:${W}`)?.live?.kind,{timeout:30_000,message:'The trip task must end before the row'}).not.toBe('manual');
 }
 
-// e2e/live-lifecycle-hooks.spec.ts runs this row with lifecycle's fixture add-on registered.
+// W48 runs this row with lifecycle's fixture add-on registered (e2e/deploy-session-rows.ts).
 // The turnover variant switches W to Hunt and an unjoined Trick or Treat selection during the
 // drain (docs/testing-safe-console-reload.md) and leaves the Pause rows to the plain variant.
-export async function safeReloadRow(live:LiveGame,info:TestInfo,turnover=false){
+// `whilePaused` is a step another check plays inside the console Pause, after nothing has moved or
+// attacked and before the injury (W06a's TC13 heal).
+export async function safeReloadRow(live:LiveGame,info:TestInfo,turnover=false,whilePaused?:()=>Promise<void>){
   // Failure inventory: docs/testing-safe-console-reload.md, the console Pause rows
   // among them. The Pause rows run here because they need the same farming party and the same
   // lease readers as the safe reload.
@@ -96,6 +94,7 @@ export async function safeReloadRow(live:LiveGame,info:TestInfo,turnover=false){
     await waitForGameplay(6000);
     expect(await anyHit(threat,threatAt),'A paused character must not attack, even what attacks it').toBe(false);
     await remove(threat);
+    await whilePaused?.();
     // PP3: nothing acts while paused: an injured character drinks and regenerates nothing, and a
     // dead one stays dead until Play.
     const injuredAt:number=await live.admin(`output=(()=>{const p=get_player('${W}');p.hp=Math.floor(p.max_hp*.3);resend(p,'u+cid');return Date.now();})()`);
@@ -271,7 +270,7 @@ export async function safeReloadRow(live:LiveGame,info:TestInfo,turnover=false){
   }finally{holdFull=false;releases.splice(0).forEach(release=>release());await live.clients[W].page.unrouteAll({behavior:'wait'});await evidence(live,info,'safe-reload-final-state',{seeded,samples});await clearTurnover();if(observerFrame&&!observerFrame.isDetached())await observerFrame.evaluate(()=>{const host=window as any;host.$(document).off('.safeDrainObservation');});live.consoleDrainLease(null);if(existsSync(pauseFile))await control('play').catch(()=>undefined);await live.admin(`output=(()=>{for(const id of ${JSON.stringify([seeded.first,seeded.next,...pauseSeeds])}){const m=instances.main.monsters[id];if(m)remove_monster(m,{method:'disappear',nospawn:true});}return true;})()`);await endTurnover();}
 }
 
-async function reloadResumes(live:LiveGame,info:TestInfo,mode:'safe'|'now'){
+export async function reloadResumes(live:LiveGame,info:TestInfo,mode:'safe'|'now'){
   await live.post('/merchant/force-stand',{enabled:true});
   await live.post('/formation',{leader:W});
   await live.post('/formation',{character:P,follow:false,eventSelections:[]});
@@ -332,9 +331,14 @@ async function reloadResumes(live:LiveGame,info:TestInfo,mode:'safe'|'now'){
     const attacked=async(id:string)=>(await live.clients[W].events()).some(e=>e.event==='hit'&&String(e.data?.id)===id&&e.data?.hid===W);
     await expect.poll(()=>attacked(farm),{timeout:30000,message:'Configured farming resumes after actual CODE replacement'}).toBe(true);
     await live.admin(`output=(()=>{const m=instances.main.monsters[${JSON.stringify(farm)}];if(m)remove_monster(m,{method:'disappear',nospawn:true});return true;})()`);
-    const threat=await live.admin(`output=(()=>{const p=get_player('${W}'),m=new_monster(p.in,{type:'bee',position:[p.x+20,p.y],radius:0,count:1},{temp:1});m.hp=m.max_hp=15000;target_player(m,p);return String(m.id);})()`);
+    await watchPursuit(live);
+    const threat=await live.admin(`output=(()=>{const p=get_player('${W}'),m=new_monster(p.in,{type:'bee',position:[p.x+20,p.y],radius:0,count:1},{temp:1});m.e2eHunt=true;m.hp=m.max_hp=15000;target_player(m,p);return String(m.id);})()`);
     seeded.push(threat);
-    await expect.poll(()=>attacked(threat),{timeout:30000,message:'A non-focus native roaming attacker receives a defensive response'}).toBe(true);
+    const threatReads:unknown[]=[];
+    try{
+      await expect.poll(async()=>{threatReads.push(await plantedRead(live,W,threat));return attacked(threat);},
+        {timeout:30000,message:'A non-focus native roaming attacker receives a defensive response'}).toBe(true);
+    }finally{await info.attach('reload-threat-reads',{body:JSON.stringify(threatReads),contentType:'application/json'});}
     samples.push({phase:'resumed',mode,focus:(await live.state()).monsterFocus,position:await live.clients[W].snapshot()});
   }finally{
     live.consoleDrainLease(null);
@@ -348,9 +352,3 @@ async function reloadResumes(live:LiveGame,info:TestInfo,mode:'safe'|'now'){
     await live.admin(`output=(()=>{for(const id of ${JSON.stringify(seeded)}){const m=instances.main.monsters[id];if(m)remove_monster(m,{method:'disappear',nospawn:true});}return true;})()`);
   }
 }
-
-export const reloadRows:Row[]=[
-  ['safe console reload finishes the native fight without acquiring the next target; the console Pause holds through a deploy and restarts until Play',async(live,info)=>{await toReloadSpot(live);await safeReloadRow(live,info);}],
-  ['safe console reload finishes the native fight without acquiring the next target after Hunt and unjoined event selection turnover',async(live,info)=>{await toReloadSpot(live,gooFarmSpot);await safeReloadRow(live,info,true);}],
-  ...(['safe','now'] as const).map((mode):Row=>[`console reload resumes native farming and roaming defense in ${mode} mode`,async(live,info)=>{await toReloadSpot(live);await reloadResumes(live,info,mode);}]),
-];

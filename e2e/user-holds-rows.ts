@@ -5,12 +5,11 @@ import {W,P,fighters,peacefulWorld,seedBoss,endEvent,partyReady,hitBy,attach} fr
 import {taskSeq,taskTrail} from './task-records';
 import {headlessBound,holdTracktrix} from './call-budget-rows';
 
-// The user holds. Both rows run as steps of live-movement-owner.spec.ts's
-// table of rows that start from the default fixture: the Escape row needs a live event, as the UP-1 rows do,
-// and M2 the same warrior and priest party.
+// The user holds. W29a plays the Escape row (`e1Row`) in its event session, since the row needs a
+// live event. W07a plays M2 (`m2Row`) on the warrior and priest party.
 //
-// Pause is the hold of a headless character. Its row runs last in the table: it logs the priest
-// out of its game client and starts it headless, so no later row has the priest's client.
+// Pause is the hold of a headless character. W06b plays its row (`pauseHeadlessRow`), which logs the
+// priest out of its game client and starts it headless.
 
 const group=`party:${W}`;
 const press=(live:LiveGame,path:string,shown:string)=>fetch(live.url+'/party-api'+path,{method:'POST',
@@ -161,7 +160,8 @@ export async function m2Row(live:LiveGame,info:TestInfo){
     catch(error){await attach(info,'m2-follow-fight-diagnostics',{fight:await fight(),group:await groupRead(live),positions:await positions(live)});throw error;}
     // M2b's goo lives long enough for the priest to pick it while the warrior fights it too.
     const ownAt=Date.now(),ownGoo=await goo(live,P,5_000_000);seeds.push(ownGoo);
-    const own=()=>live.clients[P].run(`({combat:partyCombatState&&{selected:partyCombatState.selectedTarget,rejection:partyCombatState.targetRejection,error:partyCombatState.error},occupied:!!__partyHooks.skills.allows({rank:'damage',occupied:true}),hand:partyTasks.holds.handControl(),target:character.target,leader:partyHunting.farm.grouped()})`);
+    // `occupied` keeps the refusing row and its source (final-gate-closing6 M2b read only true).
+    const own=()=>live.clients[P].run(`({combat:partyCombatState&&{selected:partyCombatState.selectedTarget,rejection:partyCombatState.targetRejection,error:partyCombatState.error},occupied:JSON.parse(JSON.stringify(__partyHooks.skills.allows({rank:'damage',occupied:true})??null)),hand:partyTasks.holds.handControl(),target:character.target,leader:partyHunting.farm.grouped()})`);
     try{await expect.poll(()=>hitsOn(P,ownGoo,ownAt),{timeout:60_000,message:'M2b: Combat on, the priest on Manual attacks its own pick in range'}).toBe(true);}
     catch(error){await attach(info,'m2b-diagnostics',{own:await own(),positions:await positions(live)});throw error;}
     // M2b: the target the player picked in the client comes first.
