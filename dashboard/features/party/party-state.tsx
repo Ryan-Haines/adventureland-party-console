@@ -188,6 +188,8 @@ export type PartyState = {
   merchantForceStand?: boolean;
   // The realms automatic merchant work skips.
   merchantRealmBlacklist?: string[];
+  // The console's home realm setting; null follows the account's shared home.
+  homeRealm?: string | null;
   merchantStandLocation?: MerchantStandLocation | null;
   merchantWeapon?: { item: Item } | null;
   luckyUpgradeSlots?: Record<string, number | null>;

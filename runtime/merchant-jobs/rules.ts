@@ -945,9 +945,6 @@ export function mergePickupJobs<T extends PrioritizedJob>(jobs: T[], merchant: s
 // legacy point.
 export interface MerchantStandLocation extends ICoord { map: 'main' }
 export const legacyStandLocation: MerchantStandLocation = {map:'main',x:-63,y:100};
-// The merchant's home realm until a stand return's command names one (v1.5.0's
-// shared.js:871).
-export const DEFAULT_HOME_REALM = 'SR_USII';
 // The merchant stands at its stand location within 35 (v1.5.0's). The
 // runner's stand return, the gathering rest and the idle route's market test read this one
 // reach.

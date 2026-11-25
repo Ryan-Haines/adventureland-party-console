@@ -65,7 +65,7 @@ import { merchantVisibility } from '../merchant-jobs/coordinator/api.ts';
 import { loadCoordinatorDependencies } from "../lifecycle/coordinator/start.ts";
 import { createAddonRoutes } from "../hooks/http.ts";
 import { adoptSavedSwitches } from "../hooks/core.ts";
-import type { SettingsChange, SettingsWriteResult } from "../settings/api.ts";
+import { played, type SettingsChange, type SettingsWriteResult } from "../settings/api.ts";
 import { convoyFighting, canStand, createCommandOwnership, createMovementRecords, createRareRouteDistance, createRouteTime, gameItems, gameMonsters,
   installCoordinatorMovement, movementFingerprint, prepareMovement as prepareMovementGeometry, stepWalks } from "../movement/api/coordinator.ts";
 import { migrateHeadlessRealms, realmOperationOwnsCharacter, realmOperationDestination, normalizedRealm } from "../merchant-realm/api.ts";
@@ -73,7 +73,7 @@ import type { WebMiddleware, WebRouter, WebMonitor } from "../lifecycle/coordina
 import type { CoordinatorApplicationPlatform } from "../lifecycle/coordinator/application-platform.ts";
 import { GROUPS, priority } from '../tasks/api.ts';
 import { merchantJobSource } from '../merchant-jobs/coordinator/api.ts';
-import { merchantRealmSource, nextRealmReport, createMerchantRealmOwner, accountHomeRealm, characterHomeRealm, createMerchantHomeCommand } from '../merchant-realm/api.ts';
+import { merchantRealmSource, nextRealmReport, createMerchantRealmOwner, accountHomeRealm, characterHomeRealm, consoleHomeRealm, firstAccountRealm, createMerchantHomeCommand } from '../merchant-realm/api.ts';
 import { migrateMerchantSettings, installStandLocationRoute } from '../merchant-jobs/coordinator/api.ts';
 import { partyHooks } from '../hooks/index.ts';
 import { coordinatorReads } from '../hooks/coordinator-reads.ts';
@@ -128,7 +128,7 @@ export function startCoordinatorApplication(
       session: sess,
       account: my_acc,
       workers: character_manage,
-      configuredRealm,
+      startRealm,
     } = await initializeCoordinatorEnvironment({
       createStorage: () => new FileStoredKeyValues(LOCALSTORAGE_PATH, LOCALSTORAGE_ROTA_PATH, scopes.act11),
       migration: {
@@ -143,7 +143,8 @@ export function startCoordinatorApplication(
       cullVersions: (versions) => game_files.cull_versions(versions),
       environmentSession: () => process.env.AL_SESSION,
       account: (session) => account_info(session),
-      accountHomeRealm,
+      homeRealm: (account, setting) => consoleHomeRealm(setting, accountHomeRealm(account)),
+      firstRealm: account => firstAccountRealm(account),
     });
     const movementPlanner = createPlannerService(platform.plannerWorkerFile || (platform.codeDirectory || __dirname) + '/../../.build/runtime/movement-planner.cjs', scopes.act02);
     // Saved movement snapshots beside the metrics journal (design § 7).
@@ -173,10 +174,10 @@ export function startCoordinatorApplication(
     const DEFAULT_MERCHANT_ROUTINE_PRIORITIES =
       defaultMerchantRoutinePriorities();
     const DEFAULT_MERCHANT_AUTOMATIONS = defaultMerchantAutomations();
-    const { party, persistedSettings } = initializeCoordinatorState(
+    const { party, persistedSettings, configuredRealm } = initializeCoordinatorState(
       localStorage,
       character_manage,
-      configuredRealm,
+      startRealm,
       {
         merchantDefault: cfg.merchant || null,
         now: () => Date.now(),
@@ -196,6 +197,9 @@ export function startCoordinatorApplication(
       () => my_acc.response,
       () => Date.now(),
     );
+    // The console's home realm (merchant-realm/rules.ts `consoleHomeRealm`), which every home reader
+    // below takes: your setting, else the account's shared home.
+    const homeRealm = () => consoleHomeRealm(played(party, 'homeRealm'), rosterProjection.homeRealm());
     // The settings owner: the one writer and the persistence. Every route writes a setting
     // through `settings.write`, which it answers; the save names below are the persistence's
     // own functions, which other owners' code calls.
@@ -358,7 +362,8 @@ export function startCoordinatorApplication(
       monitorUi: monitoring_util.create_monitor_ui,
       // Keep the original TypeError if a queued worker no longer has an account entry.
       configuredRealm,
-      homeRealm: name => characterHomeRealm(rosterProjection.homeRealm(), ownedCharacter(name)?.home),
+      // The console's home realm, else the character's own.
+      homeRealm: name => characterHomeRealm(homeRealm(), ownedCharacter(name)?.home),
       script: (name) => classScript("./CODE/adventure_land", ownedCharacter(name)!.type),
       watch: (name, block) => characterCode.watch(name, block),
       commit: rosterCommit,
@@ -414,7 +419,7 @@ export function startCoordinatorApplication(
       realm: merchantRealm,
       groups: () => groups.combat(),
       endWalk: group => partyHooks().walks.end(groupKey(group), 'realm-switch'),
-      roster: { owned: name => rosterProjection.owned(name), homeRealm: () => rosterProjection.homeRealm() },
+      roster: { owned: name => rosterProjection.owned(name), homeRealm },
       account: my_acc,
       native: nativeName,
       block: name => characterWorkers.ensure(name),
@@ -1902,7 +1907,7 @@ export function startCoordinatorApplication(
       subscribeAccount: listener => my_acc.add_listener(listener),
       // A coordinator that starts under a deploy lease is a deploy's reload; one with the clean
       // shutdown's resume mark resumes.
-      started: () => ({ realm: rosterProjection.homeRealm() ?? null, generation: process.env.AL_CONSOLE_ARTIFACT ?? null,
+      started: () => ({ realm: homeRealm(), generation: process.env.AL_CONSOLE_ARTIFACT ?? null,
         reason: consoleControl.state().drain ? 'reload' : consoleControl.status().resume ? 'resume' : 'start' }),
       notify: (hook, payload) => { partyHooks().notify(hook, payload); },
       timers: scopes.act13,

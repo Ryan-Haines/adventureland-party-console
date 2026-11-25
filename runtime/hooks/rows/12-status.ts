@@ -203,6 +203,7 @@ export const AREAS = {
   'combat-settings': { file: P + 'combat-settings-section.tsx', within: 'settings-menu' },
   'monster-list-picker': { file: P + 'monster-list-picker.tsx', within: 'combat-settings' },
   'restock-settings': { file: P + 'restock-controls.tsx', within: 'settings-menu' },
+  'home-realm': { file: P + 'home-realm-setting.tsx', within: 'settings-menu' },
   'commerce-estimate': { file: P + 'merchant-commerce-dialog.tsx', within: 'commerce' },
   'merchant-visit': { file: P + 'merchant-visit-control.tsx', within: 'character-card' },
   'metrics-chart': { file: P + 'metrics-chart.tsx', within: 'metrics' },

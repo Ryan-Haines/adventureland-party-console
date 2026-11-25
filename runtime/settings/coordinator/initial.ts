@@ -239,18 +239,20 @@ type InitializationPorts<Merchant extends string | null> = Parameters<
 export function initializeCoordinatorState<Merchant extends string | null = string>(
   storage: Parameters<typeof readInitialCoordinatorSnapshots>[0],
   workers: Parameters<typeof initialHeadlessSlots>[1],
-  configuredRealm: string,
+  startRealm: (homeRealm: string | null) => string,
   ports: InitializationPorts<Merchant>,
 ) {
   // The legacy persistence boundary accepts arbitrary JSON. Domain initializers retain
   // their existing coercion/failure behavior; do not sanitize or clone snapshots here.
   const saved = readInitialCoordinatorSnapshots(storage, (details, message) => ports.log.warn(details, message)) as SavedInput;
   const initialHeadless = initialHeadlessSlots(saved.persistedRoster, workers);
+  // The start's realm reads the saved home realm setting (lifecycle/coordinator/start.ts `startRealm`).
+  const configuredRealm = startRealm(declared("homeRealm", saved.persistedSettings.homeRealm as string | undefined));
   const party = createInitialCoordinatorState<Merchant>(
     { ...saved, initialHeadless, configuredRealm },
     ports,
   );
-  return { party, persistedSettings: saved.persistedSettings };
+  return { party, persistedSettings: saved.persistedSettings, configuredRealm };
 }
 
 // The merchant's saved state at the start: the start's composition reads each declared field that is

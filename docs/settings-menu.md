@@ -9,7 +9,7 @@ is pinned and holds two rows of tabs:
 
 | Row-1 tab | Sections |
 |---|---|
-| Account | Import/Export, Realm, Characters, ALData, Marketplace, Display, Apps, Hosting, Console |
+| Account | Import/Export, Realm (the party realm switch and the home realm setting), Characters, ALData, Marketplace, Display, Apps, Hosting, Console |
 | Events | Cave, then one section per character: the event list with its priority order, the selection and each event's settings, which open under the event's row |
 | Addons | All add-ons, then one section per installed add-on |
 | A fighter | Farming, Combat, Restock |

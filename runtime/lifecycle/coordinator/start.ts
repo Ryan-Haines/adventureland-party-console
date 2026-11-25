@@ -119,7 +119,12 @@ interface EnvironmentPorts<Store, Version, Config, Account> {
   cullVersions: (versions: Version[]) => Promise<unknown>;
   environmentSession: () => string | undefined;
   account: (session: string | undefined) => Promise<Account>;
-  accountHomeRealm?: (account: Account) => string | null;
+  // The console's home realm on this account with the saved home realm setting (the realm owner's
+  // `consoleHomeRealm`), the start's first answer.
+  homeRealm(account: Account, setting: string | null): string | null;
+  // The first realm the account lists, the last answer when neither the home nor a configured
+  // worker names one.
+  firstRealm(account: Account): string | null;
 }
 
 /** Keep startup I/O ordered: migrate storage, obtain game data, read config, then log in. */
@@ -144,12 +149,15 @@ export async function initializeCoordinatorEnvironment<
   const session = ports.environmentSession() || configuration.session;
   const account = await ports.account(session);
   const workers: Config["characters"] = configuration.characters;
-  const configuredRealm =
-    ports.accountHomeRealm?.(account) ||
-    Object.values(workers)
-      .map((entry) => entry && entry.realm)
-      .find(isRealm) ||
-    "SR_USII";
+  // The realm the coordinator starts on, asked once the settings load reads the home realm setting:
+  // the console's home, else a configured worker's realm, else the account's first realm.
+  const startRealm = (setting: string | null): string => {
+    const realm = ports.homeRealm(account, setting) ||
+      Object.values(workers).map((entry) => entry && entry.realm).find(isRealm) ||
+      ports.firstRealm(account);
+    if (!realm) throw new Error("The account lists no realm to start on");
+    return realm;
+  };
   return {
     localStorage,
     sessionStorage,
@@ -158,7 +166,7 @@ export async function initializeCoordinatorEnvironment<
     session,
     account,
     workers,
-    configuredRealm,
+    startRealm,
   };
 }
 

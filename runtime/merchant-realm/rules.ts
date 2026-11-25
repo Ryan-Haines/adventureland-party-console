@@ -50,10 +50,30 @@ export function realmRefusal(owner: string, realm: string, blacklist: readonly s
   if (!options.manual) return 'refused:blacklisted';
   return options.confirm ? null : 'confirm:blacklisted';
 }
-// The blacklist's own check: realm keys, no duplicates, and no PVP realm, which the refusals already cover.
+// A realm the console may keep as a home or list on the blacklist: a realm key that is no PVP realm.
+// The party switch refuses a PVP home, and the refusals already cover a PVP want.
+function homeableRealm(realm: unknown): realm is string {
+  return typeof realm === 'string' && /^SR_[A-Z]+[A-Z0-9]*$/.test(realm) && !/PVP$/.test(realm);
+}
+// The home realm setting (user, 2026-11-09: "other people have different home realms"): the realm
+// the console treats as the party's home, or null to follow the account.
+export function validHomeRealm(value: unknown): value is string | null {
+  return value === null || homeableRealm(value);
+}
+// The console's home realm, the one home every reader takes: your setting, else the one home every
+// account character shares in the game, else none, and the caller reads its own next fact. The
+// settings owner checked the setting on its write (`validHomeRealm`).
+export function consoleHomeRealm(setting: string | null, accountHome: string | null): string | null {
+  return setting ?? accountHome;
+}
+// The first realm the account lists that is no PVP realm: the game's own list, the console's last
+// answer for a realm when nothing else names one.
+export function firstAccountRealm(account: { response?: { servers?: { key?: unknown }[] } }): string | null {
+  return (account.response?.servers ?? []).map(server => server.key).find(homeableRealm) ?? null;
+}
+// The blacklist's own check: realms `homeableRealm` takes, with no duplicates.
 export function validRealmBlacklist(value: unknown): value is string[] {
-  return Array.isArray(value) && value.every(realm => typeof realm === 'string' && /^SR_[A-Z]+[A-Z0-9]*$/.test(realm) && !/PVP$/.test(realm)) &&
-    new Set(value).size === value.length;
+  return Array.isArray(value) && value.every(homeableRealm) && new Set(value).size === value.length;
 }
 
 // Arrival and attempts. An attempt's arrival window is v1.5.0's 60 s (and:122,

@@ -12,7 +12,7 @@ test('portable merchant defaults preserve saved selection and explicit absence w
   ]) {
     const storage = {get: key => key === stateKeys.settings ? JSON.stringify({merchantCharacter: savedMerchant}) : undefined,
       set: () => assert.fail('default selection must not rewrite saved settings')};
-    const result = initializeCoordinatorState(storage, {}, 'SR_USII', {
+    const result = initializeCoordinatorState(storage, {}, () => 'SR_USII', {
       merchantDefault, now: () => 100, loadBankVaultDefinitions: () => [], log: { warn: () => assert.fail('valid defaults warned') },
     });
     assert.equal(result.party.merchantCharacter, expected);
@@ -33,7 +33,7 @@ test('an empty journal loads every declared field as a fresh install does', asyn
   await require('./helpers/coordinator-host.cjs').run(100, {'../tasks/coordinator/api.ts': api => ({...api,
     createFarmingScopes(state, lists, ...rest) { startScopes = {build: api.createFarmingScopes, lists}; return api.createFarmingScopes(state, lists, ...rest); }})});
   assert.ok(startScopes, 'the start makes the farming scopes');
-  const {party} = initializeCoordinatorState({get: () => undefined, set: () => {}}, {}, 'SR_USII', {
+  const {party} = initializeCoordinatorState({get: () => undefined, set: () => {}}, {}, () => 'SR_USII', {
     now: () => 100, loadBankVaultDefinitions: () => [], log: { warn: () => assert.fail('an empty journal warned') },
   });
   startScopes.build(party, startScopes.lists, () => 100);
@@ -72,7 +72,7 @@ test('a the earlier console settings document loads through the declarations and
   const saved = {itemCollectionThreshold: 50, autoStandBuys: 'yes', autoBlacklistMerchants: 'no', merchantForceStand: 1,
     gatheringMode: 'fishing', luckyUpgradeSlots: {GoldMajesty: 7, Other: 3}, activeRealm: 'ASIAI',
     goldReserve: 2500, protectedFreeSlots: 3, mailCheckSeconds: 60, appLocks: ['threshold'], bankboiPrefix: 'ab', anniversaryAutoChat: 'yes'};
-  const {party} = initializeCoordinatorState({get: key => key === stateKeys.settings ? JSON.stringify(saved) : undefined, set: () => {}}, {}, 'SR_USII', {
+  const {party} = initializeCoordinatorState({get: key => key === stateKeys.settings ? JSON.stringify(saved) : undefined, set: () => {}}, {}, () => 'SR_USII', {
     now: () => 100, loadBankVaultDefinitions: () => [], log: {warn: () => assert.fail('a valid document warned')}});
   assert.deepEqual([party.itemCollectionThreshold, party.autoStandBuys, party.autoBlacklistMerchants, party.merchantForceStand],
     [42, false, true, false]);
@@ -87,7 +87,7 @@ test('a the earlier console settings document loads through the declarations and
 // the Hunt settings without it.
 test('a saved huntSettings.relocateIfCompeting false loads as the root setting', () => {
   const saved = {huntSettings: {relocateIfCompeting: false}};
-  const {party} = initializeCoordinatorState({get: key => key === stateKeys.settings ? JSON.stringify(saved) : undefined, set: () => {}}, {}, 'SR_USII', {
+  const {party} = initializeCoordinatorState({get: key => key === stateKeys.settings ? JSON.stringify(saved) : undefined, set: () => {}}, {}, () => 'SR_USII', {
     now: () => 100, loadBankVaultDefinitions: () => [], log: {warn: () => assert.fail('a valid document warned')}});
   assert.equal(party.relocateIfCompeting, false);
   assert.equal('relocateIfCompeting' in party.huntSettings, false);
@@ -96,7 +96,7 @@ test('a saved huntSettings.relocateIfCompeting false loads as the root setting',
 test('malformed roster JSON falls back independently while valid settings survive',()=>{
  const warnings=[];
  const result=initializeCoordinatorState({get:key=>key===stateKeys.roster?'{broken':key===stateKeys.settings?'{"merchantCharacter":"M"}':undefined,set:()=>{}},
-  {P:{enabled:true},Off:{enabled:false},M:{enabled:true}},'SR_USII',{
+  {P:{enabled:true},Off:{enabled:false},M:{enabled:true}},()=>'SR_USII',{
    now:()=>100,loadBankVaultDefinitions:()=>[],log:{warn:(details,message)=>warnings.push({details,message})},
   });
  assert.deepEqual(result.party.headlessSlots,['P','M',null,null]);assert.equal(result.party.merchantCharacter,'M');
@@ -114,7 +114,7 @@ function journal(t,records){
  return new CoordinatorJsonlStore(main,path.join(dir,'state.new.jsonl'),{setTimeout,clearTimeout});
 }
 function load(storage){
- return initializeCoordinatorState(storage,{},'SR_USII',{now:()=>100,loadBankVaultDefinitions:()=>[],warn:(details,message)=>assert.fail(message)});
+ return initializeCoordinatorState(storage,{},()=>'SR_USII',{now:()=>100,loadBankVaultDefinitions:()=>[],warn:(details,message)=>assert.fail(message)});
 }
 // Shape of a v1.4.0 journal: market cache and production inside settings.
 const v140Settings={merchantCharacter:'M',threshold:7,production:{attempts:{a1:{journal:{phase:'complete'}}}},
@@ -164,7 +164,7 @@ test('every hidden setting loads its saved copy through the one pass', () => {
   const hidden = declaredSettings(coordinatorSettings().table).filter(entry => !entry.record && entry.hidden);
   assert.ok(hidden.some(entry => entry.owner === 'core:lifecycle'), "lifecycle's hidden picks are in the table");
   const saved = Object.fromEntries(hidden.map(entry => [entry.field, Number(entry.default) + 1]));
-  const {party} = initializeCoordinatorState({get: key => key === stateKeys.settings ? JSON.stringify(saved) : undefined, set: () => {}}, {}, 'SR_USII', {
+  const {party} = initializeCoordinatorState({get: key => key === stateKeys.settings ? JSON.stringify(saved) : undefined, set: () => {}}, {}, () => 'SR_USII', {
     now: () => 100, loadBankVaultDefinitions: () => [], log: {warn: () => assert.fail('a saved hidden setting warned')},
   });
   for (const entry of hidden) assert.equal(party[entry.field], saved[entry.field], entry.field);
@@ -178,4 +178,29 @@ test('the coordinator start reaches its ready state with no ReferenceError', asy
   const host = await require('./helpers/coordinator-host.cjs').run(100);
   const references = host.warnings.flat().filter(value => value instanceof ReferenceError || value?.error instanceof ReferenceError);
   assert.deepEqual(references.map(value => String(value.error ?? value)), []);
+});
+
+// The home realm setting is the one home every reader takes (user, 2026-11-09: other players have
+// other home realms). A console set to SR_EUI on an account whose characters share SR_USII logged
+// its workers in on EUI while the start's first answer, the party switch's recorded home and the
+// started notice read the account's USII.
+test('the home realm setting is the home the workers, the start, the party switch and the started notice read', async () => {
+  fs.mkdirSync('.build/store-tests',{recursive:true});const dir=fs.mkdtempSync(path.resolve('.build/store-tests/home-'));
+  fs.writeFileSync(path.join(dir,'state.jsonl'),JSON.stringify({[stateKeys.settings]:{homeRealm:'SR_EUI'}})+'\n');
+  const seen={};
+  await require('./helpers/coordinator-host.cjs').run(100, {
+    account: account => { account.response.characters[0].home = 'USII'; account.response.servers.push({key:'SR_EUI',region:'EU',name:'I',players:1}); },
+    '../src/CONSTANTS': {LOCALSTORAGE_PATH:path.join(dir,'state.jsonl'),LOCALSTORAGE_ROTA_PATH:path.join(dir,'rotation.jsonl'),STAT_BEAT_INTERVAL:1000},
+    '../lifecycle/coordinator/workers.ts': api => ({...api, createWorkers(ports) { seen.workers = ports; return api.createWorkers(ports); }}),
+    '../merchant-realm/api.ts': api => ({...api, createCoordinatorRealmActions(state, ports) { seen.party = state; seen.realm = ports; return api.createCoordinatorRealmActions(state, ports); }}),
+    '../lifecycle/coordinator/start.ts': api => ({...api, startCharacters(ports) { seen.started = ports.started(); return api.startCharacters(ports); }}),
+  });
+  // The host's shutdown saves into the journal, so the folder goes after it, in a hook registered
+  // after the host's own.
+  require('node:test').after(()=>fs.rmSync(dir,{recursive:true,force:true}));
+  assert.equal(seen.workers.homeRealm('P'), 'SR_EUI', 'a worker logs in on your home');
+  assert.equal(seen.workers.configuredRealm, 'SR_EUI', "the start's first answer");
+  assert.equal(seen.party.activeRealm, 'SR_EUI', 'the coordinator starts on your home');
+  assert.equal(seen.realm.roster.homeRealm(), 'SR_EUI', 'a party switch records your home as the home it leaves');
+  assert.equal(seen.started.realm, 'SR_EUI', 'the started notice names your home');
 });

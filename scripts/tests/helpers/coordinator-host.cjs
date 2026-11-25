@@ -87,7 +87,9 @@ async function run(now, overrides = {}, bundled = false, launcherDirectory) {
   const router={use(){},listen(){},get(route,...handlers){routes.push(['get',route,handlers.length]);},post(route,...callbacks){routes.push(['post',route,callbacks.length]);handlers.set(route,callbacks.at(-1));},delete(route,...handlers){routes.push(['delete',route,handlers.length]);}};
   const express=()=>router;
   express.json=express.text=express.static=()=>()=>{};
-  const account={response:{characters:[{name:"P",ctype:"priest"}],servers:[]},resolve_char(){},resolve_realm(){},updateInfo:async()=>{},add_listener(){finished=true;}};
+  // The account lists its realms as the game's account read does; the start reads its first one
+  // when nothing else names a realm.
+  const account={response:{characters:[{name:"P",ctype:"priest"}],servers:[{key:"SR_USII",region:"US",name:"II",players:1}]},resolve_char(){},resolve_realm(){},updateInfo:async()=>{},add_listener(){finished=true;}};
   // P, the account's character, is a configured caracAL character, so the coordinator manages it
   // (character_manage) and takes its commands. It stays disabled, so the start launches no worker.
   const config={characters:{P:{realm:'SR_USII',enabled:false,version:0}},merchant:'GoldMajesty',web_app:{party_dashboard:true,port:0}};
@@ -103,7 +105,8 @@ async function run(now, overrides = {}, bundled = false, launcherDirectory) {
       return loaded.get(name);
     }
     if(name==='../config')return config;
-    if(name==='../account_info')return async()=>account;
+    // A row changes the fixture account through `overrides.account`, which edits it in place.
+    if(name==='../account_info')return async()=>(overrides.account?.(account),account);
     if(name==='../game_files')return {ensure_latest:async()=>installed.version,cull_versions:async()=>{}};
     if(name==='../api')return async()=>[];
     if(name==='../src/CONSTANTS')return {LOCALSTORAGE_PATH:path.join(directory,'state.jsonl'),LOCALSTORAGE_ROTA_PATH:path.join(directory,'rotation.jsonl'),STAT_BEAT_INTERVAL:1000};

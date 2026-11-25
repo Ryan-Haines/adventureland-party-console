@@ -133,7 +133,7 @@ export const READS = {
   // The game server's call limit per window, which the dashboard's CC meter fills to.
   ...readsOf('calls', 'both', HANDS_DOOR, { CALL_LIMIT: "number" }),
   ...readsOf('hands', 'character', 'runtime/merchant-hands/rules.ts', { gatheringTools: "string[]", settleAnswer: "SettleAnswer" }),
-  ...readsOf('realm', 'coordinator', REALM_DOOR, { merchantRealmErrors: "the realm owner's errors", connectionRealm: "string", characterHomeRealm: "string", accountHomeRealm: "string", realmOperationOwnsCharacter: "boolean", realmOperationDestination: "string | null" }),
+  ...readsOf('realm', 'coordinator', REALM_DOOR, { merchantRealmErrors: "the realm owner's errors", connectionRealm: "string", characterHomeRealm: "string", accountHomeRealm: "string", consoleHomeRealm: "string | null", firstAccountRealm: "string | null", validHomeRealm: "boolean", realmOperationOwnsCharacter: "boolean", realmOperationDestination: "string | null" }),
   ...readsOf('realm', 'both', REALM_DOOR, { normalizedRealm: "string", realmRefusal: "string | undefined", realmRequestArrived: "boolean" }),
 } as const satisfies Record<string, ReadRow>;
 export const DOOR_ONLY = {
@@ -231,10 +231,12 @@ export const DECISIONS = {
   'a job wants the realm': { at: 'runtime/merchant-realm/rules.ts#jobWant', core: 'tier-table', cite: 'runtime/protocol/ranks.ts:12' },
   'an add-on job\'s realm': { site: 'runtime/hooks/rows/08-merchant.ts:19', hook: 'merchant.jobKind' },
   'realm blacklist refusal': { at: 'runtime/merchant-realm/rules.ts#realmRefusal', hook: 'settings.overlay' },
+  // The home realm setting reaches the rule through `played`, so an add-on's overlay plays.
+  'the home realm the console uses': { at: 'runtime/merchant-realm/rules.ts#consoleHomeRealm', hook: 'settings.overlay' },
   'normal equipment restore': { at: 'runtime/merchant-hands/rules.ts#normalItem', hook: 'hands.normal' },
 } satisfies Record<string, DecisionRow>;
 export const PLAIN = {
   // Facts the game fixes, which the console reads; an add-on's answer cannot change them.
   realmRequestArrived: 'read', gatheringTools: 'read', settleAnswer: 'read',
-  validRealmBlacklist: 'validator',
+  validRealmBlacklist: 'validator', validHomeRealm: 'validator', firstAccountRealm: 'read',
 } satisfies Record<string, PlainKind>;

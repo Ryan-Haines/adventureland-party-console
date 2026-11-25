@@ -1010,6 +1010,9 @@ An add-on reads one with `ctx.read(name, ...args)` or `read(name, ...args)` (REA
 | `realm.connectionRealm` | 09 | coordinator | string |
 | `realm.characterHomeRealm` | 09 | coordinator | string |
 | `realm.accountHomeRealm` | 09 | coordinator | string |
+| `realm.consoleHomeRealm` | 09 | coordinator | string \| null |
+| `realm.firstAccountRealm` | 09 | coordinator | string \| null |
+| `realm.validHomeRealm` | 09 | coordinator | boolean |
 | `realm.realmOperationOwnsCharacter` | 09 | coordinator | boolean |
 | `realm.realmOperationDestination` | 09 | coordinator | string \| null |
 | `realm.normalizedRealm` | 09 | both | string |

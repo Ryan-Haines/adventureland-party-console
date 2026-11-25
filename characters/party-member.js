@@ -8083,7 +8083,7 @@
     // The game server's call limit per window, which the dashboard's CC meter fills to.
     ...readsOf("calls", "both", HANDS_DOOR, { CALL_LIMIT: "number" }),
     ...readsOf("hands", "character", "runtime/merchant-hands/rules.ts", { gatheringTools: "string[]", settleAnswer: "SettleAnswer" }),
-    ...readsOf("realm", "coordinator", REALM_DOOR, { merchantRealmErrors: "the realm owner's errors", connectionRealm: "string", characterHomeRealm: "string", accountHomeRealm: "string", realmOperationOwnsCharacter: "boolean", realmOperationDestination: "string | null" }),
+    ...readsOf("realm", "coordinator", REALM_DOOR, { merchantRealmErrors: "the realm owner's errors", connectionRealm: "string", characterHomeRealm: "string", accountHomeRealm: "string", consoleHomeRealm: "string | null", firstAccountRealm: "string | null", validHomeRealm: "boolean", realmOperationOwnsCharacter: "boolean", realmOperationDestination: "string | null" }),
     ...readsOf("realm", "both", REALM_DOOR, { normalizedRealm: "string", realmRefusal: "string | undefined", realmRequestArrived: "boolean" })
   };
   var DOOR_ONLY9 = {
@@ -8165,6 +8165,8 @@
     "a job wants the realm": { at: "runtime/merchant-realm/rules.ts#jobWant", core: "tier-table", cite: "runtime/protocol/ranks.ts:12" },
     "an add-on job's realm": { site: "runtime/hooks/rows/08-merchant.ts:19", hook: "merchant.jobKind" },
     "realm blacklist refusal": { at: "runtime/merchant-realm/rules.ts#realmRefusal", hook: "settings.overlay" },
+    // The home realm setting reaches the rule through `played`, so an add-on's overlay plays.
+    "the home realm the console uses": { at: "runtime/merchant-realm/rules.ts#consoleHomeRealm", hook: "settings.overlay" },
     "normal equipment restore": { at: "runtime/merchant-hands/rules.ts#normalItem", hook: "hands.normal" }
   };
   var PLAIN9 = {
@@ -8172,7 +8174,9 @@
     realmRequestArrived: "read",
     gatheringTools: "read",
     settleAnswer: "read",
-    validRealmBlacklist: "validator"
+    validRealmBlacklist: "validator",
+    validHomeRealm: "validator",
+    firstAccountRealm: "read"
   };
 
   // runtime/hooks/rows/10-items.ts
@@ -9301,6 +9305,7 @@
     "combat-settings": { file: P + "combat-settings-section.tsx", within: "settings-menu" },
     "monster-list-picker": { file: P + "monster-list-picker.tsx", within: "combat-settings" },
     "restock-settings": { file: P + "restock-controls.tsx", within: "settings-menu" },
+    "home-realm": { file: P + "home-realm-setting.tsx", within: "settings-menu" },
     "commerce-estimate": { file: P + "merchant-commerce-dialog.tsx", within: "commerce" },
     "merchant-visit": { file: P + "merchant-visit-control.tsx", within: "character-card" },
     "metrics-chart": { file: P + "metrics-chart.tsx", within: "metrics" },
@@ -23075,7 +23080,6 @@ ${hook}`, was = errors.get(key3);
     AT_STAND: () => AT_STAND,
     BACKGROUND_REFUSED: () => BACKGROUND_REFUSED,
     COMMERCE_PROGRESS_VERSION: () => COMMERCE_PROGRESS_VERSION,
-    DEFAULT_HOME_REALM: () => DEFAULT_HOME_REALM,
     ENDINGS: () => ENDINGS,
     GATHERING_MODES: () => GATHERING_MODES,
     HANDOFF: () => HANDOFF,
@@ -23937,7 +23941,6 @@ ${hook}`, was = errors.get(key3);
     return result;
   }
   var legacyStandLocation = { map: "main", x: -63, y: 100 };
-  var DEFAULT_HOME_REALM = "SR_USII";
   var AT_STAND = 35;
   function validStandLocation(value) {
     if (!value || typeof value !== "object") return false;
@@ -45199,7 +45202,7 @@ ${hook}`, was = errors.get(key3);
     const runtimeId = Date.now() + "-" + Math.random().toString(36).slice(2);
     const entering = /* @__PURE__ */ new Set();
     let forceStand = false, market = legacyStandLocation;
-    let homeRealm = DEFAULT_HOME_REALM;
+    let homeRealm = null;
     function standReply(state) {
       if ("merchantItinerary" in state) itineraryReply(state.merchantItinerary);
       forceStand = !!state.merchantForceStand;
@@ -45405,7 +45408,7 @@ ${hook}`, was = errors.get(key3);
       try {
         if (command.homeRealm) homeRealm = command.homeRealm;
         const home = homeRealm;
-        if (p.hop().liveRealm() !== home && await p.hop().hop("/merchant/ensure-home-realm", { character: c.name, realm: home }, home) === "yielded")
+        if (home && p.hop().liveRealm() !== home && await p.hop().hop("/merchant/ensure-home-realm", { character: c.name, realm: home }, home) === "yielded")
           return { state: "deferred" };
         if (!atStand() && !command.inPlace) {
           await status5("returning");
@@ -47201,10 +47204,13 @@ ${hook}`, was = errors.get(key3);
     REALM_HOME_CONFIRM_MS: () => REALM_HOME_CONFIRM_MS,
     REALM_HOME_REPLY_MS: () => REALM_HOME_REPLY_MS,
     REALM_LOGIN_MS: () => REALM_LOGIN_MS,
+    consoleHomeRealm: () => consoleHomeRealm,
+    firstAccountRealm: () => firstAccountRealm,
     jobWant: () => jobWant,
     normalizedRealm: () => normalizedRealm,
     realmRefusal: () => realmRefusal,
     realmRequestArrived: () => realmRequestArrived,
+    validHomeRealm: () => validHomeRealm,
     validRealmBlacklist: () => validRealmBlacklist,
     wantRank: () => wantRank
   });
@@ -47227,8 +47233,20 @@ ${hook}`, was = errors.get(key3);
     if (!options.manual) return "refused:blacklisted";
     return options.confirm ? null : "confirm:blacklisted";
   }
+  function homeableRealm(realm4) {
+    return typeof realm4 === "string" && /^SR_[A-Z]+[A-Z0-9]*$/.test(realm4) && !/PVP$/.test(realm4);
+  }
+  function validHomeRealm(value) {
+    return value === null || homeableRealm(value);
+  }
+  function consoleHomeRealm(setting, accountHome) {
+    return setting ?? accountHome;
+  }
+  function firstAccountRealm(account) {
+    return (account.response?.servers ?? []).map((server) => server.key).find(homeableRealm) ?? null;
+  }
   function validRealmBlacklist(value) {
-    return Array.isArray(value) && value.every((realm4) => typeof realm4 === "string" && /^SR_[A-Z]+[A-Z0-9]*$/.test(realm4) && !/PVP$/.test(realm4)) && new Set(value).size === value.length;
+    return Array.isArray(value) && value.every(homeableRealm) && new Set(value).size === value.length;
   }
   var ARRIVAL_WINDOW_MS = 6e4;
   var REALM_LOGIN_MS = 6e4;

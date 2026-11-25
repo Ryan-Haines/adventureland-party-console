@@ -25,7 +25,7 @@ import { scope } from '../../lifecycle/api.ts';
 import { runAddonSteps, type AddonStepsCommand } from './steps.ts';
 import { wakeReportWaits } from './report-wait.ts';
 import type { ActionOutcome, MerchantStep } from '../../hooks/registry.ts';
-import { AT_STAND, BACKGROUND_REFUSED, DEFAULT_HOME_REALM, jobCommandRetained, legacyStandLocation, type MerchantDoorAnswer, type MerchantDoorBand, type MerchantDoors, type MerchantStandLocation } from '../rules.ts';
+import { AT_STAND, BACKGROUND_REFUSED, jobCommandRetained, legacyStandLocation, type MerchantDoorAnswer, type MerchantDoorBand, type MerchantDoors, type MerchantStandLocation } from '../rules.ts';
 
 type RunnerPorts = Record<string, any>;
 
@@ -71,7 +71,9 @@ export function createMerchantRunner(p: RunnerPorts) {
   // one.
   let forceStand = false, market: MerchantStandLocation = legacyStandLocation;
   // The home realm the stand return hops to; each stand return's command may name a new one.
-  let homeRealm = DEFAULT_HOME_REALM;
+  // The stand return's home realm, which every stand return command names (the coordinator's
+  // `homeRealm`); none before the first, so the runner hops nowhere on a guess.
+  let homeRealm: string | null = null;
   /** Table A's `stand-settings` row: a stand point off the main map or without coordinates is not one. */
   function standReply(state: { merchantForceStand?: unknown; merchantStandLocation?: { map?: unknown; x?: unknown; y?: unknown } | null; merchantItinerary?: unknown }): void {
     if ('merchantItinerary' in state) itineraryReply(state.merchantItinerary);
@@ -285,7 +287,7 @@ export function createMerchantRunner(p: RunnerPorts) {
       if (command.homeRealm) homeRealm = command.homeRealm;
       // A move home ends the stand return at the hop; the runner holds the merchant until the restart.
       const home = homeRealm;
-      if (p.hop().liveRealm() !== home && await p.hop().hop('/merchant/ensure-home-realm', { character: c.name, realm: home }, home) === 'yielded')
+      if (home && p.hop().liveRealm() !== home && await p.hop().hop('/merchant/ensure-home-realm', { character: c.name, realm: home }, home) === 'yielded')
         return { state: 'deferred' };
       if (!atStand() && !command.inPlace) {
         await status('returning');

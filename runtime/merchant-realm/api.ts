@@ -4,6 +4,7 @@ export { createMerchantRealmOwner, type MerchantRealmOwner } from './coordinator
 export { createMerchantRealmRoutes, createMerchantHomeCommand, createCoordinatorRealmActions } from './coordinator/routes.ts';
 export { createPartyRealmCheck, merchantRealmErrors } from './coordinator/party-visit.ts';
 export { connectionRealm, characterHomeRealm, accountHomeRealm, migrateHeadlessRealms } from './coordinator/worker-setup.ts';
+export { consoleHomeRealm, firstAccountRealm, validHomeRealm } from './rules.ts';
 export { realmOperationOwnsCharacter, realmOperationDestination } from './coordinator/party-switch.ts';
 // From ../rules.ts: the want answers, the request record, the realm reading.
 export { normalizedRealm, realmRefusal, realmRequestArrived, type RealmRequest, type RealmAnswer } from './rules.ts';

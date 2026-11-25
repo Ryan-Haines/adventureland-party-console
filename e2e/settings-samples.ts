@@ -74,6 +74,8 @@ const fixed: Record<string, unknown> = {
   // An add-on's settings per farming scope, by add-on and key (runtime/settings/coordinator/declarations.ts).
   addonSettings: { [SETTINGS_KINDS_ADDON]: { limit: 4 } },
   merchantRealmBlacklist: ['SR_EUI'],
+  // The realm the console fixture's account lists (e2e/coordinator.cjs), so a restart starts where it ran.
+  homeRealm: 'SR_USII',
   mailCheckSeconds: 45,
   protectedFreeSlots: 4,
   goldReserve: 25000,

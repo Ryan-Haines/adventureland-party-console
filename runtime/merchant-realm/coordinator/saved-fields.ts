@@ -5,7 +5,7 @@
 import { wholeFrom, type Declarations } from '../../settings/api.ts';
 import { MERCHANT_HOME_REPORT_MS } from '../../protocol/reports.ts';
 import type { SavedEventState } from '../../events/api.ts';
-import { validRealmBlacklist } from '../rules.ts';
+import { validHomeRealm, validRealmBlacklist } from '../rules.ts';
 
 export const merchantRealmSavedFields = {
   name: 'core:merchant-realm',
@@ -18,6 +18,10 @@ export const merchantRealmSavedFields = {
     // confirmation. Empty at first, so a fresh console behaves as today; the refusals already cover PVP.
     merchantRealmBlacklist: { label: 'Merchant realm blacklist', kind: 'value', default: [], importable: true,
       check: validRealmBlacklist, deliver: ['dashboard'] },
+    // The console's home realm (rules.ts `consoleHomeRealm`). Null follows the account's shared home,
+    // so a fresh console behaves as today.
+    homeRealm: { label: 'Home realm', kind: 'value', default: null as string | null, importable: true,
+      check: validHomeRealm, deliver: ['dashboard'] },
   },
   records: {
     merchantRealmRequests: { default: {} },

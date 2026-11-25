@@ -13,6 +13,7 @@ import { AppKeysSettings } from "./app-keys-settings";
 import { ConsoleUpdateSettings } from "./console-updates";
 import { DashboardStateImport } from "./dashboard-state-import";
 import { HostingSettings } from "./hosting-settings";
+import { HomeRealmSetting } from "./home-realm-setting";
 import { MarketplaceSettings } from "./marketplace-settings";
 import { PinTopBarSetting } from "./pin-top-bar";
 import type { AccountSection } from "./settings-target";
@@ -51,7 +52,7 @@ function ImportSection({ model }: { model: PartyConsoleModel }) {
 
 function RealmSection({ model }: { model: PartyConsoleModel }) {
   const { state, realmDestination, setRealmDestination, setRealmSetHome, setRealmConfirmOpen } = model;
-  return (
+  return <>
       <div className="rounded border border-violet-800 bg-[#07090d] p-4 text-slate-100">
         <div className="flex items-start justify-between gap-3">
           <div>
@@ -177,7 +178,8 @@ function RealmSection({ model }: { model: PartyConsoleModel }) {
           </div>
         ) : null}
       </div>
-  );
+    <HomeRealmSetting state={state} />
+  </>;
 }
 
 function CharactersSection({ model }: { model: PartyConsoleModel }) {

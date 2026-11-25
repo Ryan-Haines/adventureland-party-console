@@ -3,10 +3,11 @@
 // blacklist allows an automatic want, runs an order with no confirmation, refuses home, takes a PVP
 // realm or changes an answer while empty; a job ending asks for home by itself, or the merchant
 // stays off home with no other want; a reconnect goes to another realm, adds a want or holds
-// realm-hold; R1 to R3 disagree with the code they replaced.
+// realm-hold; R1 to R3 disagree with the code they replaced; the console's home realm ignores your
+// setting, takes a PVP or unknown realm, or falls back to a realm the account does not list.
 const test = require('node:test'), assert = require('node:assert/strict');
 const { createMerchantRealmOwner } = require('../../runtime/merchant-realm/coordinator/owner.ts');
-const { wantRank, realmRefusal, validRealmBlacklist, ARRIVAL_WINDOW_MS } = require('../../runtime/merchant-realm/rules.ts');
+const { wantRank, realmRefusal, validRealmBlacklist, validHomeRealm, consoleHomeRealm, firstAccountRealm, ARRIVAL_WINDOW_MS } = require('../../runtime/merchant-realm/rules.ts');
 
 // The hop and notice rows register fixture hooks on the process-wide registry. Each row gets a
 // registry of its own, so a fixture hook never answers in a later row.
@@ -48,7 +49,17 @@ test('wants rank party switch, then your hold, then the current job, then home',
   assert.ok(f.restarts.length > 0 && f.restarts.every(block => block === f.blocks.M));
 });
 
-test('the blacklist refuses automatic wants, asks confirmation for your orders and never refuses home', () => {
+// The home realm setting replaces the fixed US II fallbacks (user, 2026-11-09). Its rule sits beside
+// the blacklist's, so it joins the blacklist's rule test.
+test('the blacklist refuses automatic wants, asks confirmation for your orders and never refuses home; the home realm is yours, else the account home', () => {
+  assert.equal(consoleHomeRealm('SR_EUI', 'SR_USII'), 'SR_EUI', 'your setting wins');
+  assert.equal(consoleHomeRealm(null, 'SR_USII'), 'SR_USII', 'unset follows the account');
+  assert.equal(consoleHomeRealm(null, null), null, 'nothing names one, so the caller reads its next fact');
+  assert.equal(validHomeRealm(null), true); assert.equal(validHomeRealm('SR_ASIAI'), true);
+  assert.equal(validHomeRealm('SR_USPVP'), false); assert.equal(validHomeRealm('US II'), false);
+  // The last answer is the account's own first non-PVP realm, never a fixed one.
+  assert.equal(firstAccountRealm({ response: { servers: [{ key: 'SR_EUPVP' }, { key: 'SR_EUII' }, { key: 'SR_USII' }] } }), 'SR_EUII');
+  assert.equal(firstAccountRealm({ response: { servers: [] } }), null);
   const list = ['SR_EUI'];
   assert.equal(realmRefusal('job:a', 'SR_EUI', list, {}), 'refused:blacklisted');
   assert.equal(realmRefusal('job:a', 'SR_EUI', list, { manual: true }), 'confirm:blacklisted');

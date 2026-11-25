@@ -51,6 +51,21 @@ The visit becomes eligible when matching realms are observed. Other eligible
 jobs can run while a visit is blocked or its retry is cooling down. Completed
 receipts and improved items awaiting delivery survive a target realm change.
 
+## The home realm
+
+The console's home realm is a setting (`homeRealm`, Account > Realm in the settings menu). Unset, it
+follows the one home every account character shares in the game, as before. Set, it names the realm
+the console treats as home (runtime/merchant-realm/rules.ts `consoleHomeRealm`), the one home every
+reader takes: a worker with no move or switch in flight logs in there, the coordinator starts there,
+a party switch records it as the home it leaves, and the `lifecycle.started` notice names it. A PVP
+realm is never a home; the setting's check refuses one on its write. The game's own home per
+character still changes only through the party realm switch with "Set as home realm"; the setting
+shows a note while it differs from the characters' game home, which gives Hop Sickness.
+
+No realm is fixed in the code. When neither the setting, the account's shared home nor a configured
+worker names a realm, the coordinator starts on the first non-PVP realm the account lists
+(`firstAccountRealm`), and a merchant stand return that names no home realm hops nowhere.
+
 ## Validation
 
 Regression coverage: `steam-realm-choice.test.cjs`, `steam-group.test.cjs`,
