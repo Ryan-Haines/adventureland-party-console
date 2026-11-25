@@ -58,6 +58,35 @@ scenarioTable('an event or staging walk replaces a trip by rank and spawn time, 
   assert.equal(g.starts(),1,'the start waited on a member the console knows is silent');
   assert.deepEqual([...g.state.activeConvoy.participants].sort(),['F','L']);
  }],
+ // livea-run4 W21 H7: after a coordinator restart the followers reported first and asked for their
+ // farm walk while the warrior had no report yet. The start waits for the leader's first report, and
+ // then for its ask, as it does before a restart; a leader still unheard past the report window is
+ // let go.
+ ['a farm walk waits one report window for a leader the restarted coordinator has not heard from', ()=>{
+  const {memberHolds}=require('../../runtime/lifecycle/coordinator/lease.ts');
+  const {ageOf}=require('../../runtime/protocol/reports.ts');
+  const restarted=()=>{
+   const g=fixture(false,undefined,[{name:'core:test-lifecycle',holder:'13',
+    answer:({member})=>memberHolds(member,{now:()=>g.now(),startedAt:1000,report:n=>g.state.statuses[n],worker:()=>({instance:{}})})}]);
+   Object.assign(g.live,{kind:'farming',tier:'farming',owner:'farm'});
+   const leader=g.state.statuses.L;delete g.state.statuses.L;
+   const ask=()=>{for(const n of ['F','P'])g.walks.submit(g.body(n,{activity:'farm-recovery',key:'farming',destination:{map:'main',x:1280,y:300}}));};
+   ask();
+   assert.equal(g.starts(),0,'red: F led the farm walk without its unheard leader');
+   return {g,leader,ask};
+  };
+  {
+   const {g,leader,ask}=restarted();
+   g.state.statuses.L={...leader,seenAt:g.now()};ask();
+   assert.equal(g.starts(),0,'the leader reported and has not asked, so the walk still waits for it');
+  }
+  {
+   const {g,ask}=restarted();
+   g.advance(ageOf('report')+1);ask();
+   assert.equal(g.starts(),1,'a leader still unheard past the report window is let go');
+   assert.deepEqual([...g.state.activeConvoy.participants].sort(),['F','P']);
+  }
+ }],
  ['a member a holder says is not coming is left, and a dead healer is left at once', ()=>{
   const g=fixture(false,undefined,[{name:'core:test-holder',
    answer:({member})=>member==='P'?[{owner:'05',reason:'escaping',coming:false,endsOn:'survival.escapeEnded'}]:[]}]);

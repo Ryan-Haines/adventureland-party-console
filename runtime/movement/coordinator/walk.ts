@@ -197,7 +197,9 @@ export function createPartyConvoys(state: ConvoyState, ports: ConvoyPorts) {
         (name) =>
           memberRole(name, workflow && !!requested?.has(name), escape) &&
           (exit || !ports.intent(name).cancelled) &&
-          state.statuses[name]?.server === leader.server &&
+          // A member the starter names that has not reported since the coordinator started joins;
+          // the walk's silence rule (lease.ts `memberHolds`) waits one report window for it.
+          (state.statuses[name] ? state.statuses[name]!.server === leader.server : !!requested?.has(name)) &&
           (!requested || requested.has(name)),
       );
   }
@@ -653,9 +655,13 @@ export function createSharedWalks(state: WalkState, ports: WalkPorts) {
         !!ports.owned(name) && !atDestination(status,r.destination);
     });
   }
-  // A member already at the destination need not be pulled away from it.
+  // A member already at the destination need not be pulled away from it. A member with no report
+  // has no place to read, so it is missing.
   function missingMember(r: WalkRequest, waiting: WalkRequest[], expected: string[]): boolean {
-    return expected.some(name => !waiting.some(other => other.name === name) && distance(state.statuses[name]!, r.destination) > RENDEZVOUS_RANGE);
+    return expected.some(name => {
+      const s = state.statuses[name];
+      return !waiting.some(other => other.name === name) && (!s || distance(s, r.destination) > RENDEZVOUS_RANGE);
+    });
   }
   // The start waits for each eligible member that has not asked, as a member's event poll asks again
   // until the walk answers, and goes on without a member that a holder says is not coming, or that
@@ -663,9 +669,15 @@ export function createSharedWalks(state: WalkState, ports: WalkPorts) {
   // while a holder says it is coming. No round of reports ends the wait. An event walk also waits while any
   // holder holds a member coming, whether or not it asked: the group's fight finishes first. Each ask
   // names the walk, so a holder answers nothing for the walk that goes where the member already is.
+  // The coordinator keeps no reports across its restart, so a member it has not heard from since has
+  // no report for `eligible` to read; the holders answer for it, and the lifecycle owner's waits one
+  // report window from the restart (lease.ts `memberHolds`). Without that wait, the first follower to
+  // report after a restart led its farm walk without its leader, and that walk held the party's one
+  // walk slot from the leader's spawn return (livea-run4 W21 H7).
   function startingLeader(r: WalkRequest, waiting: WalkRequest[], leaderName: string): string | undefined {
     const group = ports.group?.() ?? null, now = ports.now(), ask = { activity: r.activity, key: r.key };
-    const coming = eligible(r).filter(name => !leaves(state, group, name, now, undefined, ask));
+    const unheard = workflowMembers(r).filter(name => !state.statuses[name]);
+    const coming = [...eligible(r), ...unheard].filter(name => !leaves(state, group, name, now, undefined, ask));
     if (r.activity === "event" && windingDown(state, group, coming, now, ask)) return undefined;
     if (missingMember(r, waiting, coming)) return undefined;
     if (waiting.some(other => other.name === leaderName)) return leaderName;

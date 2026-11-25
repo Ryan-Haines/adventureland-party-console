@@ -1657,6 +1657,14 @@ scenarioTable('a walk paces from base speed', ()=>{
   assert.equal(c.slowestSpeed, 60); assert.equal(c.paceCharacter, 'W');
   assert.deepEqual(['W', 'A'].map(n => state.commands[n].slowestSpeed), [60, 60]);
  }],
+ // The closing-3 pair run's W36: the coordinator restarted, and the Hunt's walk started 250 ms before
+ // the priest's first report, so the walk left it out and nothing walked it to the Hunt. A member the
+ // walk's starter names and the coordinator has not heard from yet joins; the walk's own silence rule
+ // (lifecycle/coordinator/lease.ts memberHolds) waits one report window for it before letting it go.
+ ['a named member with no report yet since a restart joins the walk (red: it is left out)', ({ state, start }) => {
+  delete state.statuses.A;
+  assert.deepEqual(start().participants, ['W', 'A']);
+ }],
  ['a reported speed that already carries a cap gives the base pace (red: the capped speed)', ({ state, start }) => {
   state.statuses.A.speed = 40;
   assert.equal(start().slowestSpeed, 60);
