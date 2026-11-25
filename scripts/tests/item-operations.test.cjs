@@ -85,16 +85,23 @@ test('partial progress does not match an unrelated item in the marked slot', asy
   assert.deepEqual(calls, []);
 });
 
-for(const response of [{failed:true,success:false,num:0},undefined,{failed:true,success:false,num:1}])
-test('destruction needs a matching server failure: '+JSON.stringify(response),async()=>{
- const character={name:'Fighter',ctype:'warrior',items:[{name:'coat',level:2},{name:'scroll0',q:1}],q:{}};
- const {production}=productionHarness({character,ports:{upgrade:async()=>{character.items[0]=null;return response;}}});
+const {scenarioTable}=require('./fixtures/scenarios.cjs');
+const destroyedOnFailure=async({production,response})=>{
  await assert.rejects(production.upgradeConfirmed(0,1,'coat',3),e=>{
   if(response?.num===0){assert.equal(e.reason,'upgrade_destroyed');assert.equal(e.confirmedDestroyed,true);}
   else {assert.match(e.message,/uncertain/);assert.notEqual(e.confirmedDestroyed,true);}
   return true;
  });
-});
+};
+scenarioTable('an upgrade that empties its slot counts as destroyed only on a matching server failure',response=>{
+ const character={name:'Fighter',ctype:'warrior',items:[{name:'coat',level:2},{name:'scroll0',q:1}],q:{}};
+ const {production}=productionHarness({character,ports:{upgrade:async()=>{character.items[0]=null;return response;}}});
+ return {production,response};
+},[
+ ['destruction needs a matching server failure: {"failed":true,"success":false,"num":0}',destroyedOnFailure,{failed:true,success:false,num:0}],
+ ['destruction needs a matching server failure: undefined',destroyedOnFailure,undefined],
+ ['destruction needs a matching server failure: {"failed":true,"success":false,"num":1}',destroyedOnFailure,{failed:true,success:false,num:1}],
+]);
 
 // The merchant's protection checkpoint answers after a delivery moved the coat to slot 5. The lucky
 // slot is 5, so the upgrade runs where the coat now sits.

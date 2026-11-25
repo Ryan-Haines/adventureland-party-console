@@ -139,9 +139,16 @@ test('bank entry and cake result logs are based on observed changes',()=>{
  const count=logs.length;r.previousStatus=JSON.parse(JSON.stringify(r.body));run();assert.equal(logs.length,count);
 });
 
+async function rechecksStand(f){
+ const {c,g}=f;
+ // The mode choice on a free merchant runs the first tick; the second reads the open stand at the market.
+ g.choose(['fishing']);g.halt();await c.root.__merchantHolder?.done;
+ await g.gatheringTick();g.halt();
+ assert.equal(f.returns,1);assert.equal(c.root.__merchantGatheringSession.restListings,'[]');
+}
 // The rest is read from the game between ticks (gathering.ts `resting`): the stand open at the market
 // point with the rest's listings. A merchant away from it, or at a closed stand, walks back once.
-for(const closed of [false,true])test('cooldown rechecks '+(closed?'closed stand at market':'position despite cached arrival'),async()=>{
+scenarioTable('a gathering merchant on cooldown away from an open stand walks back once',closed=>{
  let returns=0;
  const {installGathering}=require('./helpers/merchant-gathering.cjs');
  const c={character:{ctype:'merchant',level:30,map:closed?'main':'bank',x:closed?-63:0,y:closed?100:-37,stand:!closed,slots:{},items:[]},
@@ -151,11 +158,11 @@ for(const closed of [false,true])test('cooldown rechecks '+(closed?'closed stand
   close_stand:async()=>{c.character.stand=false;},
   standReturn:async()=>{returns++;Object.assign(c.character,{map:'main',x:-63,y:100,stand:true});}};
  const g=installGathering(c);
- // The mode choice on a free merchant runs the first tick; the second reads the open stand at the market.
- g.choose(['fishing']);g.halt();await c.root.__merchantHolder?.done;
- await g.gatheringTick();g.halt();
- assert.equal(returns,1);assert.equal(c.root.__merchantGatheringSession.restListings,'[]');
-});
+ return {c,g,get returns(){return returns;}};
+},[
+ ['cooldown rechecks position despite cached arrival',rechecksStand,false],
+ ['cooldown rechecks closed stand at market',rechecksStand,true],
+]);
 
 // The equip route writes through `jobs.command`, so the owner knows the slot holds your command;
 // the stand return leaves it until its report.

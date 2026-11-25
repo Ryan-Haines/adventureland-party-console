@@ -109,22 +109,34 @@ function homeReportGap(runtime='headless') {
  const recovery=createMerchantRealmOwner(state,{now:()=>now,block:()=>block,realmLabel:x=>x,log(){},persist(){},restart:()=>restarts.push(now)});
  return {state,block,restarts,recovery,setNow:value=>{now=value;}};
 }
-for(const runtime of ['headless','native'])test('same-home live '+runtime+' heartbeat gap holds work without reconnect and resumes on a fresh report',()=>{
- const f=homeReportGap(runtime),command=f.state.commands.M;
+const {scenarioTable}=require('./fixtures/scenarios.cjs');
+const holdsThenResumes=f=>{
+ const command=f.state.commands.M;
  assert.equal(f.recovery.ensureHome('gathering'),false);
  assert.deepEqual(f.restarts,[]);assert.equal(f.state.merchantRealmRequests,undefined);assert.equal(f.state.commands.M,command);
  f.state.statuses.M.seenAt=10001;f.setNow(10001);
  assert.equal(f.recovery.ensureHome('gathering'),true);assert.deepEqual(f.restarts,[]);
-});
-for(const runtime of ['headless','native'])test('same-home '+runtime+' missing reports recover at fifteen seconds then retain the existing sixty second arrival budget',()=>{
- const f=homeReportGap(runtime);f.setNow(20999);
+};
+scenarioTable('a same-home merchant with a short report gap holds work and resumes on a fresh report',homeReportGap,[
+ ['same-home live headless heartbeat gap holds work without reconnect and resumes on a fresh report',holdsThenResumes,'headless'],
+ ['same-home live native heartbeat gap holds work without reconnect and resumes on a fresh report',holdsThenResumes,'native'],
+]);
+const recoversThenBudget=f=>{
+ f.setNow(20999);
  assert.equal(f.recovery.ensureHome('idle'),false);assert.deepEqual(f.restarts,[]);
  f.setNow(21000);assert.equal(f.recovery.ensureHome('idle'),false);assert.deepEqual(f.restarts,[21000]);
  assert.equal(f.state.merchantRealmRequests.M.attempts,1);
  f.setNow(80999);assert.equal(f.recovery.ensureHome('idle'),false);assert.deepEqual(f.restarts,[21000]);
  f.setNow(81000);assert.equal(f.recovery.ensureHome('idle'),false);assert.deepEqual(f.restarts,[21000,81000]);
-});
-for(const fault of ['wrong realm','offline worker','exited worker','offline native','dead','missing health','missing report','future report'])test('home recovery does not infer a healthy same-home connection from '+fault,()=>{
+};
+scenarioTable('a same-home merchant with no reports recovers at fifteen seconds and keeps the sixty second arrival budget',homeReportGap,[
+ ['same-home headless missing reports recover at fifteen seconds then retain the existing sixty second arrival budget',recoversThenBudget,'headless'],
+ ['same-home native missing reports recover at fifteen seconds then retain the existing sixty second arrival budget',recoversThenBudget,'native'],
+]);
+const restartsAtOnce=f=>{
+ assert.equal(f.recovery.ensureHome('idle'),false);assert.deepEqual(f.restarts,[10000]);
+};
+scenarioTable('home recovery restarts a merchant whose same-home connection shows a fault',fault=>{
  const f=homeReportGap(fault==='offline native'?'native':'headless');
  if(fault==='wrong realm')f.state.statuses.M.server='USII';
  if(fault==='offline worker')f.block.connected=false;
@@ -134,8 +146,17 @@ for(const fault of ['wrong realm','offline worker','exited worker','offline nati
  if(fault==='missing health')delete f.state.statuses.M.hp;
  if(fault==='missing report')delete f.state.statuses.M.seenAt;
  if(fault==='future report')f.state.statuses.M.seenAt=20000;
- assert.equal(f.recovery.ensureHome('idle'),false);assert.deepEqual(f.restarts,[10000]);
-});
+ return f;
+},[
+ ['home recovery does not infer a healthy same-home connection from wrong realm',restartsAtOnce,'wrong realm'],
+ ['home recovery does not infer a healthy same-home connection from offline worker',restartsAtOnce,'offline worker'],
+ ['home recovery does not infer a healthy same-home connection from exited worker',restartsAtOnce,'exited worker'],
+ ['home recovery does not infer a healthy same-home connection from offline native',restartsAtOnce,'offline native'],
+ ['home recovery does not infer a healthy same-home connection from dead',restartsAtOnce,'dead'],
+ ['home recovery does not infer a healthy same-home connection from missing health',restartsAtOnce,'missing health'],
+ ['home recovery does not infer a healthy same-home connection from missing report',restartsAtOnce,'missing report'],
+ ['home recovery does not infer a healthy same-home connection from future report',restartsAtOnce,'future report'],
+]);
 
 // The runner tells a hot reload's redelivery from the coordinator's reissue by the command id
 // alone, at any heartbeat age, and leaves the expiry's report to the coordinator.

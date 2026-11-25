@@ -52,8 +52,8 @@ function fixture() {
  return {members,contexts,clients,monster,target,report,deliver,ready,stops:()=>stops,advance(ms){now+=ms;},now:()=>now,setPassive(next){passive=next;}};
 }
 
-for(const delay of [0,100,900])test(`retaliation after ${delay}ms projectile delay never freezes an acknowledged convoy`,()=>{
- const f=fixture();
+const {scenarioTable}=require('./fixtures/scenarios.cjs');
+const noFreeze=({f,delay})=>{
  assert.equal(f.clients[0].prepare(f.target()),false,'first attack waits for shared ownership');f.report(0);
  f.deliver(0);f.report(0);
  assert.equal(f.clients[0].prepare(f.target()),false,'sender acknowledgement cannot stand in for priest');
@@ -64,7 +64,12 @@ for(const delay of [0,100,900])test(`retaliation after ${delay}ms projectile del
  assert.equal(f.stops(),0);
  assert.ok(f.contexts.every(c=>c.groupWalk.travel.phase==='travelling'));
  assert.equal(f.contexts[1].isAttackingPartyMember({...f.monster,id:'unrelated'}),true);
-});
+};
+scenarioTable('a retaliation after any projectile delay leaves an acknowledged convoy travelling',delay=>({f:fixture(),delay}),[
+ ['retaliation after 0ms projectile delay never freezes an acknowledged convoy',noFreeze,0],
+ ['retaliation after 100ms projectile delay never freezes an acknowledged convoy',noFreeze,100],
+ ['retaliation after 900ms projectile delay never freezes an acknowledged convoy',noFreeze,900],
+]);
 
 test('missing acknowledgement skips repeated optional shots without surrendering the travelling handle',()=>{
  const f=fixture();let shots=0;
@@ -215,7 +220,6 @@ const lateRefused=kind=>({f,p})=>{
  assert.equal(p.activeConvoy.epoch,1);
  if(kind==='attacker')assert.equal(p.activeConvoy.phase,'defending');
 };
-const {scenarioTable}=require('./fixtures/scenarios.cjs');
 scenarioTable('a passing classification that arrives after the stop is applied only to the stop it names',stopped,[
 ['late passing evidence rebuilds the latched owned route without a combat loot hold',({f,p})=>{
  const destination=p.activeConvoy.location;

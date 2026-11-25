@@ -5,6 +5,7 @@ const {drivePositions,positionsOf} = require('./helpers/targeting-module.cjs');
 const { createMovementContext } = require('./fixtures/movement-owner-callers.cjs');
 const { installCaveClient } = require('../../runtime/hunting/character/cave.ts');
 const test = require('node:test');
+const { scenarioTable } = require('./fixtures/scenarios.cjs');
 const {restoreGlobals} = require('./helpers/test-registry.cjs');
 const assert = require('node:assert/strict');
 const vm = require('node:vm');
@@ -85,7 +86,12 @@ test('fresh scoped committed cave enemy survives a blocked direct bearing for co
   assert.equal(c.dungeonCombatThreat(enemies.wall),false,'Initial travel handoff remains stricter');
 });
 
-for(const [reason,change] of [
+scenarioTable('a committed cave target behind a blocked bearing is still rejected when it stops being valid',()=>{
+  const {c,actor,enemies}=fixture();actor.cave.floor=0;c.can_move_to=()=>false;
+  const enemy=enemies.wall={...enemies.a,id:'wall',target:null,cave:{side:'enemy'}};
+  c.groupedCombat={caveScope:'run:0',members:['W','P'],committed:true,target:{id:'wall',state:'engaged'}};
+  return {c,enemy};
+},[
   ['stale group',c=>c.groupedFresh=()=>false],
   ['wrong cave scope',c=>c.groupedCombat.caveScope='different:0'],
   ['dead enemy',(c,e)=>e.dead=true],
@@ -94,12 +100,9 @@ for(const [reason,change] of [
   ['wrong map',(c,e)=>e.map='other'],
   ['wrong instance',(c,e)=>e.in='other'],
   ['ally',(c,e)=>e.cave.side='ally'],
-])test('committed cave target still rejects '+reason,()=>{
-  const {c,actor,enemies}=fixture();actor.cave.floor=0;c.can_move_to=()=>false;
-  const enemy=enemies.wall={...enemies.a,id:'wall',target:null,cave:{side:'enemy'}};
-  c.groupedCombat={caveScope:'run:0',members:['W','P'],committed:true,target:{id:'wall',state:'engaged'}};
+].map(([reason,change])=>['committed cave target still rejects '+reason,({c,enemy})=>{
   change(c,enemy);assert.equal(c.getDungeonTarget(),null);
-});
+}]));
 
 test('cave queue survives farming reset and acknowledges before saved leader initialization',()=>{
   const now=Date.now();

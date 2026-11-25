@@ -33,30 +33,44 @@ function fixture({state=null,stored={}}={}){
   recover:()=>h.production.recover(),upgrade:operation=>{f.operation=operation;return h.production.upgradeConfirmed(0,1);},
   loseReply:()=>f.lost=true});
 }
-test('lost completion reply retries its durable receipt without executing the game operation again',async()=>{
- const f=fixture();f.loseReply();let calls=0;
+// A commerce upgrade's power-loss journal: `body`'s production journal running at slot 0 for the
+// commerce order at sequence 4, which the coordinator admitted. `pending` adds the order's pending
+// upgrade at that sequence; `lucky` adds the lucky swap's journal, which the production journal names.
+function commerceRecovery(body,{pending=true,lucky}={}){
+ const stored={'party-production':{id:body.id,item:body.item,slots:[0],phase:'running',request:body,...(lucky?{lucky}:{}),commerce:{key:'commerce',sequence:4}}};
+ if(pending)stored.commerce={sequence:4,pendingUpgrade:{level:1}};
+ if(lucky)stored['party-lucky-upgrade']=lucky;
+ const f=fixture({stored});
+ beginProduction(f.state,body);
+ return f;
+}
+const {scenarioTable}=require('./fixtures/scenarios.cjs');
+// Rows whose run takes no parameter build their own fixture from the journal they plant.
+scenarioTable('the character production journal over productionHarness recovers each interrupted attempt once',fixture,[
+['lost completion reply retries its durable receipt without executing the game operation again',async f=>{
+ f.loseReply();let calls=0;
  await assert.rejects(f.upgrade(async()=>{calls++;f.character.items[0].level=1;}),/response lost/);
  assert.equal(f.state.autoUpgradeMarks.M['cap@+0'].quantity,1);assert.ok(f.journal());
  await f.recover();assert.equal(calls,1);assert.equal(f.state.autoUpgradeMarks.M['cap@+0'].quantity,1);assert.equal(f.journal(),null);
-});
-test('restart resolves an observed completed operation once before allowing more inventory work',async()=>{
+}],
+['restart resolves an observed completed operation once before allowing more inventory work',async()=>{
  const body={id:'restart',item:{name:'cap',level:0},kind:'upgrade'},f=fixture({stored:{'party-production':{id:body.id,item:body.item,slots:[0],phase:'running',request:body}}});
  beginProduction(f.state,body);f.character.items[0].level=1;
  await f.recover();assert.equal(f.state.autoUpgradeMarks.M['cap@+0'].quantity,1);await f.recover();assert.equal(f.state.autoUpgradeMarks.M['cap@+0'].quantity,1);
-});
-test('prepared attempt after restart is abandoned without decrementing or issuing an operation',async()=>{
+}],
+['prepared attempt after restart is abandoned without decrementing or issuing an operation',async()=>{
  const body={id:'prepared',item:{name:'cap',level:0},kind:'upgrade'},f=fixture({stored:{'party-production':{id:body.id,item:body.item,slots:[0],phase:'prepared',request:body}}});
  await f.recover();
  assert.equal(f.state.autoUpgradeMarks.M['cap@+0'].quantity,2);assert.equal(f.state.production.attempts.prepared,undefined);assert.equal(f.journal(),null);
-});
-test('a still-running game operation blocks recovery; an unrelated replacement item requires review',async()=>{
+}],
+['a still-running game operation blocks recovery; an unrelated replacement item requires review',async()=>{
  const body={id:'pending',item:{name:'cap',level:0},kind:'upgrade'},f=fixture({stored:{'party-production':{id:body.id,item:body.item,slots:[0],phase:'running',request:body}}});
  beginProduction(f.state,body);f.character.q={upgrade:{}};
  await assert.rejects(f.recover(),/waiting/);f.character.q={};f.character.items[0]={name:'sword',level:0};
  await assert.rejects(f.recover(),/needs review/);assert.equal(f.state.autoUpgradeMarks.M['cap@+0'].quantity,2);assert.ok(f.journal());
-});
+}],
 
-test('mismatched prepared journal recovers only after explicit unknown resolution of the orphan',async()=>{
+['mismatched prepared journal recovers only after explicit unknown resolution of the orphan',async()=>{
  const old={id:'orphan',item:{name:'cap',level:0},kind:'upgrade'};
  const body={id:'rejected-compound',item:{name:'strring',level:0},kind:'compound'};
  const f=fixture({stored:{'party-production':{id:body.id,item:body.item,slots:[0,1,2],phase:'prepared',request:body}}});
@@ -74,20 +88,20 @@ test('mismatched prepared journal recovers only after explicit unknown resolutio
  await f.recover();assert.equal(f.journal(),null);
  let calls=0;await f.upgrade(async()=>{calls++;f.character.items[0].level=1;});
  assert.equal(calls,1);
-});
+}],
 
-test('prepared admitted attempt finishes without replay, while unknown running identity stays blocked',async()=>{
+['prepared admitted attempt finishes without replay, while unknown running identity stays blocked',async()=>{
  const body={id:'admitted',item:{name:'cap',level:0},kind:'upgrade'},f=fixture({stored:{'party-production':{id:body.id,item:body.item,slots:[0],phase:'prepared',request:body}}});
  beginProduction(f.state,body);
  await f.recover();assert.equal(f.state.production.attempts.admitted.success,false);
  // A restart finds a running journal the coordinator never admitted.
  const missing={...body,id:'missing'},restarted=fixture({state:f.state,stored:{'party-production':{id:missing.id,item:missing.item,slots:[0],phase:'running',request:missing}}});
  await assert.rejects(restarted.recover(),/missing admitted attempt/);assert.ok(restarted.journal());
-});
+}],
 
-test('overlapping production and recovery cannot overwrite the active journal',async()=>{
+['overlapping production and recovery cannot overwrite the active journal',async f=>{
  // The running journal's checkpoint is held open, so the attempt stays in flight.
- const f=fixture(),answer=f.answer;let release,started;
+ const answer=f.answer;let release,started;
  const ready=new Promise(resolve=>started=resolve);
  f.answer=async(path,options)=>{if(options.body.action==='checkpoint'&&options.body.journal.phase==='running'){started();await new Promise(resolve=>release=resolve);}return answer(path,options);};
  const operation=f.upgrade(async()=>{f.character.items[0].level=1;});
@@ -96,18 +110,18 @@ test('overlapping production and recovery cannot overwrite the active journal',a
  await assert.rejects(f.recover(),/waiting for held:producing/);
  assert.equal(JSON.stringify(f.journal()),saved);
  release();await operation;assert.equal(f.journal(),null);
-});
+}],
 
-test('rejected admission clears only the unstarted journal and leaves the blocking attempt intact',async()=>{
- const f=fixture();beginProduction(f.state,{id:'orphan',item:{name:'cap',level:0},kind:'upgrade'});
+['rejected admission clears only the unstarted journal and leaves the blocking attempt intact',async f=>{
+ beginProduction(f.state,{id:'orphan',item:{name:'cap',level:0},kind:'upgrade'});
  // Simulate the orphan appearing after the read-only preflight, at admission.
  f.answer=async(_path,{body})=>{if(body.action==='pending')return {pending:[]};if(body.action==='inspect')return inspectProduction(f.state,body);try{return {attempt:beginProduction(f.state,body)}}catch(error){error.partyRequest={status:409};throw error}};
  await assert.rejects(f.upgrade(async()=>{throw Error('must not execute')}),/Production recovery pending/);
  assert.equal(f.journal(),null);assert.equal(f.state.production.attempts.orphan.completed,undefined);
-});
+}],
 
-test('error after coordinator admission retains the prepared journal until reconciliation',async()=>{
- const f=fixture(),original=f.answer;
+['error after coordinator admission retains the prepared journal until reconciliation',async f=>{
+ const original=f.answer;
  f.answer=async(path,{body})=>{
   if(body.action)return original(path,{body});
   beginProduction(f.state,body);const error=Error('storage failed after admission');error.partyRequest={status:409};throw error;
@@ -117,58 +131,46 @@ test('error after coordinator admission retains the prepared journal until recon
  f.answer=original;await f.recover();
  assert.equal(f.journal(),null);assert.equal(Object.values(f.state.production.attempts)[0].success,false);
  assert.equal(f.state.autoUpgradeMarks.M['cap@+0'].quantity,2);
-});
+}],
 
-test('failed admission inspection preserves the journal for a later recovery',async()=>{
- const f=fixture();
+['failed admission inspection preserves the journal for a later recovery',async f=>{
  f.answer=async(_path,{body})=>{if(body.action==='pending')return {pending:[]};const error=Error(body.action==='inspect'?'inspection unavailable':'admission rejected');error.partyRequest={status:409};throw error};
  await assert.rejects(f.upgrade(async()=>{}),/admission rejected/);
  assert.ok(f.journal());
-});
+}],
 
-test('commerce production failure with empty old slot retains journal and never writes a poof receipt',async()=>{
- const f=fixture({stored:{commerce:{sequence:4,pendingUpgrade:{level:1}}}});f.job={commerceJournalKey:'commerce',commerceSequence:4};
+['commerce production failure with empty old slot retains journal and never writes a poof receipt',async f=>{
+ f.job={commerceJournalKey:'commerce',commerceSequence:4};
  await assert.rejects(f.upgrade(async()=>{
   f.character.items[5]=f.character.items[0];f.character.items[0]=null;
   throw Error('item or scroll unavailable');
  }),/uncertain|unavailable/);
  assert.ok(f.journal());
  assert.equal(f.stored.commerce.pendingUpgrade.outcome,undefined);
-});
+},{stored:{commerce:{sequence:4,pendingUpgrade:{level:1}}}}],
 
-// A commerce upgrade's power-loss journal: `body`'s production journal running at slot 0 for the
-// commerce order at sequence 4, which the coordinator admitted. `pending` adds the order's pending
-// upgrade at that sequence; `lucky` adds the lucky swap's journal, which the production journal names.
-function commerceRecovery(body,{pending=true,lucky}={}){
- const stored={'party-production':{id:body.id,item:body.item,slots:[0],phase:'running',request:body,...(lucky?{lucky}:{}),commerce:{key:'commerce',sequence:4}}};
- if(pending)stored.commerce={sequence:4,pendingUpgrade:{level:1}};
- if(lucky)stored['party-lucky-upgrade']=lucky;
- const f=fixture({stored});
- beginProduction(f.state,body);
- return f;
-}
-test('commerce recovery cannot infer destruction from an empty original slot',async()=>{
+['commerce recovery cannot infer destruction from an empty original slot',async()=>{
  const body={id:'commerce-restart',item:{name:'cap',level:0},kind:'upgrade'};
  const f=commerceRecovery(body,{pending:false});
  f.character.items[0]=null;
  await assert.rejects(f.recover(),/needs review/);
  assert.ok(f.journal());
  assert.equal(f.state.production.attempts[body.id].completed,undefined);
-});
+}],
 
-test('commerce recovery locates one relocated survivor and preserves its receipt',async()=>{
+['commerce recovery locates one relocated survivor and preserves its receipt',async()=>{
  const body={id:'relocated',item:{name:'cap',level:0},kind:'upgrade'};
  const f=commerceRecovery(body);
  f.character.items[5]={name:'cap',level:1};f.character.items[0]=null;
  await f.recover();
  assert.deepEqual(f.stored.commerce.pendingUpgrade.outcome,{item:{name:'cap',level:1},destroyed:false});
-});
+}],
 
 // These rows plant power loss journals: the game's random burn cannot be timed to land at this
 // checkpoint. The failure modes: an empty source alone implies destruction, an unrelated or
 // duplicate survivor loses an item, null metadata fences an old receipt, and a confirmed empty
 // lucky result never settles and keeps commerce blocked.
-test('commerce recovery settles destruction only after empty lucky result reconciliation',async()=>{
+['commerce recovery settles destruction only after empty lucky result reconciliation',async()=>{
  const body={id:'burned',item:{name:'cap',level:0},kind:'upgrade'};
  const lucky={from:0,to:7,item:body.item,displaced:null,phase:'running'};
  const f=commerceRecovery(body,{lucky});
@@ -177,17 +179,17 @@ test('commerce recovery settles destruction only after empty lucky result reconc
  assert.deepEqual(f.stored.commerce.pendingUpgrade.outcome,{item:null,destroyed:true});
  assert.equal(f.state.production.attempts.burned.success,false);
  assert.equal(f.journal(),null);
-});
+}],
 
-for(const legacy of [false,true])test('commerce legacy null metadata matches relocated survivor '+legacy,async()=>{
+...[false,true].map(legacy=>['commerce legacy null metadata matches relocated survivor '+legacy,async()=>{
  const body={id:'null-survivor',item:{name:'cap',level:0,...(legacy?{p:null}:{})},kind:'upgrade'};
  const f=commerceRecovery(body);
  f.character.items[0]=null;f.character.items[5]={name:'cap',level:1,...(!legacy?{p:null}:{})};
  await f.recover();
  assert.deepEqual(f.stored.commerce.pendingUpgrade.outcome,{item:{name:'cap',level:1},destroyed:false});
-});
+}]),
 
-for(const variant of ['preparing','changed-identity','duplicate'])test('commerce destruction recovery preserves ambiguous evidence '+variant,async()=>{
+...['preparing','changed-identity','duplicate'].map(variant=>['commerce destruction recovery preserves ambiguous evidence '+variant,async()=>{
  const body={id:'ambiguous',item:{name:'cap',level:0,rid:'owned'},kind:'upgrade'};
  const lucky={from:0,to:7,item:body.item,displaced:null,phase:variant==='preparing'?'preparing':'running'};
  const f=commerceRecovery(body,{pending:false,lucky});
@@ -197,7 +199,8 @@ for(const variant of ['preparing','changed-identity','duplicate'])test('commerce
  await assert.rejects(f.recover(),/needs review/);
  assert.equal(f.state.production.attempts.ambiguous.completed,undefined);
  assert.ok(f.journal());
-});
+}]),
+]);
 // The production journal stays for recovery on the failure's code, never on its text. An
 // interrupted failure with any message keeps it; a codeless failure whose text says "recovery"
 // closes it.

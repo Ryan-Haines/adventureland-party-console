@@ -1,4 +1,5 @@
 const test = require('node:test'), assert = require('node:assert/strict');
+const {scenarioTable} = require('./fixtures/scenarios.cjs');
 const {reconcileCoordinatorCollectionMarks} = require('../../runtime/items/coordinator/fates.ts');
 // The mark pass reads the stored report (intake stores it before the pass) and the
 // fate rows' records; a fixture with none of a record starts it empty.
@@ -17,8 +18,7 @@ test('collection reconciliation writes both destinations and retains relocated m
   assert.equal(collect(state, 'M', status), false);
 });
 
-for (const destination of ['bank', 'merchant']) {
-  test(`manual ${destination} survives an opposing automatic rule across repeated inventory reports`, () => {
+scenarioTable('a manual nightberry mark against an opposing automatic rule holds across inventory reports', destination => {
     const field = destination === 'bank' ? 'marked' : 'merchantMarked';
     const other = destination === 'bank' ? 'merchantMarked' : 'marked';
     const mode = destination === 'bank' ? 'merchant' : 'bank';
@@ -28,6 +28,8 @@ for (const destination of ['bank', 'merchant']) {
     state[field].M = [manual];
     const status = {items: [{slot: 8, item: {...manual.item}},
       {slot: 10, item: {name: 'slice_nightberry', q: 2845}}]};
+    return {field, other, mode, manual, rules, state, status};
+  }, ['bank', 'merchant'].map(destination => [`manual ${destination} survives an opposing automatic rule across repeated inventory reports`, ({field, other, mode, manual, rules, state, status}) => {
     assert.equal(collect(state, 'M', status), true);
     assert.deepEqual(state[field].M, [manual]);
     assert.deepEqual(state[other].M, [{slot: 10, item: status.items[1].item, auto: true}]);
@@ -41,8 +43,7 @@ for (const destination of ['bank', 'merchant']) {
     state[field].M = [];
     assert.equal(collect(state, 'M', status), true);
     assert.deepEqual(state[other].M.map(mark => mark.slot).sort(), [10, 12]);
-  });
-}
+  }, destination]));
 
 test('legacy item-wide manual collection intent also overrides automatic destinations', () => {
   const manual = {name: 'slice_nightberry', q: 16};
@@ -102,12 +103,14 @@ test('equipped upgrade marks survive bag reconciliation and resolve only the com
   assert.equal(state.upgrades.W[0], newer);
 });
 
-for (const family of ['upgrade', 'compound']) test(`automatic merchant collects all copies alongside a finite ${family} rule`, () => {
+scenarioTable('an automatic merchant rule on twelve helmets collects every copy beside a finite production rule', family => {
   const items = Array.from({length:12}, (_,slot)=>({slot,item:{name:'helmet',level:0}}));
   const state = {merchantCharacter:'M',merchantRules:{version:1,owner:'M',members:['W','M'],conflicts:[]},marked:{},merchantMarked:{},
     autoItemMarks:{M:{'helmet@+0':'merchant'}},autoUpgradeMarks:{M:{}},autoCompounds:{M:[]}};
   if(family==='upgrade')state.autoUpgradeMarks.M['helmet@+0']={tiers:9,quantity:1};
   else state.autoCompounds.M=[{name:'helmet',targetTier:1,quantity:1}];
+  return {items,state};
+}, ['upgrade', 'compound'].map(family => [`automatic merchant collects all copies alongside a finite ${family} rule`, ({items,state}) => {
   collect(state,'W',{items});
   assert.equal(state.merchantMarked.W.length,12);
   assert.deepEqual(state.marked.W,[]);
@@ -115,4 +118,4 @@ for (const family of ['upgrade', 'compound']) test(`automatic merchant collects 
   assert.deepEqual(state.marked.W,[]);assert.deepEqual(state.merchantMarked.W,[]);
   state.autoItemMarks.M['helmet@+0']='merchant';state.autoNpcSales={'{"name":"helmet","level":0,"p":null,"stat_type":null}':true};
   collect(state,'W',{items});assert.deepEqual(state.merchantMarked.W,[]);
-});
+}, family]));

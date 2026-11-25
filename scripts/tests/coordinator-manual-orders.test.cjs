@@ -1,5 +1,6 @@
 const {withDoor}=require('./helpers/coordinator-merchant.cjs');
 const test=require('node:test'),assert=require('node:assert/strict');
+const {scenarioTable}=require('./fixtures/scenarios.cjs');
 const {createManualMarketOrderRoutes}=require('../../runtime/items/coordinator/routes/market.ts');
 function fixture(){
  const listing={key:'a',item:{name:'cap',level:8},price:500,quantity:2,seenAt:100000,serverRegion:'US',serverIdentifier:'II',seller:'Seller',buyer:'Buyer',slot:'trade1',rid:'rid'};
@@ -8,12 +9,12 @@ function fixture(){
  function send(route,body){const res={code:200,status(code){this.code=code;return this;},json(body){this.body=body;}};routes[route]({body},res);return res;}
  return {state,listing,calls,send};
 }
-for(const sale of [false,true])test('ALData '+(sale?'sale':'purchase')+' clamps quantity and carries snapshot metadata and home realm',()=>{
- const f=fixture();assert.equal(f.send(sale?'sale':'purchase',sale?{order:{key:'a'},sellQuantity:9}:{listing:{key:'a'},buyQuantity:9}).code,200);
+scenarioTable('an ALData order on one listing clamps its quantity and carries the snapshot',fixture,[false,true].map(sale=>['ALData '+(sale?'sale':'purchase')+' clamps quantity and carries snapshot metadata and home realm',f=>{
+ assert.equal(f.send(sale?'sale':'purchase',sale?{order:{key:'a'},sellQuantity:9}:{listing:{key:'a'},buyQuantity:9}).code,200);
  const job=f.state.merchantQueue[0];assert.equal(job.homeRealm,'SR_USI');assert.equal(job.priority,50);
  if(sale){assert.equal(job.sellQuantity,2);assert.equal(job.buyOrder,f.listing);}else{assert.equal(job.listings[0].buyQuantity,2);assert.equal(job.listings[0].item.level,8);assert.deepEqual(job.completedListingKeys,[]);}
  assert.deepEqual(f.calls.slice(-2),['persist','dispatch']);
-});
+}]));
 test('ALData invalid, missing and PVP selections leave the queue unchanged',()=>{
  const f=fixture();assert.equal(f.send('purchase',{listing:{key:'a'},buyQuantity:0}).code,400);
  assert.equal(f.send('purchase',{listing:{key:'missing'},buyQuantity:1}).code,409);

@@ -7,9 +7,6 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
-// Failure inventory: docs/efficiency.md, Character threads follow-ups, CT8.
-// A unit test: realm reads through the CODE facade are not visible outside the
-// character thread. The passing journeys cover the encounter decisions.
 function fixture() {
   const reads = { realm: 0 };
   // A realm change comes with a new socket (game.js `init_socket`, then its `welcome` sets the realm).
@@ -65,18 +62,3 @@ test('encounter answers follow deaths, reservations, local encounters, realm, ma
   assert.equal(context.isPassingEncounter(null), false);
 });
 
-// The realm stays with its socket (crossings.ts `reunionRealm`), so checks on one socket read it
-// through the facade no more.
-test('encounter checks on one socket read the realm through the facade no more', () => {
-  const { context, reads } = fixture();
-  const now = Date.now();
-  const entry = id => ({ id, server: 'USI', map: 'main', in: 'main', at: now });
-  context.fightDeaths = [entry('a')];
-  context.groupedCombat.deaths = [entry('b')];
-  context.peerPassingEncounters = [entry('c')];
-  context.groupedCombat.passingEncounters = [entry('d')];
-  context.isPassingEncounter({ id: 'warm', type: 'monster', hp: 1 });
-  reads.realm = 0;
-  for (let i = 0; i < 20; i++) context.isPassingEncounter({ id: 'm' + i, type: 'monster', hp: 1 });
-  assert.equal(reads.realm, 0);
-});

@@ -1,4 +1,5 @@
 const test=require('node:test');
+const {scenarioTable}=require('./fixtures/scenarios.cjs');
 const assert=require('node:assert/strict');
 const {run,runBundled,heartbeat}=require('./helpers/coordinator-host.cjs');
 
@@ -38,16 +39,15 @@ test('a start that throws fails naming failStart and its error',async()=>{
   error=>/failed to start caracAL/.test(error.message)&&/fixture workers/.test(error.message));
 });
 
-for (const [implementation, start] of [['source',run],['bundle',runBundled]]) {
-test(`${implementation} heartbeat saves cumulative slot evidence and returns it without marking it verified`,async()=>{
- const host=await start(1900000000000);
+scenarioTable('the source and the bundled coordinator answer heartbeats from one started host',(start,modules)=>start(1900000000000,modules),
+ [['source',run],['bundle',runBundled]].flatMap(([implementation,start])=>[
+[`${implementation} heartbeat saves cumulative slot evidence and returns it without marking it verified`,async host=>{
  const evidence={version:1,streamId:'client-a',slots:{0:{totalRolls:2,sumRolls:0.2,rollsAbove96_3:0,perfectRolls:1}}};
  heartbeat(host,{luckySlotTracking:structuredClone(evidence)});const response=heartbeat(host,{luckySlotTracking:structuredClone(evidence)});
  assert.deepEqual(JSON.parse(JSON.stringify(response.luckySlotTracking.P['client-a'])),evidence);
  assert.deepEqual(JSON.parse(JSON.stringify(response.luckyUpgradeSlots)),{});
-});
-test(`${implementation} coordinator handles first and repeated heartbeats without a current combat target`,async()=>{
- const host=await start(1900000000000);
+},start],
+[`${implementation} coordinator handles first and repeated heartbeats without a current combat target`,async host=>{
  assert.equal(host.handlers.has('/party-api/anniversary/blacklist'),false);
  // The harness starts with no saved settings, so the merchant job owner's first setup picks a
  // random standable Main point in -100..100 (stand.ts firstStandLocation) and the reply carries it.
@@ -60,24 +60,22 @@ test(`${implementation} coordinator handles first and repeated heartbeats withou
  response=heartbeat(host,{oneShotMonsterTypes:['goo'],oneShotEpoch:response.scatterEpoch});
  assert.equal(response.partyFarmingMonsterType,'goo');assert.ok(response.scatterMonsterTypes.includes('goo'));
  assert.deepEqual(stableResponse(response),{...contracts[1],consoleMaintenance:null,bankStaging:false,pontyWanted:false,eventsEnabled:true,luckyUpgradeSlots:{},luckySlotLocks:{},luckySlotResume:{},luckySlotTracking:{},luckySlotCharacterIds:{},huntCombatTarget:null,travelCombat:null,combatRecovery:null,combatResetByCharacter:{},eventTrip:null,partyTownCycleId:null,returnProgress:null,merchantVisibility:null,dailyDungeon:{owned:false,movementReady:true}});
-});
+},start],
 
-test(`${implementation} application propagates explicit no-merchant configuration into heartbeat responses`,async()=>{
- const host=await start(1900000000000,{
-  '../config':{characters:{},merchant:null,web_app:{party_dashboard:true,port:0}},
- });
+[`${implementation} application propagates explicit no-merchant configuration into heartbeat responses`,async host=>{
  const response=heartbeat(host);
  assert.equal(response.merchantCharacter,null);
  assert.equal(response.anniversary.merchant,null);
-});
+},start,{
+  '../config':{characters:{},merchant:null,web_app:{party_dashboard:true,port:0}},
+ }],
 
-test(`${implementation} preserves an explicit null server from the heartbeat sender`,async()=>{
- const host=await start(1900000000000);
+[`${implementation} preserves an explicit null server from the heartbeat sender`,async host=>{
  const response=heartbeat(host,{server:null});
  assert.equal(response.partyPositions[0].name,'P');
  assert.equal(response.partyPositions[0].server,null);
-});
-}
+},start],
+]));
 
 // The slot keeps a command
 // its delivery does not complete. Each of the merchant owner's job commands stays for its job's completion route, one
@@ -88,13 +86,13 @@ test(`${implementation} preserves an explicit null server from the heartbeat sen
  const { JOB_KINDS, jobCommandRetained } = require('../../runtime/merchant-jobs/rules.ts');
  const commands = [...new Set(Object.values(JOB_KINDS).flatMap(kind => kind.command ? [kind.command] : []))];
  test('DF5: the table names job commands to keep', () => assert.ok(commands.length > 0));
- for (const type of commands) test(`DF5: a retained job command ${type} survives its first delivery`, () => {
+ scenarioTable('DF5: each job command the kind table names stays past its first delivery', null, commands.map(type => [`DF5: a retained job command ${type} survives its first delivery`, () => {
   assert.equal(retained({ id: 7, type }, undefined, jobCommandRetained), true);
   assert.equal(retained({ id: 7, type }, 7, jobCommandRetained), true, 'a job command waits for its completion route, not the report');
- });
- for (const type of ['equip', 'unequip']) test(`DF40: an ${type} command stays until a report names its id`, () => {
+ }]));
+ scenarioTable('DF40: an equip or unequip command stays until a report names its id', null, ['equip', 'unequip'].map(type => [`DF40: an ${type} command stays until a report names its id`, () => {
   assert.equal(retained({ id: 12, type }, undefined, jobCommandRetained), true, 'no report yet');
   assert.equal(retained({ id: 12, type }, 11, jobCommandRetained), true, 'the report names an older command');
   assert.equal(retained({ id: 12, type }, 12, jobCommandRetained), false, 'the report names it');
- });
+ }]));
 }

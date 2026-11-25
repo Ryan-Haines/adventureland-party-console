@@ -1,6 +1,18 @@
 // The filter bar's row test, its order and its control. The control renders through
 // react-test-renderer with the ui kit's components as tags named after their export, the way the
 // dashboard's own slot tests draw a piece.
+//
+// Failure list (catalog/17-addon-folders.json links each id to its test):
+// MF1 an unset or empty value drops a row
+// MF2 a level or price bound keeps a row outside it, or two bounds do not combine
+// MF3 a tier keeps a row of another grade, or grade 0 reads as no bound
+// MF4 a price in the Market's shorthand or a level reads as another number
+// MF5 the server or grade choices repeat a value or lose the rows' order
+// MF6 Newest first misplaces an unseen row, or the order changes with it off
+// MF7 a Market tab misses the bar, or gets the wrong keep or order
+// MF8 typing leaves the tab value unset, or Clear leaves it set
+// MF9 the bar forgets the slot's value when the player comes back to the tab
+// MF10 a tab with no realm or grade on its rows draws a server or tier choice
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { keep, order, normalize, parsePrice, parseLevel, servers, grades } = require('../filters.ts');

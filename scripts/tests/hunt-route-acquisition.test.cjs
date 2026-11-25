@@ -16,8 +16,8 @@ function fixture(){
  return {state,body,options,original,encounter};
 }
 
-for (const phase of ['assemble','shared-prepare','travel']) test('Hunt route rejects early handoff during '+phase,()=>{
- const r=fixture();r.state.activeConvoy.phase=phase;
+const {scenarioTable}=require('./fixtures/scenarios.cjs');
+const rejectsEarly=r=>{
  for (const name of ['A','B']) {
   r.body.character=name;
   assert.equal(engageHunt(r.state,r.body,r.options,legacy,2000),false);
@@ -26,7 +26,12 @@ for (const phase of ['assemble','shared-prepare','travel']) test('Hunt route rej
   assert.equal(r.state.monsterHunt.missions[0].destination,r.original);
   assert.ok(r.state.commands[name]);
  }
-});
+};
+scenarioTable('a Hunt route rejects an early handoff in each walk phase before arrival',phase=>{const r=fixture();r.state.activeConvoy.phase=phase;return r;},[
+ ['Hunt route rejects early handoff during assemble',rejectsEarly,'assemble'],
+ ['Hunt route rejects early handoff during shared-prepare',rejectsEarly,'shared-prepare'],
+ ['Hunt route rejects early handoff during travel',rejectsEarly,'travel'],
+]);
 test('replacement commands disable legacy early handoff and retain the attack-while-moving target',()=>{
  const r=fixture();propagateHuntTarget(r.state);
  assert.equal(r.state.commands.B.huntTarget,'bee');assert.equal(r.state.commands.B.combatHandoffAllowed,false);

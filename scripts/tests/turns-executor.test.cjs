@@ -18,6 +18,12 @@ function attackWorld({frequency=1,own=[]}={}){
 test('TC32: an attack accepted before a target reset settles nothing of the new flight',()=>{
   const w=attackWorld();
   try{
+    // TC42: a ready attack the MP table refuses sends skills.dropped naming why on the same pass.
+    global.character.mp=5;
+    w.turns.pass('tick');
+    assert.deepEqual(w.sent,[]);
+    assert.deepEqual(w.notices.filter(n=>n.hook==='skills.dropped').map(n=>[n.skill,n.reason]),[['attack','insufficient MP']]);
+    global.character.mp=1000;
     w.turns.pass('tick');
     assert.deepEqual(w.sent.map(s=>s[1].id),['A']);
     // A target reset (runner.ts resetTargeting) moves the epoch; the next pass sends at the new target.
@@ -293,7 +299,10 @@ test('SV16: a regeneration accepted before next_skill moves holds the potion fam
   const skills={use_hp:{cooldown_group:'potion',cooldown:2000},use_mp:{cooldown_group:'potion',share:'use_hp',cooldown:2000},
     regen_hp:{cooldown_group:'potion',share:'use_hp',cooldown_multiplier:2},regen_mp:{cooldown_group:'potion',share:'use_mp',cooldown_multiplier:2}};
   const actor={name:'W',ctype:'warrior',hp:999,max_hp:1000,mp:900,max_mp:1000,mp_cost:10,frequency:1,rip:false,items:[],level:80};
-  const w=turnsWorld({actor,skills,asks:()=>[{skill,rank:'survival',category:'survival',reason:'regeneration'}]});
+  // `both` opens survival's two potion family needs at once, regeneration asked first.
+  let both=false;
+  const w=turnsWorld({actor,skills,asks:()=>both?[{skill:'regen_hp',rank:'maintenance',category:'maintenance',reason:'regeneration'},
+    {skill:'use_hp',rank:'survival',category:'survival',reason:'class potion'}]:[{skill,rank:'survival',category:'survival',reason:'regeneration'}]});
   try{
     global.parent.next_skill={attack:0};
     w.turns.pass('tick');
@@ -304,6 +313,11 @@ test('SV16: a regeneration accepted before next_skill moves holds the potion fam
     assert.deepEqual(w.sent.map(s=>s[1]),['regen_mp'],'regen_hp waits the shared cooldown');
     w.advance(4100);w.turns.pass('tick');
     assert.deepEqual(w.sent.map(s=>s[1]),['regen_mp','regen_hp'],'and goes once it has passed');
+    // TC10 and SV6: the family sends its highest request, so the potion at `survival` goes before
+    // regeneration at `maintenance` (runtime/protocol/ranks.ts SPEND_RANKS).
+    w.reply({used:'hp',success:true,response:'data',place:'use'});
+    both=true;w.advance(4100);w.turns.pass('tick');
+    assert.deepEqual(w.sent.map(s=>s[1]),['regen_mp','regen_hp','use_hp'],'the potion goes first with both needs open');
   }finally{w.restore();}
 });
 

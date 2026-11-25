@@ -1,15 +1,16 @@
 const {withDoor}=require('./helpers/coordinator-merchant.cjs');
 const test=require('node:test');
+const {scenarioTable}=require('./fixtures/scenarios.cjs');
 const assert=require('node:assert/strict');
 const {estimateUpgradeBatch,ESTIMATE_YIELD_ROLLS}=require('../../runtime/items/rules.ts');
 const {createMerchantOrderRoute}=require('../../runtime/items/coordinator/routes/production.ts');
 // Numeric references use the native server grace expressions and native design/upgrades tables, independently of the shared estimator.
 const fixtures=require('./fixtures/upgrade-estimates.json');
-for(const example of fixtures)test(`upgrade estimate preserves deterministic budget for ${example.quantity} items to +${example.target}`,async()=>{
+scenarioTable('an upgrade estimate for each reference batch matches its recorded budget',null,fixtures.map(example=>[`upgrade estimate preserves deterministic budget for ${example.quantity} items to +${example.target}`,async()=>{
  const [result]=await estimateUpgradeBatch([{choice:example.choice,quantity:example.quantity,target:example.target}],undefined,()=>new Promise(resolve=>setImmediate(resolve)));
  assert.equal(result.status,"available");
  assert.deepEqual({attempts:result.attempts,budget:result.gold,scrolls:result.scrolls},example.result);
-});
+}]));
 // The estimate's caps count through the caller's `cut`: a batch counts its event loop yields once, and
 // the cached repeat of that batch runs no roll and counts nothing.
 test('an upgrade estimate counts its yields under ESTIMATE_YIELD_ROLLS once per batch',async()=>{

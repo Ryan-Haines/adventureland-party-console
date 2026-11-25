@@ -96,6 +96,9 @@ test('the Hunt pending flag follows the anniversary lead and skips the merchant'
   assert.equal(attend.huntPending(), true, 'inside the lead');
   character.ctype = 'merchant'; assert.equal(attend.huntPending(), false, 'the merchant runs no Hunt');
   character.ctype = 'warrior'; now -= 1; assert.equal(attend.huntPending(), false, 'before the lead');
+  // EV2 (A12): a staged walk event inside its lead leaves the Hunt running.
+  delete feed.anniversary; feed.schedule = {events: [{event: 'mrgreen', status: 'scheduled', at: now + lead / 2}]};
+  assert.equal(attend.huntPending(), false, 'a staged event inside its lead');
 });
 
 // The staging report reads K1 `staged` and the group's lead: a selected staged event

@@ -30,11 +30,7 @@ test('a merchant closes its stand before the kiss under the merchant call the ga
   assert.deepEqual(asked.slice(from).filter(q => q.method === 'merchant' || q.method === 'close_stand').map(q => [q.method, q.data]), [['merchant', { close: 1 }]]);
 });
 
-// EV20: an abort retires the pending move or kiss with no late claim or kiss.
-for (const pending of ['move', 'skill']) test('abort retires a pending ' + pending + ' without late claims or kisses', async () => {
-  let release;
-  const wait = new Promise(resolve => { release = resolve; });
-  const t = fixture(pending === 'move' ? { approach: true, move: () => wait } : { skill: () => wait, newBuff: true });
+const abortRetiresPending = async ({ t, release }) => {
   const run = t.run(); await settle();
   t.plan.abortedRounds.round = { reason: 'target-missing' };
   await t.anniversary.abort();
@@ -43,7 +39,17 @@ for (const pending of ['move', 'skill']) test('abort retires a pending ' + pendi
   assert.deepEqual(t.calls.slice(count).filter(c => c[0] === 'kiss' || c[0] === '/anniversary/claim'), []);
   assert.equal(t.calls.some(c => c[0] === '/anniversary/claim'), false);
   assert.equal(t.anniversary.busy(), false);
-});
+};
+// EV20: an abort retires the pending move or kiss with no late claim or kiss.
+scenarioTable('an anniversary abort during a held move or kiss leaves no late claim or kiss (EV20)', pending => {
+  let release;
+  const wait = new Promise(resolve => { release = resolve; });
+  const t = fixture(pending === 'move' ? { approach: true, move: () => wait } : { skill: () => wait, newBuff: true });
+  return { t, release };
+}, [
+  ['abort retires a pending move without late claims or kisses', abortRetiresPending, 'move'],
+  ['abort retires a pending skill without late claims or kisses', abortRetiresPending, 'skill'],
+]);
 
 scenarioTable('the anniversary approach and kiss end in one terminal report and keep the featured hold (MOV-055)', () => null, [
  ['a kiss with no reply and no new buff aborts with kiss-timeout; an old buff does not conceal it', async () => {

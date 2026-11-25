@@ -8,6 +8,8 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { check, listedRows, readTree, realmWrites, scanFile, scanTree, scopeFactReads, unscopedLoops } from "./owner-check.mjs";
 import { addonFindings, testImports } from "../runtime/hooks/rules/uses.mts";
+import { createRequire } from "node:module";
+const { scenarioTable } = createRequire(import.meta.url)("../scripts/tests/fixtures/scenarios.cjs");
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const readJson = (name) => JSON.parse(readFileSync(path.join(root, "tools/owner-check", name), "utf8"));
@@ -87,15 +89,14 @@ const fixtures = [
     { "characters/shared.js": (text) => text.replace("smart_move = bankOps.bankSortMove, stop = movement.stop", "smart_move = bankOps.bankSortMove, stop = parent.stop") },
     /smart_move and stop are no longer bound to the movement owner/],
 ];
-for (const [name, edits, expected] of fixtures) {
-  test(`fixture: ${name}`, () => {
-    const findings = ownerFindings(run(plant(edits)));
+scenarioTable("each planted fixture edit of the working tree gives its ownership finding", (edits) => plant(edits),
+  fixtures.map(([name, edits, expected]) => [`fixture: ${name}`, (sources) => {
+    const findings = ownerFindings(run(sources));
     assert.ok(findings.some((f) => expected.test(f)), findings.join("\n"));
     // Losing the binding makes every shared.js smart_move and stop a finding too; every other
     // fixture plants exactly one.
     if (!/no longer bound/.test(name)) assert.equal(findings.length, 1, findings.join("\n"));
-  });
-}
+  }, edits]));
 
 // A held block declares one setting and one record, and the tree declares neither, so every
 // finding is the planted one.
@@ -134,13 +135,13 @@ const writeForms = [
   ["Object.assign into the setting", "Object.assign(state.plantedChoice, { on: false });", "Object.assign into it"],
   ["a mutating call on the setting", "party.plantedChoice.list.push(key);", "calls push"],
 ];
-for (const [name, write, form] of writeForms) {
-  test(`${name} fails outside the settings module`, () => {
-    const file = "runtime/coordinator/merchant/planted-form.ts", base = write.match(/(state|party)\./)[1];
-    const findings = run(plant({ "runtime/settings/held/planted.ts": plantedHeld, [file]: `export function plantedForm(${base}: any, key: string): void {\n  ${write}\n}\n` }));
+scenarioTable("each write form on a held setting fails outside the settings module", (write) => {
+  const file = "runtime/coordinator/merchant/planted-form.ts", base = write.match(/(state|party)\./)[1];
+  return { file, base, sources: plant({ "runtime/settings/held/planted.ts": plantedHeld, [file]: `export function plantedForm(${base}: any, key: string): void {\n  ${write}\n}\n` }) };
+}, writeForms.map(([name, write, form]) => [`${name} fails outside the settings module`, ({ file, base, sources }) => {
+    const findings = run(sources);
     assert.deepEqual(findings, [writeFinding(file, `${base}.plantedChoice (${form})`, "plantedForm")]);
-  });
-}
+  }, write]));
 
 test("reads and copies of a setting pass", () => {
   const findings = run(plant({
@@ -267,13 +268,12 @@ const budgetRows = [
       "runtime/settings/coordinator/planted-declarations.ts": "import { plantedFields } from '../../characters/call-budget-fields.ts';\nexport const planted = [plantedFields];\n" },
     ["runtime/settings/coordinator/planted-declarations.ts:1: owner 11 imports runtime/characters/call-budget-fields.ts, owner 09's own code, outside a hook or protocol module"]],
 ];
-for (const [name, files, expected, mapped = false] of budgetRows) {
-  test(`call budget: ${name}`, () => {
+scenarioTable("each planted call budget file gives the call budget findings it names", (files, mapped) => ({ files, mapped }),
+  budgetRows.map(([name, files, expected, mapped = false]) => [`call budget: ${name}`, ({ files, mapped }) => {
     const findings = budgetRun(files, mapped);
     assert.equal(findings.length, expected.length, findings.join("\n"));
     expected.forEach((line, i) => typeof line === "string" ? assert.equal(findings[i], line) : assert.match(findings[i], line));
-  });
-}
+  }, files, mapped]));
 
 // Targeting reads the events, hunting and lifecycle owners' facts only through its ports and view.
 test("a direct read of a port fact in targeting's code fails", () => {

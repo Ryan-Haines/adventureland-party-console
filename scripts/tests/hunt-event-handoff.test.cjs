@@ -20,15 +20,21 @@ function deathFixture() {
   return {state, trip, hunt, status};
 }
 
-for (const [phase, at] of [['departure',21000],['combat',30000],['return',49000]]) {
-  test(`Ice Golem ${phase} death is consumed without blacklisting or recounting`, () => {
-    const f = deathFixture();
-    f.status.lastDeath.at = at; f.status.seenAt = at;
-    assert.equal(exempt(f.state, 'W', f.status, at), true);
-    endHuntEventTrip(f.state, 'W', 'icegolem', 50000);
-    assert.equal(exempt(f.state, 'W', f.status, at), true);
-  });
-}
+const {scenarioTable} = require('./fixtures/scenarios.cjs');
+const consumedDeath = ({f, at}) => {
+  assert.equal(exempt(f.state, 'W', f.status, at), true);
+  endHuntEventTrip(f.state, 'W', 'icegolem', 50000);
+  assert.equal(exempt(f.state, 'W', f.status, at), true);
+};
+scenarioTable('an Ice Golem death in any trip phase is consumed without blacklisting or recounting', at => {
+  const f = deathFixture();
+  f.status.lastDeath.at = at; f.status.seenAt = at;
+  return {f, at};
+}, [
+  ['Ice Golem departure death is consumed without blacklisting or recounting', consumedDeath, 21000],
+  ['Ice Golem combat death is consumed without blacklisting or recounting', consumedDeath, 30000],
+  ['Ice Golem return death is consumed without blacklisting or recounting', consumedDeath, 49000],
+]);
 
 test('late event death stays exempt after return; a new outside death counts even with a stale client trip', () => {
   const f = deathFixture();
@@ -117,11 +123,15 @@ test('unseen pre-event primary retires; yellow alternative becomes primary and c
   assert.equal(f.state.combatLogs.W.filter(e=>e.message.includes('retired')).length,1);
 });
 
-for(const evidence of ['sightings','threats'])test(`event handoff preserves a pre-event target with fresh ${evidence}`,()=>{
+const preservesTarget=f=>assert.equal(f.run().target.id,'old');
+scenarioTable('the event handoff keeps a pre-event target that fresh member reports still show',evidence=>{
   const f=groupFixture();f.advance(50000);
   for(const m of f.members){m.status.groupedCombat.sightings=[];m.status.groupedCombat[evidence]=[f.target];}
-  assert.equal(f.run().target.id,'old');
-});
+  return f;
+},[
+  ['event handoff preserves a pre-event target with fresh sightings',preservesTarget,'sightings'],
+  ['event handoff preserves a pre-event target with fresh threats',preservesTarget,'threats'],
+]);
 
 test('stale member reports delay retirement; ordinary disappearance outside events retains its fight',()=>{
   const f=groupFixture();f.advance(50000);f.members[1].status.seenAt=45000;

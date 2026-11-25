@@ -75,6 +75,12 @@ test('the pull mover: the tank waits outside the pack, the party beside it, the 
   assert.equal(chased.answer.kind,'step');assert.equal(chased.answer.target,'a');assert.ok(chased.answer.to.x<350);
   // In a fight everyone else is the console's.
   assert.equal(t.pullMove(picks(),view('P',{mobs:[mob('a',30,0,{target:'R'})]})).answer,undefined);
+  // The tank too, inside the pack and in danger: the add-on steps no tank in contact, so no step
+  // of its own has to outlast the tank's HP (02 S14.1, T1), and the console's kiting keeps the tank.
+  const attacked=view('T',{mobs:[mob('a',405,0,{target:'T'}),...pack.slice(1)],heroes:{T:hero('T',410,0,{hp:100})}});
+  assert.deepEqual(t.pullMove(picks(),attacked),{line:'Fighting the pull'});
+  // With Pull off the mover answers nobody.
+  assert.equal(t.pullMove(picks({pull:false}),view('T',{mobs:pack,heroes:{T:hero('T',410,0)}})).answer,undefined);
   // A dead puller ends the pulls with the reason.
   const down=t.pullMove(picks(),view('T',{mobs:pack,heroes:{R:hero('R',20,0,{rip:true})}}));
   assert.equal(down.answer,undefined);assert.match(down.line,/R is down/);

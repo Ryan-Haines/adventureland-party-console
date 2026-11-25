@@ -1,4 +1,5 @@
 const test = require('node:test');
+const { scenarioTable } = require('./fixtures/scenarios.cjs');
 const assert = require('node:assert/strict');
 const { EventEmitter } = require('node:events');
 const { requestCave } = require('../../runtime/hunting/character/cave.ts');
@@ -33,17 +34,21 @@ test('cave query sends correlated interaction and accepts only matching reply', 
 });
 // callMargin (bigcheck/bounds.md): a lost reply queues its firing for the next report; a disconnect
 // is no bound firing.
-for (const reason of ['timeout', 'disconnected']) test('cave query cleans up on ' + reason, async () => {
+const cleansUp = reason => async f => {
   const { boundsPending, boundsSent } = require('../../runtime/status/api.ts');
   boundsSent(boundsPending().length);
-  const f = fixture(); const result = requestCave(f.frame, 'q', 'info', {}, 1, f.timers); await null;
+  const result = requestCave(f.frame, 'q', 'info', {}, 1, f.timers); await null;
   const rejection = assert.rejects(result, error => error.reason === reason);
   if (reason === 'timeout') f.expire(); else f.socket.emit('disconnect');
   await rejection;
   assert.deepEqual(boundsPending().map(f => [f.bound, f.owner]), reason === 'timeout' ? [['callMargin', '07']] : []);
   assert.equal(f.socket.listenerCount('game_response'), 0);
   assert.equal(f.socket.listenerCount('disconnect'), 0);
-});
+};
+scenarioTable('a Cave query over one socket removes its listeners when the reply never comes', fixture, [
+  ['cave query cleans up on timeout', cleansUp('timeout')],
+  ['cave query cleans up on disconnected', cleansUp('disconnected')],
+]);
 test('server ineligibility and failures are preserved', async () => {
   const f = fixture();
   f.socket.on('interaction', data => f.socket.emit('game_response', { request_id: data.request_id, place: 'interaction', visit: { available: false } }));
@@ -109,7 +114,6 @@ test('browser timers are invoked with their native global receiver', async () =>
 // `cave_paused` refusal is journaled `failed`, and the same stairs go again on the first report where
 // the party can move. One dungeon runtime over a floor with one stairs door down.
 const { installDungeonRuntime } = require('../../runtime/hunting/character/cave.ts');
-const { scenarioTable } = require('./fixtures/scenarios.cjs');
 function stairsRuntime() {
   let now = 100000, saved = null, refuse = null;
   const sent = [];

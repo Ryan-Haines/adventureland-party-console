@@ -14,12 +14,19 @@ test('a new turn-in resets retry and Town fallback state',()=>{
   const h={stage:'farming',participants:['A'],owner:'A',turnIn:{owner:'A',phase:'complete'},returnRetries:3,returnDisableTown:true};
   policy.beginTurnIn(h,'A');assert.equal(h.returnDisableTown,false);
 });
-for(const kind of ['handoff','order-handoff'])test('late '+kind+' completion cannot erase a newer convoy command',()=>{
+const {scenarioTable}=require('./fixtures/scenarios.cjs');
+const keepsNewer=({party,newer,handler})=>{
+  handler({body:{character:'A',jobId:'job',commandId:12}},{json(){},status(){return this;}});
+  assert.equal(party.commands.A,newer);
+};
+scenarioTable('a late merchant completion route leaves a newer convoy command in place',kind=>{
   const {createMerchantHandoffRoutes}=require('../../runtime/merchant-jobs/coordinator/routes.ts');
   const newer={id:99,type:'party-monster-travel',convoyId:'return'};
   const party={merchantCurrent:{id:'job',target:'A'},commands:{A:newer}};
   const routes=createMerchantHandoffRoutes(party,{offline:()=>false,persist(){}});
   const handler=kind==='handoff'?routes.complete:routes.orderComplete;
-  handler({body:{character:'A',jobId:'job',commandId:12}},{json(){},status(){return this;}});
-  assert.equal(party.commands.A,newer);
-});
+  return {party,newer,handler};
+},[
+  ['late handoff completion cannot erase a newer convoy command',keepsNewer,'handoff'],
+  ['late order-handoff completion cannot erase a newer convoy command',keepsNewer,'order-handoff'],
+]);

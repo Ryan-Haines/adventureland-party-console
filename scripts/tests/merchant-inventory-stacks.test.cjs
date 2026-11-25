@@ -8,13 +8,28 @@ test('plans Nightberry 434 followed by Tiny Ruby 44 without moving unrelated slo
  const s=status(),p={merchantCharacter:'M'};let m=plan(p,s);assert.deepEqual([m.to,m.from],[10,15]);
  s.items=s.items.filter(e=>e.slot!==15);s.items[0].item.q=434;m=plan(p,s);assert.deepEqual([m.to,m.from],[18,28]);
 });
-for(const field of ['marked','merchantMarked','upgrades','compounds','withdrawals','statScrolls'])test(field+' reservations preserve separately marked stacks',()=>{
+const {scenarioTable}=require('./fixtures/scenarios.cjs');
+const mergesOther=({s,p})=>assert.equal(plan(p,s).source.name,'gem1');
+scenarioTable('a stack a per-character reservation marks stays apart while the other stack merges',field=>{
  const s=status(),p={merchantCharacter:'M',[field]:{M:[{slot:15,item:s.items[1].item}]}};
- assert.equal(plan(p,s).source.name,'gem1');
-});
-for(const field of ['standListings','npcSaleMarks','merchantDeliveries','merchantCargo','merchantQueue'])test(field+' prevents consolidation of promised items',()=>{
- const s=status(),p={merchantCharacter:'M',[field]:[{item:s.items[1].item}]};assert.equal(plan(p,s).source.name,'gem1');
-});
+ return {s,p};
+},[
+ ['marked reservations preserve separately marked stacks',mergesOther,'marked'],
+ ['merchantMarked reservations preserve separately marked stacks',mergesOther,'merchantMarked'],
+ ['upgrades reservations preserve separately marked stacks',mergesOther,'upgrades'],
+ ['compounds reservations preserve separately marked stacks',mergesOther,'compounds'],
+ ['withdrawals reservations preserve separately marked stacks',mergesOther,'withdrawals'],
+ ['statScrolls reservations preserve separately marked stacks',mergesOther,'statScrolls'],
+]);
+scenarioTable('a stack a party-wide promise names stays apart while the other stack merges',field=>{
+ const s=status(),p={merchantCharacter:'M',[field]:[{item:s.items[1].item}]};return {s,p};
+},[
+ ['standListings prevents consolidation of promised items',mergesOther,'standListings'],
+ ['npcSaleMarks prevents consolidation of promised items',mergesOther,'npcSaleMarks'],
+ ['merchantDeliveries prevents consolidation of promised items',mergesOther,'merchantDeliveries'],
+ ['merchantCargo prevents consolidation of promised items',mergesOther,'merchantCargo'],
+ ['merchantQueue prevents consolidation of promised items',mergesOther,'merchantQueue'],
+]);
 // The game's can_stack (game) refuses a locked copy, a different title, a PvP copy beside a plain
 // one and a cxjar with other data.
 test('stack limits, locks and different properties do not merge',()=>{

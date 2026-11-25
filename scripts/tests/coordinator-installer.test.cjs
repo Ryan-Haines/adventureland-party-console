@@ -4,8 +4,11 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const vm = require('node:vm'), {EventEmitter} = require('node:events');
 const {spawnSync} = require('node:child_process');
+const {scenarioTable} = require('./fixtures/scenarios.cjs');
 
-for (const legacy of [false, true]) test(`installer replaces ${legacy ? 'legacy host' : 'current launcher'} and safely repeats`, async () => {
+// Each row builds and removes its own install target inside its try, so the table builds nothing.
+scenarioTable('the installer over a copied caracAL install replaces its coordinator and repeats safely', null,
+  [false, true].map(legacy => [`installer replaces ${legacy ? 'legacy host' : 'current launcher'} and safely repeats`, async () => {
   const root = path.resolve(__dirname, '../..');
   const fixtureRoot = path.join(root, '.build');
   const target = await fs.mkdtemp(path.join(fixtureRoot, 'coordinator-installer-test-'));
@@ -71,7 +74,7 @@ for (const legacy of [false, true]) test(`installer replaces ${legacy ? 'legacy 
       'isolated installation must not change the live caracAL checkout');
   }
   } finally { await fs.rm(target, {recursive: true, force: true}); }
-});
+}]));
 
 // The runner transform (tools/caracal/upgrade-runner.mts) on caracAL's own runner at the revision
 // setup.mts pins, read from the caracAL checkout's history, so every anchor the transform replaces

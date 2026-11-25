@@ -18,8 +18,9 @@ function fixture(completed=false,event=false){
  const mode=createHuntMode(state,{write:require('./helpers/settings-writer.cjs').settingsWriter(state).write,entry});
  return {state,quest,settings,mode};
 }
-for(const completed of [false,true])for(const event of [false,true])test(`off/on resets runtime while retaining live quests: completed=${completed}, event=${event}`,()=>{
- const f=fixture(completed,event);f.mode.select({combatMode:'auto',targetMode:'farming'},null,undefined,false);
+const {scenarioTable}=require('./fixtures/scenarios.cjs');
+const offOn=({f,event})=>{
+ f.mode.select({combatMode:'auto',targetMode:'farming'},null,undefined,false);
  assert.equal(f.state.monsterHunt,null);assert.equal(f.state.activeConvoy,null);assert.equal(f.state.commands.L,undefined);
  assert.equal(f.state.commands.M.purpose,'merchant');assert.deepEqual(f.state.huntBlacklist,{booboo:{deaths:3}});assert.deepEqual(f.state.huntFailures,{booboo:{deaths:3}});
  // The Hunt writes nothing into the farm-area record (01 step 7): farming drops its pending move when its task is suspended.
@@ -27,7 +28,13 @@ for(const completed of [false,true])for(const event of [false,true])test(`off/on
  assert.equal(f.state.statuses.L.monsterHunt,f.quest);assert.equal(f.state.huntSettings,f.settings);
  f.mode.select({targetMode:'hunt'},null,undefined,false);assert.equal(f.state.monsterHunt.cycleId,'new1');assert.equal(f.state.monsterHunt.routeRecovery,undefined);
  assert.equal(f.state.statuses.L.monsterHunt,f.quest);assert.equal(!!f.state.eventReturn,event);
-});
+};
+scenarioTable('Hunt off then on resets its runtime and keeps live quests, with a completed quest and an event return or not',(completed,event)=>({f:fixture(completed,event),event}),[
+ ['off/on resets runtime while retaining live quests: completed=false, event=false',offOn,false,false],
+ ['off/on resets runtime while retaining live quests: completed=false, event=true',offOn,false,true],
+ ['off/on resets runtime while retaining live quests: completed=true, event=false',offOn,true,false],
+ ['off/on resets runtime while retaining live quests: completed=true, event=true',offOn,true,true],
+]);
 test('Hunt child recovery convoy clears without deleting another owners command',()=>{
  const f=fixture();f.state.activeConvoy={id:'child',purpose:'shared-walk',walkingActivity:'farm-recovery',participants:['L','M']};
  f.state.commands.L={convoyId:'child'};f.state.commands.M={convoyId:'other',purpose:'merchant'};

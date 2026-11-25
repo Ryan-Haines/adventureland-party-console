@@ -1,5 +1,6 @@
 const {withDoor}=require('./helpers/coordinator-merchant.cjs');
 const test=require('node:test'),assert=require('node:assert/strict');
+const {scenarioTable}=require('./fixtures/scenarios.cjs');
 const {createSendMailRoute}=require('../../runtime/items/coordinator/routes/mail.ts');
 const {createMailApi}=require('../../runtime/items/coordinator/mail.ts');
 const {createMailInboxRoutes}=require('../../runtime/items/coordinator/routes/mail.ts');
@@ -17,12 +18,12 @@ test('mail staging appends its attachment without altering unrelated withdrawal 
  assert.deepEqual(existing,{pack:'items0'});assert.equal(requests.length,2);
  assert.equal(requests[1].mailJobId,f.state.merchantQueue[0].id);
 });
-for(const pack of ['merchant','items0','bankboi:B'])test('mail validates and stages attachment from '+pack,()=>{
- const f=fixture();assert.equal(f.send({source:{pack,slot:2,item:f.item},quantity:3}).code,200);
+scenarioTable('a mail from one stocked party stages its attachment from each source pack',fixture,['merchant','items0','bankboi:B'].map(pack=>['mail validates and stages attachment from '+pack,f=>{
+ assert.equal(f.send({source:{pack,slot:2,item:f.item},quantity:3}).code,200);
  const job=f.state.merchantQueue[0];assert.equal(job.mail.quantity,3);assert.equal(job.mail.recipient,'P');assert.equal(job.mail.source.pack,pack);
  assert.equal(job.blockedOnBankboi,pack.startsWith('bankboi:'));
  if(job.blockedOnBankboi){assert.equal(f.state.withdrawals.M[0].mailJobId,job.id);assert.ok(f.calls.indexOf('bank')<f.calls.indexOf('dispatch'));}
-});
+}]));
 test('mail rejects blank quantities, stale attachments and invalid envelopes without enqueueing',()=>{
  const f=fixture(),source={pack:'merchant',slot:2,item:f.item};
  for(const quantity of ['',undefined,0,11,1.5])assert.equal(f.send({source,quantity}).code,400);

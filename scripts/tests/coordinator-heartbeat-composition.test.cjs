@@ -1,4 +1,5 @@
 const test=require('node:test'),assert=require('node:assert/strict');
+const {scenarioTable}=require('./fixtures/scenarios.cjs');
 const {createHeartbeatReply,assemble}=require('../../runtime/status/coordinator/reply.ts');
 const {settingsWriter}=require('./helpers/settings-writer.cjs');
 // Table R's movement sections are movement's `movement.reply`, which core:movement registers in the real
@@ -88,13 +89,13 @@ test('the heartbeat retires a moved-on Town member, drops an orphaned Town comma
   const reads = [], sections = Object.fromEntries(TABLE_R.map(row => [row.section, name => { reads.push(row.section); return { [`${row.section}:${name}`]: true }; }]));
   return { reply: assemble(sections, 'W', mode), reads };
  };
- for (const row of TABLE_R) test(`the ${row.section} section rides ${[row.heartbeat && 'the heartbeat', row.combat && 'the channel'].filter(Boolean).join(' and ') || 'neither reply'} once`, () => {
-  const heartbeat = planted(), combat = planted('combat');
+ scenarioTable('a heartbeat and a combat poll over planted sections read each section once', () => ({ heartbeat: planted(), combat: planted('combat') }),
+  TABLE_R.map(row => [`the ${row.section} section rides ${[row.heartbeat && 'the heartbeat', row.combat && 'the channel'].filter(Boolean).join(' and ') || 'neither reply'} once`, ({ heartbeat, combat }) => {
   assert.equal(heartbeat.reads.filter(section => section === row.section).length, row.heartbeat ? 1 : 0);
   assert.equal(combat.reads.filter(section => section === row.section).length, row.combat ? 1 : 0);
   assert.equal(!!heartbeat.reply[`${row.section}:W`], row.heartbeat);
   assert.equal(!!combat.reply[`${row.section}:W`], row.combat);
- });
+ }]));
  test("the sections read in table R's order", () => {
   assert.deepEqual(planted().reads, TABLE_R.filter(row => row.heartbeat).map(row => row.section));
  });

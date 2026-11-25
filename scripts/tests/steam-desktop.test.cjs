@@ -105,7 +105,11 @@ test('concurrent desktop requests cannot launch two clients',async()=>{
  let finish;const f=fixture({bridgeReady:()=>new Promise(resolve=>finish=resolve)});
  const first=f.service.ensure('QwenTina');assert.throws(()=>f.service.ensure('Other'),/in progress/);finish(true);await first;f.service.stop();
 });
-for(const nested of [false,true])test(`inspector evaluates through ${nested?'WebKit target messages':'CDP'} and closes pending requests`,async()=>{
+const {scenarioTable}=require('./fixtures/scenarios.cjs');
+const evaluatesAndCloses=async server=>{
+ let connection;try{connection=await Inspector.connect({url:'https://adventure.land/',socket:`ws://127.0.0.1:${server.address().port}`});await new Promise(resolve=>setImmediate(resolve));assert.equal(await connection.evaluate('21*2'),42);}finally{connection?.close();await new Promise(resolve=>server.close(resolve));}
+};
+scenarioTable('the inspector evaluates over a local debugger socket that speaks CDP directly or through WebKit targets',async nested=>{
  const server=new WebSocketServer({port:0,host:'127.0.0.1'});await new Promise(resolve=>server.once('listening',resolve));
  server.on('connection',socket=>{
   if(nested)socket.send(JSON.stringify({method:'Target.targetCreated',params:{targetInfo:{targetId:'page-1'}}}));
@@ -117,8 +121,11 @@ for(const nested of [false,true])test(`inspector evaluates through ${nested?'Web
    }else socket.send(JSON.stringify({id:message.id,result:{result:{value:42}}}));
   });
  });
- let connection;try{connection=await Inspector.connect({url:'https://adventure.land/',socket:`ws://127.0.0.1:${server.address().port}`});await new Promise(resolve=>setImmediate(resolve));assert.equal(await connection.evaluate('21*2'),42);}finally{connection?.close();await new Promise(resolve=>server.close(resolve));}
-});
+ return server;
+},[
+ ['inspector evaluates through CDP and closes pending requests',evaluatesAndCloses,false],
+ ['inspector evaluates through WebKit target messages and closes pending requests',evaluatesAndCloses,true],
+]);
 
 test('authorized gateway forwards ownership mutation only after desktop readiness and rejects remote launch',async()=>{
  const events=[];let fail=false;

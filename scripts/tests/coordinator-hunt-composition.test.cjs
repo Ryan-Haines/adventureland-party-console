@@ -1,4 +1,5 @@
 const test = require('node:test'), assert = require('node:assert/strict');
+const { scenarioTable } = require('./fixtures/scenarios.cjs');
 const { createHunt } = require('../../runtime/hunting/coordinator/hunt.ts');
 const { priority } = require('../../runtime/tasks/api.ts');
 // The status line, which labelHunt keeps beside the Hunt record.
@@ -44,9 +45,8 @@ test('new Hunt excludes saved offline followers and characters outside the curre
   assert.equal(state.monsterHunt.stage, 'mission-travel');
 });
 
-for (const stage of ['checking-quests', 'mission-travel', 'returning', 'backup-farming']) {
-  test(`persisted ${stage} Hunt releases an offline quest owner and resumes current party quests`, () => {
-    const {state, service} = fixture();
+scenarioTable('a persisted Hunt at each stage releases an offline quest owner to the current party', fixture,
+  ['checking-quests', 'mission-travel', 'returning', 'backup-farming'].map(stage => [`persisted ${stage} Hunt releases an offline quest owner and resumes current party quests`, ({state, service}) => {
     service.begin();
     const hunt = state.monsterHunt;
     state.followers.Offline = true;
@@ -68,8 +68,7 @@ for (const stage of ['checking-quests', 'mission-travel', 'returning', 'backup-f
     assert.equal(state.commands.Offline, undefined);
     assert.equal(hunt.target, 'rat');
     assert.equal(hunt.stage, 'mission-travel');
-  });
-}
+  }]));
 
 test('checking quests keeps fresh dead members and waits when the leader is stale', () => {
   const {state, service} = fixture();

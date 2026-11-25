@@ -21,10 +21,15 @@ function fixture(){
   navigation:{authorize(){},intent:n=>state.navigationIntents[n]}});
  return {state,hunt,tick:()=>service.tick(),starts:()=>starts};
 }
-for(const phase of ['failed','shared-travel'])test('Daisy deadline preempts owned '+phase+' farm walk before event pause, despite optional attacks',()=>{
- const f=fixture();f.state.activeConvoy.phase=phase;f.tick();assert.equal(f.hunt.stage,'returning');assert.equal(f.hunt.turnIn.phase,'returning');
+const {scenarioTable}=require('./fixtures/scenarios.cjs');
+const preemptsWalk=f=>{
+ f.tick();assert.equal(f.hunt.stage,'returning');assert.equal(f.hunt.turnIn.phase,'returning');
  assert.equal(f.starts(),1);assert.deepEqual(f.state.activeConvoy.location,{map:'main',x:126,y:-413});f.tick();assert.equal(f.starts(),1);
-});
+};
+scenarioTable('the Daisy deadline preempts an owned farm walk in either phase',phase=>{const f=fixture();f.state.activeConvoy.phase=phase;return f;},[
+ ['Daisy deadline preempts owned failed farm walk before event pause, despite optional attacks',preemptsWalk,'failed'],
+ ['Daisy deadline preempts owned shared-travel farm walk before event pause, despite optional attacks',preemptsWalk,'shared-travel'],
+]);
 test('expired quest stranded behind failed farm walk still goes to Daisy without restarting the hunt',()=>{
  const f=fixture();f.state.statuses.W.monsterHunt=null;f.tick();assert.equal(f.hunt.stage,'returning');assert.equal(f.hunt.cycleId,'hunt');
 });

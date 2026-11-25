@@ -1,4 +1,5 @@
 const { test } = require('node:test');
+const { scenarioTable } = require('./fixtures/scenarios.cjs');
 const assert = require('node:assert/strict');
 const load = require('./helpers/dashboard-query-module.cjs');
 const { QueryObserver } = require('../../dashboard/node_modules/@tanstack/react-query');
@@ -29,11 +30,13 @@ async function withFetch(fake, run) {
   try { return await run(); } finally { global.fetch = original; }
 }
 
-for (const domain of ['bank', 'logs', 'market']) test(`${domain}: 304 keeps the cached data object and later changes arrive`, async () => {
+scenarioTable('a cached bank, logs or market section keeps its object on a 304 and takes later changes', domain => {
   const client = createDashboardClient();
   client.setQueryData(key('core'), { referenceRevision: 'catalog-1' });
   const sections = { [domain]: { revision: 'r1', body: { value: 1, nested: { items: [1, 2] } } } };
   const fake = server(sections);
+  return { client, sections, fake };
+}, ['bank', 'logs', 'market'].map(domain => [`${domain}: 304 keeps the cached data object and later changes arrive`, async ({ client, sections, fake }) => {
   await withFetch(fake.fetch, async () => {
     const fetch = async () => { await client.fetchQuery({ ...domainOptions(client, domain), staleTime: 0 }); return client.getQueryData(key(domain)); };
     const first = await fetch();
@@ -50,7 +53,7 @@ for (const domain of ['bank', 'logs', 'market']) test(`${domain}: 304 keeps the 
     assert.deepEqual(fake.requests.map((entry) => entry.revision), [null, 'r1', 'r1', 'r2']);
   });
   client.clear();
-});
+}, domain]));
 
 test('a replaced or cleared cache entry is fetched in full, never answered from a 304', async () => {
   const client = createDashboardClient();

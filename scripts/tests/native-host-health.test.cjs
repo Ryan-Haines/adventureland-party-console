@@ -45,9 +45,9 @@ const cases = [
   { title: 'an unready dashboard fails health before the coordinator is asked', routes: { '/__dashboard/state': () => Response.json({ ready: false }), '/party-api/ready': ready },
     calls: [{ args: [true], healthy: false, count: 1 }] },
 ];
-for (const row of cases) {
-  test(`health: ${row.title}`, async (t) => {
-    const server = respond(row.routes);
+const { scenarioTable } = require('./fixtures/scenarios.cjs');
+scenarioTable('servicesHealthy answers each dashboard and coordinator route set', row => ({ row, server: respond(row.routes) }),
+  cases.map(row => [`health: ${row.title}`, async ({ server }, t) => {
     t.mock.method(globalThis, 'fetch', server.fetch);
     for (const call of row.calls) {
       server.requests.length = 0;
@@ -58,5 +58,4 @@ for (const row of cases) {
       if (call.tail) assert.deepEqual(server.requests.slice(1), call.tail);
       if (call.noState) assert.equal(coordinatorState(server.requests), false);
     }
-  });
-}
+  }, row]));

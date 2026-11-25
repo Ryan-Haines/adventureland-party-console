@@ -17,6 +17,10 @@ test('used holds an entry at the window and round trip edge, as the server holds
   const cc={value:12,at:at+50,seq:2,from:at,held:new Set([entry]),heldCost:12};
   assert.equal(used({ledger:[entry],cc},at+50+CALL_WINDOW_MS-1,latest),12,'a figure holds it to the edge');
   assert.equal(used({ledger:[entry],cc},edge,latest),12,'and at the edge');
+  // CB5: a figure of 199 the ledger cannot see holds through the window and nothing after it.
+  const unseen={value:199,at,seq:3,from:at,held:new Set(),heldCost:0};
+  assert.equal(used({ledger:[],cc:unseen},at+CALL_WINDOW_MS,latest),199,'a fresh figure holds');
+  assert.equal(used({ledger:[],cc:unseen},at+CALL_WINDOW_MS+1,latest),0,'a figure older than the window holds nothing');
 });
 // The install's own entries: the server dates a call when its handler runs, which a burst-slowed
 // server does up to the largest round trip of the window after the send, not the latest one.
@@ -252,12 +256,14 @@ test('a held emit drains after a stop whose CODE character reads null',()=>{
     p.fire('player',{cc:199});
     p.emit('players',{});
     assert.equal(p.budget.view().held,1,'199 + 12 passes the limit, so the emit is held');
+    // CB9: a call made behind a held one waits behind it, so the server meets them in call order.
+    p.emit('use',{item:'hp'});
     p.stop();
     Object.defineProperty(p.host,'character',{get(){throw TypeError("Cannot read properties of null (reading 'character')");}});
     p.advance(CALL_WINDOW_MS+1);
     const sent=p.emitted.length;
     for(const t of winTimers.splice(0))t.run();
-    assert.deepEqual(p.emitted.slice(sent),['players'],'the drain sends the held read');
+    assert.deepEqual(p.emitted.slice(sent),['players','use'],'the drain sends the held calls in call order');
     assert.equal(p.win.__partyCallBudget.held.length,0);
   }finally{p.stop();}
 });

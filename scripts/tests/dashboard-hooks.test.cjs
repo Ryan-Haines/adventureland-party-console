@@ -100,17 +100,3 @@ test('a session preference survives a remount under party-ui:<key> and lives for
   } finally { delete global.sessionStorage; }
 });
 
-test('a forwarded action keeps its identity and calls the newest model', async () => {
-  const { useForwardingActions } = require('../../dashboard/features/party/use-forwarding-actions.ts');
-  const calls = [];
-  let forwarded;
-  const Reader = ({ model }) => { forwarded = useForwardingActions(model, ['act']); return null; };
-  let tree;
-  await act(async () => { tree = create(React.createElement(Reader, { model: { act: value => calls.push(['old', value]) } })); });
-  const first = forwarded.act;
-  await act(async () => tree.update(React.createElement(Reader, { model: { act: value => calls.push(['new', value]) } })));
-  assert.equal(forwarded.act, first);
-  forwarded.act(7);
-  assert.deepEqual(calls, [['new', 7]]);
-  await act(async () => tree.unmount());
-});

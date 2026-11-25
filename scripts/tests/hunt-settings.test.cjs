@@ -61,11 +61,8 @@ test('HN8: the cycle counts each died notice once and only a too-hard escape on 
 });
 // One death and the too-hard escape of the recovery it started count once, as v1.5.0's death count
 // did: the live death-threshold rows saw one kill reach 2 and a threshold of 2 blacklist the target.
-for(const deathThreshold of [1,2])test(`HN8: one death and its recovery's escape count once at death threshold ${deathThreshold}`,()=>{
- const {createHunt}=require('../../runtime/hunting/coordinator/hunt.ts');
- const s={targetMode:'hunt',statuses:{W:{seenAt:5000},P:{seenAt:5000}},commands:{},huntSettings:{blacklistDeaths:true,deathThreshold,blacklistExpirations:false,expirationThreshold:1},
-  monsterHunt:{cycleId:'c',stage:'farming',participants:['W','P'],missions:[],currentIndex:0,target:'goo',startedAt:1000}};
- const hunt=createHunt(s,{now:()=>5000,persist(){}});
+const {scenarioTable}=require('./fixtures/scenarios.cjs');
+const countsOnce=({s,hunt,deathThreshold})=>{
  hunt.died({name:'W',at:2000});
  hunt.escaped({names:['W','P'],cause:'too hard',mtypes:['goo'],deaths:['W']});
  assert.equal(s.huntFailures.goo.deaths,1);
@@ -73,7 +70,17 @@ for(const deathThreshold of [1,2])test(`HN8: one death and its recovery's escape
  // A recovery started by a member outside the cycle still counts its escape.
  hunt.escaped({names:['W','P'],cause:'too hard',mtypes:['goo'],deaths:['M']});
  assert.equal(s.huntFailures.goo.deaths,2);
-});
+};
+scenarioTable('a farming Hunt counts one death and its escape once at either death threshold',deathThreshold=>{
+ const {createHunt}=require('../../runtime/hunting/coordinator/hunt.ts');
+ const s={targetMode:'hunt',statuses:{W:{seenAt:5000},P:{seenAt:5000}},commands:{},huntSettings:{blacklistDeaths:true,deathThreshold,blacklistExpirations:false,expirationThreshold:1},
+  monsterHunt:{cycleId:'c',stage:'farming',participants:['W','P'],missions:[],currentIndex:0,target:'goo',startedAt:1000}};
+ const hunt=createHunt(s,{now:()=>5000,persist(){}});
+ return {s,hunt,deathThreshold};
+},[
+ ["HN8: one death and its recovery's escape count once at death threshold 1",countsOnce,1],
+ ["HN8: one death and its recovery's escape count once at death threshold 2",countsOnce,2],
+]);
 // HN10: each converted field loads to its converted value
 // once, and the cycle reads none of them after the load.
 test('HN10: an old saved Hunt converts once at load, one row per field',()=>{

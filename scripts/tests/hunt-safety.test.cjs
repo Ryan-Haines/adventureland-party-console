@@ -57,12 +57,19 @@ test('mission destination stays pinned as nearest spawn changes; combat outside 
  t.party.statuses.W.target=null;t.party.statuses.P.threats=[{hp:100}];t.r.monsterHuntTick();assert.equal(t.convoys.length,count);
 });
 
-for(const second of ['M','P']) test('multiple deaths on the failed quest still allow the next member: '+second,()=>{
- const t=fixture();t.die('M');t.party.statuses.M.rip=false;t.advance(5000);t.die(second);
+const {scenarioTable}=require('./fixtures/scenarios.cjs');
+const nextMember=({t,second})=>{
  assert.equal(t.party.huntFailures.mole.deaths,2);assert.equal(t.party.targetMode,'hunt');assert.deepEqual(t.party.monsterFocus,['snake']);
  t.party.statuses[second].rip=false;t.advance(5000);t.r.monsterHuntTick();
  assert.equal(t.hunt.owner,'P');assert.equal(t.hunt.target,'rat');assert.equal(t.hunt.stage,'mission-travel');
-});
+};
+scenarioTable('a second death on the failed quest still hands the Hunt to the next member',second=>{
+ const t=fixture();t.die('M');t.party.statuses.M.rip=false;t.advance(5000);t.die(second);
+ return {t,second};
+},[
+ ['multiple deaths on the failed quest still allow the next member: M',nextMember,'M'],
+ ['multiple deaths on the failed quest still allow the next member: P',nextMember,'P'],
+]);
 
 
 
@@ -84,15 +91,25 @@ test('return planning waits for compatible runtimes without consuming retries',(
  assert.equal(t.party.activeConvoy.returnRouting,true);
 });
 
-for (const remainingMs of [180001,180000,179999,60000,1,0]) test('unfinished leader farms until expiry despite optional fighting: '+remainingMs,()=>{
- const t=fixture(); t.party.statuses.W.monsterHunt.remainingMs=remainingMs;
- t.party.statuses.P.monsterHunt.remainingMs=1;
- t.party.statuses.W.target={hp:100,mtype:'mole'};
+const farmsUntilExpiry=({t,remainingMs})=>{
  t.r.monsterHuntTick();
  assert.equal(t.hunt.stage,remainingMs<=0?'daisy-sync-travel':'farming');
  if(remainingMs<=0)assert.deepEqual(t.convoys.at(-1).location,t.party.monsterHunterLocation);
  else assert.equal(t.r.huntTurnInOwnsTravel(t.hunt),false);
-});
+};
+scenarioTable('an unfinished leader quest with a target in sight farms until it expires',remainingMs=>{
+ const t=fixture(); t.party.statuses.W.monsterHunt.remainingMs=remainingMs;
+ t.party.statuses.P.monsterHunt.remainingMs=1;
+ t.party.statuses.W.target={hp:100,mtype:'mole'};
+ return {t,remainingMs};
+},[
+ ['unfinished leader farms until expiry despite optional fighting: 180001',farmsUntilExpiry,180001],
+ ['unfinished leader farms until expiry despite optional fighting: 180000',farmsUntilExpiry,180000],
+ ['unfinished leader farms until expiry despite optional fighting: 179999',farmsUntilExpiry,179999],
+ ['unfinished leader farms until expiry despite optional fighting: 60000',farmsUntilExpiry,60000],
+ ['unfinished leader farms until expiry despite optional fighting: 1',farmsUntilExpiry,1],
+ ['unfinished leader farms until expiry despite optional fighting: 0',farmsUntilExpiry,0],
+]);
 
 test('pending follower reward retains turn-in ownership and yields to an event before quest refill',()=>{
  const t=fixture(); t.party.statuses.W.monsterHunt.count=0; t.party.statuses.P.monsterHunt.count=0;
@@ -178,11 +195,15 @@ test('a completed hunt goes straight to the protected Daisy turn-in',()=>{
  assert.equal(t.hunt.stage,'returning');assert.equal(t.r.huntTurnInOwnsTravel(t.hunt),true);
 });
 
-for (const remainingMs of [1500000, 1500001, 1499999]) test('missing follower quests never cause a pickup detour: '+remainingMs,()=>{
- const t=fixture({quests:{W:{id:'rat',count:10,remainingMs}}});
+const noPickupDetour=t=>{
  assert.equal(t.convoys[0].location.map,'tunnel');
  assert.equal(!!t.hunt.pickupPending,false);
-});
+};
+scenarioTable('a leader quest of any age with no follower quests walks to the spawn without a pickup detour',remainingMs=>fixture({quests:{W:{id:'rat',count:10,remainingMs}}}),[
+ ['missing follower quests never cause a pickup detour: 1500000',noPickupDetour,1500000],
+ ['missing follower quests never cause a pickup detour: 1500001',noPickupDetour,1500001],
+ ['missing follower quests never cause a pickup detour: 1499999',noPickupDetour,1499999],
+]);
 
 test('any older quest skips missing pickup, even when another quest is fresh',()=>{
  const t=fixture({quests:{W:{id:'rat',count:10,remainingMs:1700000},P:{id:'ghost',count:10,remainingMs:1499999}}});
@@ -334,12 +355,15 @@ test('arrival grace expires and permits recovery from a genuine outside position
  const t=arrivalFixture(),before=t.convoys.length;t.advance(10000);t.r.monsterHuntTick();
  assert.equal(t.convoys.length,before+1);assert.equal(t.hunt.stage,'mission-travel');
 });
-for(const mutate of [t=>t.hunt.cycleId='new',t=>t.hunt.currentIndex++,
- t=>t.party.statuses.W.combatSelection.runtimeId='new',t=>t.r.farmingNavigation.intent=()=>({revision:8,cancelled:false})])
-test('superseded arrival receipt does not suppress recovery: '+mutate.toString(),()=>{
- const t=arrivalFixture(),before=t.convoys.length;mutate(t);t.r.monsterHuntTick();
+// Each row name ends in its change's source text, which the old loop titles carried.
+scenarioTable('an arrival receipt that a newer cycle, mission, runtime or navigation revision supersedes leaves recovery running',mutate=>{
+ const t=arrivalFixture(),before=t.convoys.length;mutate(t);return {t,before};
+},[t=>t.hunt.cycleId='new',t=>t.hunt.currentIndex++,
+ t=>t.party.statuses.W.combatSelection.runtimeId='new',t=>t.r.farmingNavigation.intent=()=>({revision:8,cancelled:false})].map(mutate=>
+['superseded arrival receipt does not suppress recovery: '+mutate.toString(),({t,before})=>{
+ t.r.monsterHuntTick();
  assert.equal(t.convoys.length,before+1);
-});
+},mutate]));
 test('arrival grace cannot delay a completed hunt turn-in or revive cancelled navigation',()=>{
  const t=arrivalFixture();t.party.statuses.W.monsterHunt.count=0;collectFinalLoot(t);
  assert.equal(t.hunt.stage,'returning');assert.equal(t.hunt.arrivalHandoff,undefined);
@@ -357,9 +381,11 @@ test('an expired unfinished quest is blacklisted before acquiring the next quest
 });
 
 
-for(const enabled of [false])test('death below threshold resumes the same Hunt; enabled='+enabled,()=>{
+scenarioTable('a death below the threshold resumes the same Hunt',enabled=>{
  const t=fixture();t.party.huntSettings={...require('../../runtime/hunting/saved-fields.ts').defaultHuntSettings,blacklistDeaths:enabled,deathThreshold:2};
+ return {t,enabled};
+},[['death below threshold resumes the same Hunt; enabled=false',({t,enabled})=>{
  t.die('M');assert.equal(t.party.huntBlacklist.mole,undefined);assert.equal(!!t.hunt.missions[0].skipped,false);assert.equal(t.hunt.recovering,true);
  t.party.statuses.M.rip=false;t.advance(5000);t.r.monsterHuntTick();assert.equal(t.hunt.target,'mole');assert.equal(t.hunt.recovering,false);
  t.die('M');assert.equal(t.party.huntFailures.mole.deaths,2);assert.equal(!!t.party.huntBlacklist.mole,enabled);
-});
+},false]]);

@@ -8,15 +8,18 @@ const { createMovementContext } = require('./fixtures/movement-owner-callers.cjs
 const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm');
 const {fixture}=require('./fixtures/travel-defense-client-scenario.cjs');
 const {scenarioTable}=require('./fixtures/scenarios.cjs');
-for(const grouped of [false,true])test('travel rejects a passive retained bee but allows a current follower attacker; grouped='+grouped,()=>{
- const {c,passive}=fixture(grouped);
+const allowsAttacker=({c,passive})=>{
  assert.equal(c.isAllowedTarget(passive),false);assert.equal(c.groupedAttackAllowed(passive),false);
  assert.equal(c.currentTravelAttackers().length,0);
  passive.target='P';assert.equal(c.isAllowedTarget(passive),true);assert.equal(c.groupedAttackAllowed(passive),true);
  assert.equal(c.currentTravelAttackers()[0].target,'P');
  passive.target='outsider';assert.equal(c.currentTravelAttackers().length,0);
  passive.target='P';passive.hp=0;assert.equal(c.currentTravelAttackers().length,0);
-});
+};
+scenarioTable('travel targeting with a passive retained bee, grouped or not, takes only a live follower attacker',fixture,[
+ ['travel rejects a passive retained bee but allows a current follower attacker; grouped=false',allowsAttacker,false],
+ ['travel rejects a passive retained bee but allows a current follower attacker; grouped=true',allowsAttacker,true],
+]);
 test('explicit hunt acquisition bypasses travel and destination gates while retaining claims',()=>{
  const {c,passive}=fixture();Object.assign(c,{convoyTraveling:null,partyThreats:[]});
  const command={purpose:'monster-hunt',combatHandoffAllowed:true,huntTarget:'bee'};

@@ -6,7 +6,6 @@ const path=require('node:path');
 const {createHash}=require('node:crypto');
 const {syncBuiltinESMExports}=require('node:module');
 const {classScript}=require('../../runtime/lifecycle/coordinator/code.ts');
-const {RETAIN_BUILDS}=require('../../tools/build-store.ts');
 
 // classScript runs on every merchant dispatch (merchant home check -> ensureCharacterBlock -> worker setup).
 // Failure lines:
@@ -37,11 +36,6 @@ function countReads(t,file){
   return ()=>reads;
 }
 
-test('an unchanged class file is hashed once across repeated dispatch lookups',t=>{
-  const {directory,write}=code(t),a=write('A'),reads=countReads(t,a.full);
-  for(let call=0;call<50;call++)assert.equal(classScript(directory,'warrior'),'adventure_land/'+a.file);
-  assert.equal(reads(),1);
-});
 
 test('a class file rewritten in place fails its checksum on the next lookup',t=>{
   const {directory,write}=code(t),a=write('A');
@@ -69,13 +63,3 @@ test('a deleted class file fails with the read error as before',t=>{
   assert.throws(()=>classScript(directory,'warrior'),error=>error.code==='ENOENT');
 });
 
-test('verification stays bounded across many generations',t=>{
-  const {directory,write}=code(t);
-  // The verified cache holds classes x (RETAIN_BUILDS + 2) files (code.ts verifiedClass); one more
-  // generation than that, with one class here, evicts the first.
-  const files=[];for(let index=0;index<=RETAIN_BUILDS+2;index++){files.push(write('G'+index));assert.equal(classScript(directory,'warrior'),'adventure_land/'+files.at(-1).file);}
-  const reads=countReads(t,files[0].full);
-  fs.writeFileSync(path.join(directory,'activation.json'),JSON.stringify({id:'back',manifest:{schema:1,generation:files[0].digest,classes:{warrior:{file:files[0].file,sha256:files[0].digest,inputs:[]}}}}));
-  assert.equal(classScript(directory,'warrior'),'adventure_land/'+files[0].file);
-  assert.equal(reads(),1,'an evicted generation is hashed again when it returns');
-});

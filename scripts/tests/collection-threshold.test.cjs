@@ -1,4 +1,5 @@
 const test = require('node:test');
+const { scenarioTable } = require('./fixtures/scenarios.cjs');
 const assert = require('node:assert/strict');
 const {coordinatorReadyFacts}=require('../../runtime/merchant-jobs/coordinator/dispatch.ts'),{coordinatorCollectionReady}=require('../../runtime/merchant-jobs/coordinator/owner.ts');
 const {coordinatorMerchantTransferBlocked}=require('../../runtime/merchant-jobs/rules.ts');
@@ -44,9 +45,9 @@ test('deferred pickup does not block other eligible jobs',()=>{
  const {r,party,job}=fixture();party.merchantQueue=[job,{target:'M',reason:'upgrades and compounds'}];assert.equal(pick(r,party).target,'M');
 });
 
-for (const reason of ['npc sale pickup','auto npc sale pickup']) test(reason+' shares collection threshold at enqueue, selection and retry',()=>{
+const sharesThreshold=reason=>({party,r,target})=>{
  const {coordinatorCollectionReady,pruneIneligibleCollections}=require('../../runtime/merchant-jobs/coordinator/owner.ts');
- const {party,r,target}=fixture(1),job={target:'Q',reason,retryCount:2};
+ const job={target:'Q',reason,retryCount:2};
  party.merchantMarked.Q=[{...target.items[0],npcSaleId:'sale'}];party.marked.Q=[];
  party.npcSaleMarks=[{id:'sale',source:'character',character:'Q',auto:reason==='auto npc sale pickup',state:'collecting'}];
  r.queueMerchant(['Q'],reason);assert.equal(party.merchantQueue.length,0);
@@ -61,4 +62,8 @@ for (const reason of ['npc sale pickup','auto npc sale pickup']) test(reason+' s
  party.itemCollectionThreshold=1;assert.equal(coordinatorCollectionReady(party,job,Date.now),true);
  target.seenAt=1;assert.equal(coordinatorCollectionReady(party,job,Date.now),false);
  assert.equal(coordinatorCollectionReady(party,{target:'M',reason:'auto npc sales'},Date.now),true);
-});
+};
+scenarioTable('an NPC sale pickup from one marked character waits for the collection threshold',()=>fixture(1),[
+ ['npc sale pickup shares collection threshold at enqueue, selection and retry',sharesThreshold('npc sale pickup')],
+ ['auto npc sale pickup shares collection threshold at enqueue, selection and retry',sharesThreshold('auto npc sale pickup')],
+]);

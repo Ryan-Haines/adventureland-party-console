@@ -2,16 +2,17 @@ const test=require('node:test'),assert=require('node:assert/strict'),fs=require(
 const {isCoordinatorApplicationLauncher}=require('../../tools/caracal/coordinator-launcher.mts');
 const source=fs.readFileSync('tools/caracal/CharacterCoordinator.cjs','utf8');
 const {runLauncher,heartbeat}=require('./helpers/coordinator-host.cjs');
+const {scenarioTable}=require('./fixtures/scenarios.cjs');
 
-for(const directory of ['C:\\Games\\Adventure Land\\.caracal\\standalones','/app/.caracal/standalones']) {
-  test('launcher starts the real bundle and serves a heartbeat: '+directory,async()=>{
-    const host=await runLauncher(directory,1900000000000);
+const directories=['C:\\Games\\Adventure Land\\.caracal\\standalones','/app/.caracal/standalones'];
+scenarioTable('the launcher in each install directory starts the real bundle and serves a heartbeat',directory=>runLauncher(directory,1900000000000),
+  directories.map(directory=>['launcher starts the real bundle and serves a heartbeat: '+directory,host=>{
     const response=heartbeat(host);
     assert.equal(response.merchantCharacter,'GoldMajesty');
     assert.equal(response.partyPositions[0].name,'P');
     assert.ok(host.routes.some(route=>route[1]==='/party-api/merchant/complete'));
-  });
-  test('application launcher delegates installed paths unchanged: '+directory,async()=>{
+  },directory]));
+scenarioTable('the application launcher in each install directory hands the bundle its paths unchanged',directory=>{
     const calls=[],completion=Promise.resolve(),hostModule={exports:{}};
     function hostRequire(name) {
       if(name.startsWith('node:'))return require(name);
@@ -22,11 +23,12 @@ for(const directory of ['C:\\Games\\Adventure Land\\.caracal\\standalones','/app
         assert.equal(typeof platform.loadFetch,'function');return completion;
       }};
     }
+    return {calls,completion,hostModule,hostRequire};
+  },directories.map(directory=>['application launcher delegates installed paths unchanged: '+directory,async({calls,completion,hostModule,hostRequire})=>{
     vm.runInNewContext(source,{require:hostRequire,module:hostModule,__dirname:directory,process:{env:{}}});
     assert.equal(hostModule.exports,completion);await completion;
     assert.deepEqual(calls,['../../.build/runtime/coordinator-application.cjs','../../.build/runtime/coordinator-application.cjs']);
-  });
-}
+  },directory]));
 test('launcher recognition does not mistake legacy imports or comments for the application entry',()=>{
   assert.equal(isCoordinatorApplicationLauncher(source),true);
   assert.equal(isCoordinatorApplicationLauncher('const x = require("../../.build/runtime/coordinator-application.cjs");'),false);

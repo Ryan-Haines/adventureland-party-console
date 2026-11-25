@@ -4,6 +4,7 @@
 // then reopens the journal under a time limit and reports what it holds.
 // CRASH_ROOT runs the same journeys against another checkout.
 const test=require('node:test'),assert=require('node:assert/strict');
+const {scenarioTable}=require('./fixtures/scenarios.cjs');
 const fs=require('node:fs'),path=require('node:path');
 const {spawn,spawnSync}=require('node:child_process');
 const root=path.resolve(process.env.CRASH_ROOT||path.join(__dirname,'../..'));
@@ -128,14 +129,14 @@ const cases=[
  ['shutdown','shutdown',{closeAt:random(10,120)}],
  ['a torn tail','random',{killAfter:random(100,2500),tear:true}],
 ];
-for(const [name,mode,options] of cases)
- test('SIGKILL at '+name+' reopens in bounded time with every saved record (seed '+seed+')',async t=>{
+scenarioTable('a store writer killed at each crash point reopens in bounded time with every saved record',()=>undefined,
+ cases.map(([name,mode,options])=>['SIGKILL at '+name+' reopens in bounded time with every saved record (seed '+seed+')',async(_,t)=>{
   const outcome=await run(prepare(t),mode,options);
   assert.match(outcome.refused,/live writer/);
   if(mode!=='shutdown')assert.ok(outcome.lockLeft,'the killed writer left its lock behind');
   check(outcome,options);
   assert.ok(outcome.reopenMs<REOPEN_LIMIT_MS);
- });
+ }]));
 function prepare(t){
  fs.mkdirSync('.build/store-tests',{recursive:true});
  const directory=fs.mkdtempSync(path.resolve('.build/store-tests/crash-'));

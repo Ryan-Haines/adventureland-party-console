@@ -1760,7 +1760,7 @@ them, which the published reads `targeting.monsterPriority`,
 `targeting.defaultReflectLists` and `targeting.reflectChoices` name.
 `defaultLists` moves from `gates.ts` to `reflect.ts`, which then imports no
 module at run time. The same import builds 2,465 bytes.
-`dashboard-bundle-reach.test.cjs` "the dashboard page bundle lands no hook
+`dashboard-bundle-reach.test.cjs` (removed in the test rebuild, U15: no failure id) "the dashboard page bundle lands no hook
 table and no character targeting runtime" was red with the door imports.
 
 Bytes of the dashboard build:

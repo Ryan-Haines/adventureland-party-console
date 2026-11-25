@@ -1,4 +1,5 @@
 const { test } = require('node:test');
+const { scenarioTable } = require('./fixtures/scenarios.cjs');
 const assert = require('node:assert/strict');
 const { load, queryRoot } = require('./helpers/dashboard-query-module.cjs');
 const React = require('../../dashboard/node_modules/react');
@@ -55,7 +56,9 @@ const forms = [
   ['threshold', m => m.editThreshold('0'), m => m.save(), m => m.threshold, m => m.editThreshold('100'), m => m.clearCollectionErrors()],
   ['itemCollectionThreshold', m => m.editItemCollectionThreshold('42'), m => m.saveItemCollectionThreshold(), m => m.itemCollectionThreshold, m => m.editItemCollectionThreshold('1'), m => m.clearCollectionErrors()],
 ];
-for (const [scope, setup, submit, draft, edit, close] of forms) test(`${scope}: rejection preserves draft, edits/close/retry clear inline error, success is quiet`, async t => {
+// fixture needs the row's own context for its cleanup, so the table builds nothing.
+scenarioTable('each dashboard form keeps its draft on a rejection and clears its inline error on edit, close or retry', () => undefined,
+  forms.map(([scope, setup, submit, draft, edit, close]) => [`${scope}: rejection preserves draft, edits/close/retry clear inline error, success is quiet`, async (_, t) => {
   const f = await fixture(t); await f.run(setup); const before = draft(f.model); f.fail();
   await f.run(submit); assert.equal(f.model[scope + 'Error'], 'Server explanation'); assert.deepEqual(draft(f.model), before); assert.equal(f.model.actionError, null);
   await f.run(edit); assert.equal(f.model[scope + 'Error'], null);
@@ -63,7 +66,7 @@ for (const [scope, setup, submit, draft, edit, close] of forms) test(`${scope}: 
   await f.run(setup); await f.run(submit); f.fail(null); await f.run(submit);
   assert.equal(f.model[scope + 'Error'], null); assert.equal(f.model.actionError, null);
   assert.ok(f.requests.length >= 4);
-});
+}]));
 test('invalid inputs stay local and zero gold remains valid', async t => {
   const f = await fixture(t);
   for (const [setup, submit, field, pattern] of [

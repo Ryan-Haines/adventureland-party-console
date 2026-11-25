@@ -1,4 +1,5 @@
 const test=require('node:test');
+const {scenarioTable}=require('./fixtures/scenarios.cjs');
 const assert=require('node:assert/strict');
 const {testRegistry}=require('./helpers/test-registry.cjs');
 // The observer with the events owner's member rows, as the coordinator composes it (returns.ts).
@@ -227,8 +228,10 @@ test('authorized future Halloween staging survives delayed joined-event reportin
 
 // The staging window opens at the member's group's `due` lead (rules.ts `leadFor`): `outside-lead`
 // gives P's group a 30 s lead, so the spawn 38 s away is not yet staged.
-for(const invalid of ['unowned','stale','future-status','dead','wrong-event','wrong-realm','missing-realm','disconnected','clock-stale','cancelled','already-live','wrong-participant','unrecorded','incoming-dead','stored-disconnected','stored-clock-stale','outside-lead'])test('pre-join staging cannot extend invalid attendance: '+invalid,()=>{
+scenarioTable('a pre-join staging report from P on USI stages nothing when its attendance is invalid',()=>{
  const f=fixture();f.statuses.P={seenAt:1000,server:'USI',eventFeedConnected:true};
+ return f;
+},['unowned','stale','future-status','dead','wrong-event','wrong-realm','missing-realm','disconnected','clock-stale','cancelled','already-live','wrong-participant','unrecorded','incoming-dead','stored-disconnected','stored-clock-stale','outside-lead'].map(invalid=>['pre-join staging cannot extend invalid attendance: '+invalid,f=>{
  if(invalid!=='unowned')f.admitTo('P','mrpumpkin');
  if(invalid==='already-live')f.observe({name:'P',serverLiveEvents:[{name:'mrpumpkin'}]});
  f.time(12000);f.statuses.P.seenAt=invalid==='stale'?1000:invalid==='future-status'?13000:12000;
@@ -244,7 +247,7 @@ for(const invalid of ['unowned','stale','future-status','dead','wrong-event','wr
   serverStagingEvents:[{name:invalid==='wrong-event'?'mrgreen':'mrpumpkin',spawnAt:50000,spawnId:50000}]});
  assert.equal(f.state.sessions.P?.stagingSpawnId,undefined);
  if(invalid==='unowned')assert.equal(f.state.sessions.P,undefined);
-});
+}]));
 
 // Two live events keep one record per member, captured once.
 test('two live events keep both records: the top selected event holds the record and its checkpoint is captured once',()=>{

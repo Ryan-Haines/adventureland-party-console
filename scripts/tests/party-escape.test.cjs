@@ -74,6 +74,13 @@ test('an escape walks the party to the death goal, and holds where it stands wit
     convoy(names, goal) { walks.push(goal); return true; } }).control.start(['warrior', 'mage', 'priest']);
   assert.equal(held.stage, 'failed-hold'); assert.equal(held.home, undefined); assert.match(held.error, /No game data/);
   assert.deepEqual(walks, []);
+
+  // SV19: a mage leads a party that is not the trio (case D: a warrior, a mage and a ranger) and
+  // ports the other two.
+  const mixed = roles(); mixed.ranger = { ...mixed.priest, name: 'ranger', ctype: 'ranger' }; delete mixed.priest;
+  const led = partyEscape({ escape: null, statuses: mixed, activeConvoy: null, leader: 'warrior', targetMode: 'farm' },
+    { now: () => clock, home: () => home, atHome, convoy: () => true }).control.start(['warrior', 'mage', 'ranger']);
+  assert.deepEqual([led.leader, led.stage, [...led.ports].sort()], ['mage', 'blink', ['ranger', 'warrior']]);
 });
 
 // The character's escape (runtime/characters/survival/escape.ts). Failure modes: an escape leaves
@@ -172,6 +179,37 @@ scenarioTable('a fighter in an escape lands clear, spends its buffer and keeps i
   assert.equal(escape.record().portFailed, undefined);
   assert.equal(escape.record().portEnded, undefined);
   assert.equal(casts.filter(c => c === 'magiport:priest').length, 1);
+ }],
+ // TC36: the Blink and each Magiport wait for their cooldown (escape.ts `crossingReady`).
+ ['the Blink and the Magiport wait out their cooldown and go once it ends', async ({ r, casts, escape })=>{
+  Object.assign(r.character, { mp: 2000, max_mp: 2000 });
+  r.is_on_cooldown = skill => skill === 'blink';
+  await escape.step();
+  assert.deepEqual(casts, []); assert.equal(escape.record().error, 'Waiting for Blink cooldown');
+  r.is_on_cooldown = () => false;
+  await escape.step(); assert.deepEqual(casts, ['blink']);
+  await escape.apply({ id: 'op', stage: 'port:priest', leader: 'mage', participants: ['mage', 'priest'] });
+  drivePositions(r, [{ name: 'priest', escape: { id: 'op', readyForPort: 'port:priest' } }]);
+  r.timed = request => request;
+  r.movement = { ...r.movement, magiport: (request, name) => { casts.push('magiport:' + name); return Promise.resolve({ accepted: true }); } };
+  r.is_on_cooldown = skill => skill === 'magiport';
+  await escape.step();
+  assert.equal(casts.includes('magiport:priest'), false); assert.equal(escape.record().error, 'Waiting for Magiport cooldown');
+  r.is_on_cooldown = () => false;
+  await escape.step(); assert.equal(casts.includes('magiport:priest'), true);
+ }],
+ // SV20: a port the mage's MP cannot cover is never sent; its stage ends with the reason the
+ // coordinator reads to walk that member home (coordinator/survival/escape.ts `portFailed`).
+ ['a Magiport the MP cannot cover is not sent and ends its stage', async ({ r, casts, escape })=>{
+  Object.assign(r.character, { mp: r.escapeCost('magiport') - 1, max_mp: 2000 });
+  await escape.apply({ id: 'op', stage: 'port:priest', leader: 'mage', participants: ['mage', 'priest'] });
+  drivePositions(r, [{ name: 'priest', escape: { id: 'op', readyForPort: 'port:priest' } }]);
+  r.timed = request => request;
+  r.movement = { ...r.movement, magiport: (request, name) => { casts.push('magiport:' + name); return Promise.resolve({ accepted: true }); } };
+  await escape.step();
+  assert.equal(casts.includes('magiport:priest'), false);
+  const failed = escape.record().portFailed;
+  assert.deepEqual([failed?.stage, failed?.reason], ['port:priest', 'Magiport needs more MP']);
  }],
  ['survivor keeps potions and defenses running while independent escape travel is pending', async ()=>{
   let finish; const {r,casts,escape,spends,flush}=runtime({smart_move:()=>new Promise(resolve=>finish=resolve),joinedEvent:null,eventTraveling:false,travellingEventName:null});

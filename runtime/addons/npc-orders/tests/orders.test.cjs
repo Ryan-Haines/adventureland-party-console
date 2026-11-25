@@ -1,4 +1,16 @@
 // npc-orders' order list, buy rule, merchant jobs and step answers (orders.ts), and the registration.
+//
+// Failure list (catalog/17-addon-folders.json links each id to its test):
+// NO1 the orders setting is not a records setting, or readOrders keeps a row no buy can run from
+// NO2 one item holds two orders, Stop drops a Buy all, or Remove keeps it
+// NO3 the next buy is not the cheapest lot under the cap that fits the copies wanted and the gold above the reserve
+// NO4 merchant.jobKind leaves Ponty out, or declares Ron's spend before the player ticks the donation
+// NO5 Buy 2 buys a third copy, or the ended notice miscounts the done jobs
+// NO6 a failed or vanished Ponty job counts a copy, or its lot is tried again
+// NO7 a cap under every lot or a reserve above the gold plans a job
+// NO8 a Ron job runs before the donation tick and the Visit Ron press
+// NO9 merchant.step leaves a Ponty job open, or buys Ron's lots past an order's cap or count
+// NO10 a paused Buy X buys, or resumes with another count or price
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { readOrders, placeOrder, stopOrder, resumeOrder, removeOrder, nextPurchase, pontyStock, ronStock, planJob, jobEnded, stepAnswer, kindReason } = require('../orders.ts');

@@ -39,7 +39,7 @@ function needsWorld(kind = 'priest', stats = {}) {
   world.mode = 'default'; world.reads = {};
   const reads = { 'targeting.graveyardAreaAllows': () => true, 'targeting.rareTarget': () => null, 'targeting.unfinished': () => false,
     'targeting.lockAllows': () => true, 'targeting.attacking': () => false };
-  const needs = createNeeds({ members: () => members, sameTeam: m => m.friendly !== false, escapeStage: () => null, townCasting: () => !!world.townCasting,
+  const needs = createNeeds({ members: () => members, sameTeam: m => m.friendly !== false, escapeStage: () => world.escapeStage ?? null, townCasting: () => !!world.townCasting,
     partyhealAllowed: () => true, isLeader: () => false, partyAttacker: () => null, fighting: () => false, lines: () => ({ hp: 50, mp: 20 }),
     state: () => state, stomp: { franky: () => world.franky, mode: () => world.mode, ask: (hook, ...args) => (world.reads[hook] ?? reads[hook])(...args) },
     kiting: () => world.kiting, roster: () => roster });

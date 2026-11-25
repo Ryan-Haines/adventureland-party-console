@@ -1,4 +1,5 @@
 const { test } = require('node:test');
+const { scenarioTable } = require('./fixtures/scenarios.cjs');
 const assert = require('node:assert/strict');
 const { mkdtempSync, readFileSync, rmSync } = require('node:fs');
 const { tmpdir } = require('node:os');
@@ -22,8 +23,9 @@ export -f docker
 bash "$SMOKE_SCRIPT" fixture-image amd64
 `;
 
-for (const [mode, expected] of [['success', 0], ['failed-check', 1], ['failed-logs', 0], ['failed-removal', 1]]) {
-  test(`Docker smoke cleanup waits for explicit removal: ${mode}`, () => {
+// Each row makes and removes its own trace folder inside its try, so the table builds nothing.
+scenarioTable('the Docker smoke script under a stubbed docker removes its container explicitly in every outcome', null,
+  [['success', 0], ['failed-check', 1], ['failed-logs', 0], ['failed-removal', 1]].map(([mode, expected]) => [`Docker smoke cleanup waits for explicit removal: ${mode}`, () => {
     const temporary = mkdtempSync(path.join(tmpdir(), 'party-smoke-cleanup-'));
     const trace = path.join(temporary, 'trace');
     const bash = process.platform === 'win32'
@@ -44,5 +46,4 @@ for (const [mode, expected] of [['success', 0], ['failed-check', 1], ['failed-lo
     } finally {
       rmSync(temporary, { recursive: true, force: true });
     }
-  });
-}
+  }]));

@@ -41,6 +41,9 @@ test('HN12 the combat mode answer follows H5 row by row, first match wins', () =
  assert.equal(combatModeAnswer(facts({})),'scatter');
  assert.equal(combatModeAnswer(facts({scatterBreak:true})),'default');
  assert.equal(combatModeAnswer(facts({learned:[]})),'default');
+ // SF22: a live Hunt task leaves the player's combat mode in force.
+ assert.equal(combatModeAnswer(facts({task:'hunt-mission',combatMode:'scatter',learned:[]})),'scatter');
+ assert.equal(combatModeAnswer(facts({task:'hunt-mission',combatMode:'default'})),'default');
 });
 
 // HN13: a farming profile saved with learned types loads them for the same roster and clears them

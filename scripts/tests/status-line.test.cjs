@@ -50,9 +50,12 @@ const rows = [
   ['L9 an add-on task', { assignment: { kind: 'addon:fixture', owner: 'addon:fixture:1', tier: 'addon-task', reunion: 'alone' },
     group: { group: 'party', phase: 'addon:fixture:walk', label: 'Fixture task', since: 1, reasons: [] } }, 'Fixture task'],
 ];
-for (const [name, plant, words] of rows) test(`table L ${name} reads today's words`, () => {
-  assert.equal(lineOf(plant)?.text, words);
-});
+const { scenarioTable } = require('./fixtures/scenarios.cjs');
+// Each table row plants its facts and reads the card line those facts give.
+const plantedFacts = (plant, words) => ({ plant, words });
+const readsWords = ({ plant, words }) => assert.equal(lineOf(plant)?.text, words);
+scenarioTable("each table L row's planted facts read today's words", plantedFacts,
+  rows.map(([name, plant, words]) => [`table L ${name} reads today's words`, readsWords, plant, words]));
 
 // The order between rows that overlap.
 const overlaps = [
@@ -64,9 +67,8 @@ const overlaps = [
   ['the holder over the group task', { status: { movementLive: { kind: 'town', owner: 'town', tier: 'town', journey: false, label: 'Casting Town' } } }, 'Casting Town'],
   ['own death over a needs-action reason', { status: { rip: true }, group: needsYou }, 'Dead - waiting to respawn'],
 ];
-for (const [name, plant, words] of overlaps) test(`table L orders ${name}`, () => {
-  assert.equal(lineOf(plant)?.text, words);
-});
+scenarioTable('table L orders the rows that overlap', plantedFacts,
+  overlaps.map(([name, plant, words]) => [`table L orders ${name}`, readsWords, plant, words]));
 
 // The items owner's bag facts with no live request, and the merchant's own
 // rows.
@@ -79,9 +81,8 @@ const trips = [
     group: { group: 'merchant', phase: 'merchant-job:job', label: 'Merchant job - Party collection - taking items from the bank', since: 1, reasons: [] } },
     'Merchant job - Party collection - taking items from the bank'],
 ];
-for (const [name, plant, words] of trips) test(`table L keeps ${name}`, () => {
-  assert.equal(lineOf(plant)?.text, words);
-});
+scenarioTable('table L keeps the words of each trip', plantedFacts,
+  trips.map(([name, plant, words]) => [`table L keeps ${name}`, readsWords, plant, words]));
 
 // A combat group with no leader holds no task once its source answers nothing, so its card drops
 // the mode task on that tick and reads the focus fight with no mode words.

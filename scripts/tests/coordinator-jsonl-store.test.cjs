@@ -1,4 +1,5 @@
 const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
+const {scenarioTable}=require('./fixtures/scenarios.cjs');
 const {CoordinatorJsonlStore:Store}=require('../../runtime/settings/coordinator/persistence/jsonl-store.ts');
 const {syncBuiltinESMExports}=require('node:module');
 test('Linux stat token parsing uses field 22 after the full command name',()=>{
@@ -84,7 +85,9 @@ function deferredStore(t,code){
 }
 // The store's compaction turn is a timer on its run scope handle, so the test waits one timer turn.
 const turn=()=>new Promise(resolve=>setTimeout(resolve));
-for(const code of ['EPERM','EACCES','EBUSY'])test('SF36: a '+code+' during rotation keeps every write and retries after one more growth step',async t=>{
+// deferredStore needs the row's own context for its mocks and cleanup, so the table builds nothing.
+scenarioTable('SF36: a store whose first rotation rename fails keeps every write and retries one growth step later',()=>undefined,
+ ['EPERM','EACCES','EBUSY'].map(code=>['SF36: a '+code+' during rotation keeps every write and retries after one more growth step',async(_,t)=>{
  const {s,main,rotation,calls,replay}=deferredStore(t,code);
  s.bytes=s.liveBytes+COMPACT_SUPERSEDED_BYTES+1;s.set('keep',3);await turn();
  assert.equal(calls.count,1,'the growth compaction ran and was deferred');
@@ -95,7 +98,7 @@ for(const code of ['EPERM','EACCES','EBUSY'])test('SF36: a '+code+' during rotat
  assert.equal(calls.count,2,'the retry comes with the next growth step');
  assert.deepEqual(replay(),{keep:5});
  s.close();const restored=new Store(main,rotation,{setTimeout,clearTimeout});try{assert.equal(restored.get('keep'),5);assert.equal(restored.get('remove'),undefined);}finally{restored.close();}
-});
+}]));
 // Observed on the live console 2026-11-18: a 207 MB metrics live set rewrote the whole file on
 // every append, about 50 GB of writes in 10 minutes.
 test('a live set past the 128 MB bound appends without compacting',async t=>{
@@ -223,8 +226,10 @@ test('a failed compaction at shutdown keeps the journal and releases the lock',t
 
 // Crash recovery: docs/efficiency.md (Persistence), failure inventory P6.
 const tornCopies=main=>fs.readdirSync(path.dirname(main)).filter(name=>name.startsWith(path.basename(main)+'.torn-'));
-for(const [name,tail] of [['without a newline','{"history":{"lines":[1,2'],['with a newline','{"history":{"lines":[1,2\n'],['of zero bytes','\0\0\0\0\0\0']])
-test('a torn last line '+name+' is copied aside and dropped, and the journal opens',t=>{
+// The journal fixture needs the row's own context for its cleanup, so the table builds nothing.
+scenarioTable('a journal whose last line is torn copies it aside, drops it and opens',()=>undefined,
+ [['without a newline','{"history":{"lines":[1,2'],['with a newline','{"history":{"lines":[1,2\n'],['of zero bytes','\0\0\0\0\0\0']].map(([name,tail])=>
+ ['a torn last line '+name+' is copied aside and dropped, and the journal opens',(_,t)=>{
  const [main,rotation]=fixture(t);fs.writeFileSync(main,'{"keep":1}\n{"history":{"lines":[1]}}\n'+tail);
  const warnings=t.mock.method(console,'warn',()=>{});
  const s=new Store(main,rotation,{setTimeout,clearTimeout});
@@ -236,7 +241,7 @@ test('a torn last line '+name+' is copied aside and dropped, and the journal ope
  s.set('next',2);s.close();
  const r=new Store(main,rotation,{setTimeout,clearTimeout});try{assert.equal(r.get('next'),2);assert.equal(r.get('keep'),1);}finally{r.close();}
  assert.equal(warnings.mock.callCount(),1,'nothing torn on the second start');
-});
+}]));
 test('a last record without a newline keeps its own line when the next record is appended',t=>{
  const [main,rotation]=fixture(t);fs.writeFileSync(main,'{"a":1}\n{"b":2}');
  const s=new Store(main,rotation,{setTimeout,clearTimeout});s.set('c',3);s.close();

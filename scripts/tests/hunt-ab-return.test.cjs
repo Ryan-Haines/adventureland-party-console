@@ -71,8 +71,8 @@ test('A/B ending during protected Daisy travel preserves commands and completes 
   for(const n of f.names)assert.equal(f.state.huntEventTrips[n][0].endedAt,50000);
 });
 
-for(const restart of [false,true])test('already stranded A/B return resumes Daisy and reaches claim phase'+(restart?' after restart':''),()=>{
-  const f=fixture();f.stranded();if(restart)f.restart();
+const {scenarioTable}=require('./fixtures/scenarios.cjs');
+const resumesDaisy=f=>{
   // The exit ends `returned` and leaves the Hunt's failed walk to the hunting owner, whose next step climbs its ladder and restarts it.
   f.service.reconcile();assert.equal(f.state.eventReturn,null);assert.equal(f.state.activeConvoy.id,'daisy');
   f.travel.step(f.state.monsterHunt);
@@ -81,9 +81,12 @@ for(const restart of [false,true])test('already stranded A/B return resumes Dais
   f.service.reconcile();f.travel.step(f.state.monsterHunt);assert.equal(f.starts(),1);
   f.state.activeConvoy=null;for(const n of f.names)Object.assign(f.state.statuses[n],{x:126,y:-413});
   f.travel.step(f.state.monsterHunt);assert.equal(f.claimed(),1);assert.equal(f.state.monsterHunt.stage,'at-daisy');
-});
+};
+scenarioTable('an already stranded A/B return resumes Daisy with or without a restart',restart=>{const f=fixture();f.stranded();if(restart)f.restart();return f;},[
+  ['already stranded A/B return resumes Daisy and reaches claim phase',resumesDaisy,false],
+  ['already stranded A/B return resumes Daisy and reaches claim phase after restart',resumesDaisy,true],
+]);
 
-const {scenarioTable}=require('./fixtures/scenarios.cjs');
 scenarioTable('the A/B handoff waits without touching ownership while a member is not clear',fixture,['stale','inside','dead','cancelled','revision','command','old-cycle'].map(blocker=>
 ['A/B handoff waits without touching ownership: '+blocker,f=>{
   const r=f.stranded(),n=f.names[1];

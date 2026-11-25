@@ -283,9 +283,7 @@ function bankMarks(c, automatic) {
     entry => ruleMode(party.autoItemMarks.M, entry.item)).bank;
 }
 
-for (const automatic of [false, true]) {
-  test(automatic ? 'auto mark for bank deposits every matching stack' : 'mark for bank preserves an unmarked matching stack', async () => {
-    const { c, calls } = runtime([{ name: 'leather', q: 10 }, { name: 'leather', q: 20 }], { items0: [{ name: 'leather', q: 30 }] });
+const depositMarked = automatic => async ({ c, calls }) => {
     const marks = bankMarks(c, automatic);
     assert.deepEqual(Array.from(marks, mark => mark.slot).sort(), automatic ? [0, 1] : [1]);
     for (const mark of marks) await c.bankStoreFully(mark.slot);
@@ -294,6 +292,10 @@ for (const automatic of [false, true]) {
     if (automatic) assert.ok(c.character.items.every(x => !x));
     else assert.deepEqual(c.character.items[0], { name: 'leather', q: 10 });
     assert.equal(calls.some(call => call[0] === 'retrieve'), false, 'deposits must not withdraw unrequested bank stock');
-  });
-}
+};
+scenarioTable('a bank mark over two carried leather stacks deposits only the stacks the mark covers',
+  () => runtime([{ name: 'leather', q: 10 }, { name: 'leather', q: 20 }], { items0: [{ name: 'leather', q: 30 }] }), [
+  ['mark for bank preserves an unmarked matching stack', depositMarked(false)],
+  ['auto mark for bank deposits every matching stack', depositMarked(true)],
+]);
 

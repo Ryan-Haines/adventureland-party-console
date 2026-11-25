@@ -4,7 +4,8 @@ const { JSDOM } = require('../../.caracal/node_modules/jsdom');
 const { installSteamBridge } = require('../../runtime/lifecycle/roster/bridge.ts');
 const { createSwitcher } = require('../../runtime/lifecycle/roster/switcher.ts');
 
-for(const mode of ['group','legacy','interrupted']) test(`intentional primary release suppresses game auto-reconnect (${mode})`,async()=>{
+const { scenarioTable } = require('./fixtures/scenarios.cjs');
+scenarioTable('an intentional primary release in each handoff shape suppresses the game auto-reconnect',mode=>{
  const multi=mode!=='legacy';
  const dom=new JSDOM('',{url:'https://adventure.land'});let timer,scheduled=false,receipt;
  const operation={id:'logout',from:'P',target:null,phase:'release',...(multi?{multi:{action:'headless',subject:'P',before:['P'],desired:[],primary:null,release:['P']}}:{})};
@@ -22,12 +23,20 @@ for(const mode of ['group','legacy','interrupted']) test(`intentional primary re
   operation.multi.releaseIssued=true;
   host.sessionStorage.setItem('party-console-steam-release-v1',JSON.stringify({operationId:operation.id,from:'P',released:true}));
  }
+ return {dom,host,get scheduled(){return scheduled;},get receipt(){return receipt;}};
+},[
+ ['intentional primary release suppresses game auto-reconnect (group)',suppressesReconnect,'group'],
+ ['intentional primary release suppresses game auto-reconnect (legacy)',suppressesReconnect,'legacy'],
+ ['intentional primary release suppresses game auto-reconnect (interrupted)',suppressesReconnect,'interrupted'],
+]);
+async function suppressesReconnect(f){
+ const {dom,host}=f;
  try {
   installSteamBridge(host);await new Promise(r=>setImmediate(r));
-  assert.equal(scheduled,false);assert.equal(host.socket.connected,false);
-  assert.equal(receipt?.operationId,'logout');assert.equal(receipt?.released,true);
+  assert.equal(f.scheduled,false);assert.equal(host.socket.connected,false);
+  assert.equal(f.receipt?.operationId,'logout');assert.equal(f.receipt?.released,true);
  }finally{host.__partySteamBridge?.dispose();dom.window.close();}
-});
+}
 test('X requires explicit confirmation before asking the server for a bulk handoff',async()=>{
  const dom=new JSDOM(''),doc=dom.window.document,calls=[];
  dom.window.HTMLDialogElement.prototype.showModal=function(){this.open=true};

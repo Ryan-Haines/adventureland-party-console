@@ -1,11 +1,13 @@
 const {test}=require('node:test'),assert=require('node:assert/strict');
+const {scenarioTable}=require('./fixtures/scenarios.cjs');
 const loadModule=require('./helpers/dashboard-query-module.cjs');
 const React=require('../../dashboard/node_modules/react'),{create,act}=require('../../dashboard/node_modules/react-test-renderer');
 global.IS_REACT_ACT_ENVIRONMENT=true;
 const load=(name,action)=>loadModule(name+'.tsx',{'./query-actions':{usePartyAction:action},'@/components/ui/*':new Proxy({},{get:(_,name)=>String(name)})});
 const text=node=>typeof node==='string'?node:(node.children||[]).map(text).join('');
 
-for(const routine of ['deliveries','withdrawals'])test(`${routine} checkbox defaults on, saves only its setting, shows the asked value while saving, blocks pending edits and reports failure inline`,async()=>{
+// Each row's assertions drive the save callbacks its own render captures, so each row renders its own harness.
+scenarioTable('a merchant trip checkbox saves only its own setting and reports a failed save inline',null,['deliveries','withdrawals'].map(routine=>[`${routine} checkbox defaults on, saves only its setting, shows the asked value while saving, blocks pending edits and reports failure inline`,async()=>{
  let finish,fail=true,saved,updates;
  function action(){
   const [isPending,pending]=React.useState(false),[error,setError]=React.useState(null);
@@ -28,7 +30,7 @@ for(const routine of ['deliveries','withdrawals'])test(`${routine} checkbox defa
  assert.equal(view.root.findAllByProps({role:'alert'}).length,0);
  await act(async()=>finish());assert.equal(view.root.findByType('input').props.checked,false);
  await act(async()=>view.unmount());
-});
+}]));
 
 test('disabled delivery routine stays visible and inaccessible to edits, reordering or stale saves',async()=>{
  const previous=global.window;global.window={matchMedia:()=>({matches:true})};

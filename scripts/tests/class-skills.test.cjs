@@ -1,5 +1,6 @@
 const {settle}=require('./helpers/settle.cjs');
 const test=require('node:test'),assert=require('node:assert/strict');
+const {scenarioTable}=require('./fixtures/scenarios.cjs');
 // The realm registry holds only the core registrations, so an installed add-on that answers a
 // one-answer hook this file's own add-on answers leaves its rows as they are (helpers/core-hooks.cjs).
 require('./helpers/core-hooks.cjs');
@@ -15,6 +16,7 @@ const {createSkillEngine}=require('../../runtime/characters/turns/skills/engine.
 const protection=require('../../runtime/characters/turns/skills/protection.ts');
 const {turnsWorld}=require('./fixtures/turns-world.cjs');
 const {decisionAsk}=require('../../runtime/characters/turns/sources.ts');
+const {priestAttacks}=require('../../runtime/characters/turns/rules.ts');
 const {skillRange}=require('../../runtime/characters/turns/skills/runtime.ts');
 
 test('every catalog level and class gate is enforced at its boundary',()=>{
@@ -77,6 +79,11 @@ test('MP cost reductions, pending reservations, and survival exceptions',()=>{
  r.actor.mp=reserve(r.w)+900;assert.equal(blocked(r.w,decision('shield_slam',[r.add('a')])),'survival MP reserved');
  r.actor.mp=20;assert.equal(blocked(r.w,decision('selfheal',[],'survival')),null);
  assert.equal(blocked(r.w,decision('selfheal',[],'survival'),20),'insufficient MP');
+ // TC18, the A8 row: the priest attacks only while its MP less the partyheal forecast covers the
+ // attack's mp_cost.
+ const p=fixture('priest'),line=cost(p.w,'partyheal')+p.actor.mp_cost;
+ p.actor.mp=line-p.actor.mp_cost/2;assert.equal(priestAttacks(p.w),false,'half an attack above the forecast');
+ p.actor.mp=line;assert.equal(priestAttacks(p.w),true,'a whole attack above the forecast');
 });
 // Absorb goes only from the leader. The engine's Absorb choice, asked through the core `absorb`
 // source at `task`, reaches the executor and casts on the leader; the same setup sends nothing from
@@ -321,18 +328,20 @@ test('projectile tracker excludes strangers and settles accepted actions at thei
     ['below the reserve in Scatter',{mode:'scatter',attackers:0,mp:900},null],
     ['one monster in range in Scatter',{mode:'scatter',attackers:0,single:true},null],
   ];
-  for(const [name,s,want] of rows)test(`cleave as 1.5's warrior: ${name}`,()=>{
+  scenarioTable('an axe warrior ranks Cleave by mode, attackers and the MP reserve',s=>{
     const r=fixture('warrior');r.actor.slots.mainhand={name:'axe'};r.actor.max_mp=4000;r.actor.mp=s.mp??4000;
     r.w.skills.cleave={name:'cleave',class:['warrior'],type:'skill',wtype:['axe','scythe'],range:160,level:52,mp:720,cooldown:1200,hostile:true,pierces_immunity:true,damage_type:'physical'};
     r.w.skills.hardshell={name:'hardshell',class:['warrior'],type:'skill',mp:480,level:60};
     Object.assign(r.w.context,{mode:s.mode,event:s.event??null});
     const a=r.add('a',{target:s.attackers>=1?'Hero':null});if(!s.single)r.add('b',{target:s.attackers>=2?'Hero':null});
     r.w.attacking=t=>t.target==='Hero';
+    return {r,a};
+  },rows.map(([name,s,want])=>[`cleave as 1.5's warrior: ${name}`,({r,a})=>{
     const got=rank(r.w,a).casts;
     if(!want)return assert.deepEqual(got,[]);
     assert.deepEqual(got.map(d=>[d.skill,!!d.belowReserve]),[want]);
     assert.deepEqual(got[0].targets.map(t=>t.id),['a','b'],'every monster in range');
-  });
+  },s]));
   test("cleave as 1.5's warrior: the strict edge and the send's arguments",()=>{
     const {skillRange}=require('../../runtime/characters/turns/skills/runtime.ts');
     const actor={x:0,y:0,range:20},s={range:160};

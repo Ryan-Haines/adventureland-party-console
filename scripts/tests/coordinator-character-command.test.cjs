@@ -1,4 +1,5 @@
 const test=require('node:test'),assert=require('node:assert/strict');
+const {scenarioTable}=require('./fixtures/scenarios.cjs');
 const {createCharacterCommandRoute}=require('../../runtime/items/coordinator/routes/characters.ts');
 const {createFarmingCommand}=require('../../runtime/hunting/coordinator/routes.ts');
 const {createStatScrollCommands}=require('../../runtime/items/coordinator/production.ts');
@@ -42,13 +43,14 @@ test('equipped stat commands use the character primary stat and reject ordinary-
  assert.equal(f.state.statScrolls.F[0].statType,'dex');assert.equal(f.state.statScrolls.F[0].equipped,true);assert.deepEqual(f.calls,['persist']);
  assert.equal(f.send({character:'F',slot:1}),undefined);
 });
-for(const [level,required] of [[0,1],[1,10],[2,100],[3,1000],[4,9999]])test('non-primary stat grade '+level+' requires '+required+' scrolls across merchant and bank',()=>{
- const f=statFixture(level);f.state.bankSnapshot.packs.items0=[{slot:4,item:{name:'mpcostscroll',q:required-1}}];
+scenarioTable('a non-primary stat mark at each scroll grade counts the scrolls on the merchant and in the bank',statFixture,
+ [[0,1],[1,10],[2,100],[3,1000],[4,9999]].map(([level,required])=>['non-primary stat grade '+level+' requires '+required+' scrolls across merchant and bank',f=>{
+ f.state.bankSnapshot.packs.items0=[{slot:4,item:{name:'mpcostscroll',q:required-1}}];
  if(required===1)f.state.bankSnapshot.packs.items0=[];
  assert.equal(f.send({statType:'mp_cost'}).status,409);
  f.state.statuses.M.items.push({slot:5,item:{name:'mpcostscroll',q:1}});
  assert.equal(f.send({statType:'mp_cost'}),null);assert.equal(f.state.statScrolls.M[0].scroll,'mpcostscroll');assert.deepEqual(f.calls.at(-1),[['M'],'stat scrolls']);
-});
+},level]));
 test('stat marking rejects stale items and already applied stats but permits removing a mark without scroll stock',()=>{
  const f=statFixture();assert.equal(f.send({item:{name:'other'},statType:'dex'}).status,409);
  f.item.stat_type='dex';assert.equal(f.send({statType:'dex'}).status,409);

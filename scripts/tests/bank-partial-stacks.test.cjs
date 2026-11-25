@@ -1,6 +1,8 @@
 const test=require('node:test'),assert=require('node:assert/strict');
+const {scenarioTable}=require('./fixtures/scenarios.cjs');
 const {bankRuntime}=require('./helpers/bank-stacks.cjs');
 const {stackDepositPlan,stackLocations}=require('../../runtime/items/rules.ts');
+const {stackKey}=require('../../runtime/items/identity.ts');
 const key=q=>({name:'tombkey',q});
 // bank.ts's stack service over helpers/bank-stacks.cjs `bankRuntime`, reached as in play: the merchant
 // leaving the bank compacts the piles (`compact`), a walk that ends on the bank floor recovers the
@@ -16,74 +18,17 @@ function stacks(bank,items,limits,store={}){
   secondFloor(packs){r.game.bank_packs=packs;r.G.maps.bank={doors:[[0,0,0,0,'bank_b']]};r.G.maps.bank_b={doors:[[0,0,0,0,'bank']]};},
   restart(){const next=stacks(bank,r.character.items,limits,store);next.character.map=r.character.map;next.game.bank_packs=r.game.bank_packs;next.G.maps=r.G.maps;return next;}});
 }
-test('legacy completed buffer reservations cannot shadow later reuse of the same slots',async()=>{
- const {stackKey}=require('../../runtime/items/identity.ts');
- const r=stacks({items0:[null,null]},[key(3),key(46),null]);
- r.write({buffers:[
-  {slot:0,identity:stackKey({name:'seashell'}),origin:{pack:'items0',slot:0,floor:'bank'}},
-  {slot:1,identity:stackKey({name:'seashell'}),origin:{pack:'items0',slot:1,floor:'bank'}},
-  {slot:0,identity:stackKey(key(3)),origin:{pack:'items0',slot:0,floor:'bank'}},
-  {slot:1,identity:stackKey(key(46)),origin:{pack:'items0',slot:1,floor:'bank'}}]});
- await r.recover();assert.equal(r.total(),49);assert.deepEqual(r.quantities(),[3,46]);assert.equal(r.journal(),null);
-});
-
-test('reused buffer identity retires stale intent without moving unrelated inventory',async()=>{
- const {stackKey}=require('../../runtime/items/identity.ts');
- const r=stacks({items0:[null]},[{name:'sword'}]);
- r.write({buffers:[{slot:0,identity:stackKey(key(3)),origin:{pack:'items0',slot:0,floor:'bank'}}]});
- await r.recover();assert.equal(r.calls.length,0);assert.equal(r.character.items[0].name,'sword');assert.equal(r.journal(),null);
-});
-
-test('legacy mixed seashell and crypt-key journal recovers only remaining bank cargo',async()=>{
- const {stackKey}=require('../../runtime/items/identity.ts');
- const items=Array(12).fill(null);items[7]={name:'cryptkey',q:45};items[9]={name:'anniversarygift',q:1};items[10]={name:'slice_nightberry',q:1};
- const r=stacks({items6:Array(27).fill(null)},items,{cryptkey:50});r.character.bank.items6[25]={name:'cryptkey',q:50};
- const origin=slot=>({pack:'items6',slot,floor:'bank'});
- r.write({buffers:[{slot:7,identity:stackKey({name:'seashell'}),origin:origin(10)},
-  {slot:9,identity:stackKey({name:'seashell'}),origin:origin(11)},
-  {slot:7,identity:stackKey(items[7]),origin:origin(26)},
-  {slot:9,identity:stackKey(items[7]),origin:origin(25)},
-  {slot:10,identity:stackKey(items[7]),source:7}]});
- await r.recover();assert.equal(items[7],null);assert.equal(items[9].name,'anniversarygift');assert.equal(items[10].name,'slice_nightberry');
- assert.deepEqual(r.calls,[['store',7,'items6',26]]);assert.equal(r.character.bank.items6[26].q,45);assert.equal(r.journal(),null);
-});
+const cryptItems=()=>{const items=Array(12).fill(null);items[7]={name:'cryptkey',q:45};items[9]={name:'anniversarygift',q:1};items[10]={name:'slice_nightberry',q:1};return items;};
 // The compaction walks back to the floor it started on before the merchant leaves; a second visit
 // finds nothing left to merge.
-for(const cross of [false,true])test('97 tomb keys compact into 50 and 47 '+(cross?'across floors':'in one pack'),async()=>{
- const bank=cross?{items0:[key(46)],items8:[key(46),key(5)]}:{items0:[key(46),key(46),key(5)]};
- const r=stacks(bank);if(cross)r.secondFloor({items0:['bank'],items8:['bank_b']});
+const compact97=cross=>async r=>{
+ if(cross)r.secondFloor({items0:['bank'],items8:['bank_b']});
  await r.compact();assert.deepEqual(r.quantities(),[50,47]);assert.equal(r.total(),97);
  assert.ok(r.character.items.every(x=>!x));assert.equal(r.journal(),null);assert.deepEqual(r.floors.slice(cross?-2:-1),cross?['bank','main']:['main']);
  await r.recover();const count=r.calls.length;await r.compact();assert.equal(r.calls.length,count);
-});
-test('new deposit fills both gaps without touching unrelated inventory',async()=>{
- const r=stacks({items0:[key(46),key(46)]},[key(5),key(12),null,null,null]);
- await r.fill(0);assert.deepEqual(r.quantities(),[50,47]);assert.equal(r.character.items[1].q,12);assert.equal(r.character.items[0],null);assert.equal(r.total(),109);
-});
-test('bee wings consolidate and legitimate overflow retains full stacks',async()=>{
- const r=stacks({items0:[{name:'beewings',q:9000},{name:'beewings',q:800},{name:'beewings',q:500}]});
- await r.compact();assert.deepEqual(r.quantities(),[9999,301]);assert.equal(r.total(),10300);
-});
-test('protected locations, variants and staging are preserved',async()=>{
- const bank={items0:[key(46),{...key(5),l:'l'},key(5)],items1:Array(42).fill(null)};bank.items1[35]=key(5);
- const r=stacks(bank);r.game.protection={locations:[{pack:'items0',slot:2}],items:[]};
- await r.compact();assert.deepEqual(r.quantities(),[46,5,5,5]);assert.equal(r.calls.length,0);
-});
-test('full inventory defers partial work but permits safe whole-stack bank merges',async()=>{
- const r=stacks({items0:[key(46),key(46),key(5)]},Array(4).fill({name:'sword'}));const statuses=[];r.p.status=message=>statuses.push(message);
- await r.compact();assert.ok(statuses.includes('Bank stack cleanup deferred: inventory buffers unavailable'));assert.equal(r.calls.length,0);
- r.character.bank.items0=[key(20),key(25)];await r.recover();await r.compact();assert.deepEqual(r.quantities(),[45]);
-});
-test('deposit with insufficient split buffers is deferred without creating a bank stack',async()=>{
- const r=stacks({items0:[key(46),key(46)]},[key(5)]);
- await assert.rejects(r.fill(0),/buffers/);assert.equal(r.calls.length,0);assert.deepEqual(r.quantities(),[46,46]);
-});
-test('planner fills all partial capacity before allocating an overflow slot',()=>{
- const plan=stackDepositPlan(key(12),50,stackLocations({items0:[key(46),key(46)]},{locations:[],items:[]}));
- assert.deepEqual(plan.moves.map(m=>m.quantity),[4,4,4]);assert.equal(plan.remaining,0);
-});
-for(const failAt of [1,2,3,4,5,6])test('restart recovers confirmed mutation '+failAt+' without duplication',async()=>{
- const r=stacks({items0:[key(46)],items8:[key(5)]});r.secondFloor({items0:['bank'],items8:['bank_b']});
+};
+const restartRecovers=failAt=>async r=>{
+ r.secondFloor({items0:['bank'],items8:['bank_b']});
  let operations=0,crashed=false;
  for(const name of ['bank_retrieve','bank_store','split','swap','bank_swap']){const run=r.game[name];r.game[name]=async(...args)=>{
   const result=await run(...args);if(++operations===failAt&&!crashed){crashed=true;throw Error('connection lost after mutation');}return result;};}
@@ -91,56 +36,97 @@ for(const failAt of [1,2,3,4,5,6])test('restart recovers confirmed mutation '+fa
  const restarted=r.restart();
  await restarted.recover();await restarted.compact();
  assert.equal(r.total(),51);assert.deepEqual(r.quantities(),[50,1]);assert.ok(r.character.items.every(x=>!x));assert.equal(r.journal(),null);
+};
+scenarioTable('the stack service over one bank, bag and journal compacts, recovers and fills partial piles',stacks,[
+ ['legacy completed buffer reservations cannot shadow later reuse of the same slots',async r=>{
+  r.write({buffers:[
+   {slot:0,identity:stackKey({name:'seashell'}),origin:{pack:'items0',slot:0,floor:'bank'}},
+   {slot:1,identity:stackKey({name:'seashell'}),origin:{pack:'items0',slot:1,floor:'bank'}},
+   {slot:0,identity:stackKey(key(3)),origin:{pack:'items0',slot:0,floor:'bank'}},
+   {slot:1,identity:stackKey(key(46)),origin:{pack:'items0',slot:1,floor:'bank'}}]});
+  await r.recover();assert.equal(r.total(),49);assert.deepEqual(r.quantities(),[3,46]);assert.equal(r.journal(),null);
+ },{items0:[null,null]},[key(3),key(46),null]],
+ ['reused buffer identity retires stale intent without moving unrelated inventory',async r=>{
+  r.write({buffers:[{slot:0,identity:stackKey(key(3)),origin:{pack:'items0',slot:0,floor:'bank'}}]});
+  await r.recover();assert.equal(r.calls.length,0);assert.equal(r.character.items[0].name,'sword');assert.equal(r.journal(),null);
+ },{items0:[null]},[{name:'sword'}]],
+ ['legacy mixed seashell and crypt-key journal recovers only remaining bank cargo',async r=>{
+  const items=r.character.items;r.character.bank.items6[25]={name:'cryptkey',q:50};
+  const origin=slot=>({pack:'items6',slot,floor:'bank'});
+  r.write({buffers:[{slot:7,identity:stackKey({name:'seashell'}),origin:origin(10)},
+   {slot:9,identity:stackKey({name:'seashell'}),origin:origin(11)},
+   {slot:7,identity:stackKey(items[7]),origin:origin(26)},
+   {slot:9,identity:stackKey(items[7]),origin:origin(25)},
+   {slot:10,identity:stackKey(items[7]),source:7}]});
+  await r.recover();assert.equal(items[7],null);assert.equal(items[9].name,'anniversarygift');assert.equal(items[10].name,'slice_nightberry');
+  assert.deepEqual(r.calls,[['store',7,'items6',26]]);assert.equal(r.character.bank.items6[26].q,45);assert.equal(r.journal(),null);
+ },{items6:Array(27).fill(null)},cryptItems(),{cryptkey:50}],
+ ['97 tomb keys compact into 50 and 47 in one pack',compact97(false),{items0:[key(46),key(46),key(5)]}],
+ ['97 tomb keys compact into 50 and 47 across floors',compact97(true),{items0:[key(46)],items8:[key(46),key(5)]}],
+ ['new deposit fills both gaps without touching unrelated inventory',async r=>{
+  await r.fill(0);assert.deepEqual(r.quantities(),[50,47]);assert.equal(r.character.items[1].q,12);assert.equal(r.character.items[0],null);assert.equal(r.total(),109);
+ },{items0:[key(46),key(46)]},[key(5),key(12),null,null,null]],
+ ['bee wings consolidate and legitimate overflow retains full stacks',async r=>{
+  await r.compact();assert.deepEqual(r.quantities(),[9999,301]);assert.equal(r.total(),10300);
+ },{items0:[{name:'beewings',q:9000},{name:'beewings',q:800},{name:'beewings',q:500}]}],
+ ['protected locations, variants and staging are preserved',async r=>{
+  r.game.protection={locations:[{pack:'items0',slot:2}],items:[]};
+  await r.compact();assert.deepEqual(r.quantities(),[46,5,5,5]);assert.equal(r.calls.length,0);
+ },(()=>{const bank={items0:[key(46),{...key(5),l:'l'},key(5)],items1:Array(42).fill(null)};bank.items1[35]=key(5);return bank;})()],
+ ['full inventory defers partial work but permits safe whole-stack bank merges',async r=>{
+  const statuses=[];r.p.status=message=>statuses.push(message);
+  await r.compact();assert.ok(statuses.includes('Bank stack cleanup deferred: inventory buffers unavailable'));assert.equal(r.calls.length,0);
+  r.character.bank.items0=[key(20),key(25)];await r.recover();await r.compact();assert.deepEqual(r.quantities(),[45]);
+ },{items0:[key(46),key(46),key(5)]},Array(4).fill({name:'sword'})],
+ ['deposit with insufficient split buffers is deferred without creating a bank stack',async r=>{
+  await assert.rejects(r.fill(0),/buffers/);assert.equal(r.calls.length,0);assert.deepEqual(r.quantities(),[46,46]);
+ },{items0:[key(46),key(46)]},[key(5)]],
+ ...[1,2,3,4,5,6].map(failAt=>['restart recovers confirmed mutation '+failAt+' without duplication',restartRecovers(failAt),{items0:[key(46)],items8:[key(5)]}]),
+ ['unconfirmed operation stays journaled and is not sent twice',async r=>{
+  let sent=0;r.game.bank_retrieve=async()=>{sent++;};
+  await assert.rejects(r.compact(),/not confirmed/);assert.ok(r.journal().pending);await r.recover();
+  assert.equal(sent,1);assert.equal(r.journal(),null);assert.equal(r.total(),51);
+ },{items0:[key(46)],items8:[key(5)]}],
+ ['locked floors and protected crafting item types are excluded',async r=>{
+  r.game.bank_packs={items0:['bank'],items8:['bank_b']};
+  await r.compact();assert.equal(r.calls.length,0);
+  r.secondFloor(r.game.bank_packs);r.game.protection={locations:[],items:[{name:'tombkey',level:0}]};
+  await r.recover();await r.compact();assert.equal(r.calls.length,0);
+ },{items0:[key(46)],items8:[key(5)]}],
+ ['delayed proxy updates settle before the next mutation',async r=>{
+  const original=r.game.bank_swap,clock=r.p.sleep;let update;
+  r.game.bank_swap=async(...args)=>{update=()=>original(...args);};
+  r.p.sleep=async ms=>{await clock(ms);if(update){const apply=update;update=null;await apply();}};
+  await r.compact();assert.deepEqual(r.quantities(),[45]);assert.equal(r.total(),45);
+ },{items0:[key(20),key(25)]}],
+ ['a full bank pane compacts without requiring an empty bank slot',async r=>{
+  const pack=r.character.bank.items0;await r.compact();
+  assert.deepEqual(pack.filter(x=>x?.name==='tombkey').map(x=>x.q),[50,47]);assert.equal(pack.filter(Boolean).length,41);
+  assert.ok(r.character.items.every(x=>!x));
+ },{items0:[key(46),key(46),key(5),...Array.from({length:39},(_,i)=>({name:'equipment'+i}))]}],
+ ['concurrent cleanup calls serialize rather than borrowing the same buffers',async r=>{
+  await Promise.all([r.compact(),r.compact(),r.recover()]);
+  assert.deepEqual(r.quantities(),[50,47]);assert.equal(r.total(),97);assert.equal(r.journal(),null);
+ },{items0:[key(46),key(46),key(5)]}],
+ ['replacement runtime leaves the operation journal for the new runner',async r=>{
+  let current=true;
+  r.p.current=()=>current;const retrieve=r.game.bank_retrieve;
+  r.game.bank_retrieve=async(...args)=>{await retrieve(...args);current=false;};
+  await assert.rejects(r.compact(),/runtime replaced/);assert.ok(r.journal().pending);assert.equal(r.total(),51);
+  const restarted=r.restart();
+  await restarted.recover();await restarted.compact();assert.deepEqual(r.quantities(),[50,1]);
+ },{items0:[key(46)],items8:[key(5)]}],
+ ['a stack changed during floor travel is replanned without depositing stale quantities',async r=>{
+  r.secondFloor({items8:['bank_b']});
+  r.game.smart_move=async()=>{r.character.bank.items8[0].q=45;};
+  await assert.rejects(r.fill(0),/changed during travel/);
+  assert.equal(r.calls.length,0);assert.equal(r.character.items[0].q,5);assert.equal(r.journal(),null);
+ },{items8:[key(40)]},[key(5),null,null]],
+]);
+test('planner fills all partial capacity before allocating an overflow slot',()=>{
+ const plan=stackDepositPlan(key(12),50,stackLocations({items0:[key(46),key(46)]},{locations:[],items:[]}));
+ assert.deepEqual(plan.moves.map(m=>m.quantity),[4,4,4]);assert.equal(plan.remaining,0);
 });
-test('unconfirmed operation stays journaled and is not sent twice',async()=>{
- const r=stacks({items0:[key(46)],items8:[key(5)]});let sent=0;r.game.bank_retrieve=async()=>{sent++;};
- await assert.rejects(r.compact(),/not confirmed/);assert.ok(r.journal().pending);await r.recover();
- assert.equal(sent,1);assert.equal(r.journal(),null);assert.equal(r.total(),51);
-});
-
-test('locked floors and protected crafting item types are excluded',async()=>{
- const r=stacks({items0:[key(46)],items8:[key(5)]});r.game.bank_packs={items0:['bank'],items8:['bank_b']};
- await r.compact();assert.equal(r.calls.length,0);
- r.secondFloor(r.game.bank_packs);r.game.protection={locations:[],items:[{name:'tombkey',level:0}]};
- await r.recover();await r.compact();assert.equal(r.calls.length,0);
-});
-
-test('delayed proxy updates settle before the next mutation',async()=>{
- const r=stacks({items0:[key(20),key(25)]});const original=r.game.bank_swap,clock=r.p.sleep;let update;
- r.game.bank_swap=async(...args)=>{update=()=>original(...args);};
- r.p.sleep=async ms=>{await clock(ms);if(update){const apply=update;update=null;await apply();}};
- await r.compact();assert.deepEqual(r.quantities(),[45]);assert.equal(r.total(),45);
-});
-
-test('a full bank pane compacts without requiring an empty bank slot',async()=>{
- const pack=[key(46),key(46),key(5),...Array.from({length:39},(_,i)=>({name:'equipment'+i}))];
- const r=stacks({items0:pack});await r.compact();
- assert.deepEqual(pack.filter(x=>x?.name==='tombkey').map(x=>x.q),[50,47]);assert.equal(pack.filter(Boolean).length,41);
- assert.ok(r.character.items.every(x=>!x));
-});
-
-test('concurrent cleanup calls serialize rather than borrowing the same buffers',async()=>{
- const r=stacks({items0:[key(46),key(46),key(5)]});
- await Promise.all([r.compact(),r.compact(),r.recover()]);
- assert.deepEqual(r.quantities(),[50,47]);assert.equal(r.total(),97);assert.equal(r.journal(),null);
-});
-
-test('replacement runtime leaves the operation journal for the new runner',async()=>{
- const r=stacks({items0:[key(46)],items8:[key(5)]});let current=true;
- r.p.current=()=>current;const retrieve=r.game.bank_retrieve;
- r.game.bank_retrieve=async(...args)=>{await retrieve(...args);current=false;};
- await assert.rejects(r.compact(),/runtime replaced/);assert.ok(r.journal().pending);assert.equal(r.total(),51);
- const restarted=r.restart();
- await restarted.recover();await restarted.compact();assert.deepEqual(r.quantities(),[50,1]);
-});
-
-test('a stack changed during floor travel is replanned without depositing stale quantities',async()=>{
- const r=stacks({items8:[key(40)]},[key(5),null,null]);r.secondFloor({items8:['bank_b']});
- r.game.smart_move=async()=>{r.character.bank.items8[0].q=45;};
- await assert.rejects(r.fill(0),/changed during travel/);
- assert.equal(r.calls.length,0);assert.equal(r.character.items[0].q,5);assert.equal(r.journal(),null);
-});
-
 // T1-12: a buffer journaled by carries its nine-field stackIdentity
 // (characters/party-member.js:1251-1253 at v1.5.0); the load keys it by stackKey
 // once, so the recovery returns the buffered pile to its bank cell instead of clearing the

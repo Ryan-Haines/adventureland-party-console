@@ -26,21 +26,23 @@ test('a final join refusal ends the occurrence for every member on its realm',()
   assert.equal(s.eventAttendance.P.icegolem.ignored,'event-over','the member that had not asked');
   assert.equal(eventInstanceAllowed(s,'P','icegolem'),false);
 });
-for(const [label,amend]of [
- ['stale status',s=>s.statuses.W.seenAt=1],
- ['missing realm',s=>delete s.statuses.W.server],
- ['unrecorded session',s=>delete s.eventSessions.W.participationRecorded],
- ['unowned session',s=>s.eventSessions.W.participants=['P']],
- ['missing session',s=>delete s.eventSessions.W],
- ['wrong authorization realm',s=>s.eventSessions.W.authorizedRealm='EUI'],
- ['missing authorization realm',s=>delete s.eventSessions.W.authorizedRealm],
- ['stale authorization',s=>s.eventSessions.W.authorizedAt=1],
- ['disconnected feed',s=>s.statuses.W.eventFeedConnected=false],
- ['stale clock',s=>s.statuses.W.eventClockStale=true],
-])test('manual travel does not manufacture exclusion from '+label,()=>{
- const s=fixture();amend(s);playerMoved(s,['W'],{map:'main'},100000);
+const {scenarioTable}=require('./fixtures/scenarios.cjs');
+const noExclusion=s=>{
+ playerMoved(s,['W'],{map:'main'},100000);
  assert.deepEqual(s.eventAttendance,{});
-});
+};
+scenarioTable('manual travel by a member whose event status is not trusted records no exclusion',amend=>{const s=fixture();amend(s);return s;},[
+ ['manual travel does not manufacture exclusion from stale status',noExclusion,s=>s.statuses.W.seenAt=1],
+ ['manual travel does not manufacture exclusion from missing realm',noExclusion,s=>delete s.statuses.W.server],
+ ['manual travel does not manufacture exclusion from unrecorded session',noExclusion,s=>delete s.eventSessions.W.participationRecorded],
+ ['manual travel does not manufacture exclusion from unowned session',noExclusion,s=>s.eventSessions.W.participants=['P']],
+ ['manual travel does not manufacture exclusion from missing session',noExclusion,s=>delete s.eventSessions.W],
+ ['manual travel does not manufacture exclusion from wrong authorization realm',noExclusion,s=>s.eventSessions.W.authorizedRealm='EUI'],
+ ['manual travel does not manufacture exclusion from missing authorization realm',noExclusion,s=>delete s.eventSessions.W.authorizedRealm],
+ ['manual travel does not manufacture exclusion from stale authorization',noExclusion,s=>s.eventSessions.W.authorizedAt=1],
+ ['manual travel does not manufacture exclusion from disconnected feed',noExclusion,s=>s.statuses.W.eventFeedConnected=false],
+ ['manual travel does not manufacture exclusion from stale clock',noExclusion,s=>s.statuses.W.eventClockStale=true],
+]);
 
 // Only a move that leaves the event's map leaves its occurrence. The member stands on
 // the Goobrawl map; a point on the same map keeps it, a point on main leaves it.
@@ -77,10 +79,16 @@ test('a move on the map a member walks through to its event leaves the occurrenc
  playerMoved(s,['W'],{map:'main',x:100,y:100},100000);
  assert.equal(s.eventAttendance.W.mrpumpkin.ignored,'manual travel');
 });
-for(const reason of ['death limit','time limit'])test('manual route ownership preserves '+reason,()=>{
- const s=fixture();observeEventAttendance(s,{name:'W',server:'USII',joinedEvent:'icegolem',serverLiveEvents:[{name:'icegolem',id:'native-1'}]},100000);
- s.eventAttendance.W.icegolem.ignored=reason;
+const keepsReason=({s,reason})=>{
  playerMoved(s,['W'],{map:'main'},100000);
  assert.equal(s.eventAttendance.W.icegolem.ignored,reason);
  assert.equal(manualEventOccurrenceSkipped(s,'W','icegolem'),true);
-});
+};
+scenarioTable('manual travel keeps the limit an event occurrence was already skipped for',reason=>{
+ const s=fixture();observeEventAttendance(s,{name:'W',server:'USII',joinedEvent:'icegolem',serverLiveEvents:[{name:'icegolem',id:'native-1'}]},100000);
+ s.eventAttendance.W.icegolem.ignored=reason;
+ return {s,reason};
+},[
+ ['manual route ownership preserves death limit',keepsReason,'death limit'],
+ ['manual route ownership preserves time limit',keepsReason,'time limit'],
+]);

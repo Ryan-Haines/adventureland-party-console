@@ -1,4 +1,5 @@
 const test=require('node:test'),assert=require('node:assert/strict');
+const {scenarioTable}=require('./fixtures/scenarios.cjs');
 const {createMarketplaceProgressRoutes}=require('../../runtime/items/coordinator/routes/market.ts');
 function fixture(blacklistingEnabled=true){
  const listing={key:'a',item:{name:'cap',level:8},quantity:1,price:100,seller:'Seller',serverRegion:'US',serverIdentifier:'II'};
@@ -34,12 +35,12 @@ test('Ponty progress dismisses once and fulfills the planned listing quantity',(
  t.send('ponty',{success:true});t.send('ponty',{success:true});assert.equal(t.state.standBids.cap.quantity,2);assert.equal(t.calls.filter(x=>x[0]==='dismiss').length,1);
  assert.equal(t.send('ponty',{listingKey:'missing'}).code,400);
 });
-for(const success of [true,false])test('purchase '+(success?'collection':'cancellation')+' retains unrelated and incomplete queued jobs by identity',()=>{
- const t=fixture(),fishing={reason:'fishing'},stand={reason:'stand purchases',listings:[{seller:'Seller'}]},incomplete={reason:'ALData marketplace purchases'};
+scenarioTable('a purchase report on the current ALData job keeps every other queued job by identity',fixture,[true,false].map(success=>['purchase '+(success?'collection':'cancellation')+' retains unrelated and incomplete queued jobs by identity',t=>{
+ const fishing={reason:'fishing'},stand={reason:'stand purchases',listings:[{seller:'Seller'}]},incomplete={reason:'ALData marketplace purchases'};
  t.state.merchantQueue=[fishing,stand,incomplete];
  t.send('aldata',{success,quantity:1,failureCode:'seller_not_visible'});
  assert.equal(t.state.merchantQueue[0],fishing);assert.equal(t.state.merchantQueue[1],stand);assert.equal(t.state.merchantQueue[2],incomplete);
-});
+}]));
 
 test('disabling automatic blacklisting skips an unavailable seller without adding a strike',()=>{
  const t=fixture(false);const result=t.send('aldata',{success:false,failureCode:'seller_not_visible'});

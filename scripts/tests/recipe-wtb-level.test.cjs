@@ -75,9 +75,9 @@ test('merchant routines show gathering modes, include mail, count enabled routin
  } finally {await act(async()=>view?.unmount());global.window=previousWindow;}
 });
 
-for (const label of ['Automatically fill empty stand slots with highest priority buy order','Accept higher levels']) test(label+' can toggle in both directions after asynchronous saves',async()=>{
- const {WTBPreference}=load('wtb-preferences');let view,confirm;const calls=[];
- function Harness(){const [checked,setChecked]=React.useState(false);return React.createElement(WTBPreference,{label,description:'Help',checked,onChange:value=>{calls.push(value);confirm=()=>setChecked(value);}});}
+const {scenarioTable}=require('./fixtures/scenarios.cjs');
+const togglesBothWays=async({Harness,calls,confirm})=>{
+ let view;
  try {
   await act(async()=>{view=create(React.createElement(Harness));});
   for(const checked of [true,false,true]) {
@@ -87,7 +87,15 @@ for (const label of ['Automatically fill empty stand slots with highest priority
   }
   assert.deepEqual(calls,[true,false,true]);
  } finally {await act(async()=>view?.unmount());}
-});
+};
+scenarioTable('a WTB preference checkbox follows each confirmed save in both directions',label=>{
+ const {WTBPreference}=load('wtb-preferences');let confirm;const calls=[];
+ function Harness(){const [checked,setChecked]=React.useState(false);return React.createElement(WTBPreference,{label,description:'Help',checked,onChange:value=>{calls.push(value);confirm=()=>setChecked(value);}});}
+ return {Harness,calls,confirm:()=>confirm()};
+},[
+ ['Automatically fill empty stand slots with highest priority buy order can toggle in both directions after asynchronous saves',togglesBothWays,'Automatically fill empty stand slots with highest priority buy order'],
+ ['Accept higher levels can toggle in both directions after asynchronous saves',togglesBothWays,'Accept higher levels'],
+]);
 test('full stand replacement shows catalog sprites and retains selection until confirmed',async()=>{
  const {useWTBReplacement}=load('wtb-preferences');let api,view;const calls=[];
  const catalog=[{id:'cape',name:'Cape',sprite:{url:'/cape.png',columns:1,rows:1,x:0,y:0,tileSize:20}}];

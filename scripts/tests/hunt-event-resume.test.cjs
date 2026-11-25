@@ -43,14 +43,22 @@ function fixture(event = 'goobrawl') {
     restart(){Object.assign(state,JSON.parse(JSON.stringify(state)));service=createCoordinatorEventReturns(state,ports);}};
 }
 
-for(const event of ['goobrawl','abtesting','pirateship','icegolem','crabxx','franky'])
-test(`${event} evacuation hands directly to current Hunt without a checkpoint detour`,()=>{
-  const f=fixture(event);f.names.forEach(f.atTown);f.service().reconcile();
+const {scenarioTable}=require('./fixtures/scenarios.cjs');
+const handsToHunt=f=>{
+  f.service().reconcile();
   assert.equal(f.state.eventReturn,null);assert.equal(f.starts(),0);
   assert.equal(f.state.monsterHunt.target,'bee');assert.equal(f.state.monsterHunt.stage,'mission-travel');
   assert.deepEqual(f.state.monsterHunt.loot,{complete:false});
   assert.equal(Object.keys(f.state.commands).length,0);
-});
+};
+scenarioTable('an evacuation from each event with every member in town hands directly to the current Hunt',event=>{const f=fixture(event);f.names.forEach(f.atTown);return f;},[
+  ['goobrawl evacuation hands directly to current Hunt without a checkpoint detour',handsToHunt,'goobrawl'],
+  ['abtesting evacuation hands directly to current Hunt without a checkpoint detour',handsToHunt,'abtesting'],
+  ['pirateship evacuation hands directly to current Hunt without a checkpoint detour',handsToHunt,'pirateship'],
+  ['icegolem evacuation hands directly to current Hunt without a checkpoint detour',handsToHunt,'icegolem'],
+  ['crabxx evacuation hands directly to current Hunt without a checkpoint detour',handsToHunt,'crabxx'],
+  ['franky evacuation hands directly to current Hunt without a checkpoint detour',handsToHunt,'franky'],
+]);
 
 test('staggered restart, deferred exit, failed farm child and Hunt off/on resume current policy',()=>{
   const f=fixture();f.atTown('QwenTina');f.atTown('GermanicHP');f.child();
@@ -72,16 +80,23 @@ test('currently connected late member must really leave before handoff',()=>{
   f.atTown('GDroidPT');f.service().reconcile();assert.equal(f.state.eventReturn,null);
 });
 
-for(const kind of ['stale','manual','merchant','newer-command'])
-test(`Hunt handoff preserves ${kind} ownership or observation`,()=>{
+const preservesOwnership=f=>{
+  const commands=JSON.stringify(f.state.commands);f.service().reconcile();
+  assert.ok(f.state.eventReturn);assert.equal(f.starts(),0);assert.equal(JSON.stringify(f.state.commands),commands);
+};
+scenarioTable('the Hunt handoff with every member in town leaves a held member untouched',kind=>{
   const f=fixture();f.names.forEach(f.atTown);
   if(kind==='stale')f.state.statuses.GDroidPT.seenAt=1;
   if(kind==='manual')f.state.navigationIntents.GDroidPT={revision:5,cancelled:true};
   if(kind==='merchant')f.state.commands.GDroidPT={id:800,type:'merchant-handoff'};
   if(kind==='newer-command')f.state.commands.GDroidPT={id:800,type:'character-travel'};
-  const commands=JSON.stringify(f.state.commands);f.service().reconcile();
-  assert.ok(f.state.eventReturn);assert.equal(f.starts(),0);assert.equal(JSON.stringify(f.state.commands),commands);
-});
+  return f;
+},[
+  ['Hunt handoff preserves stale ownership or observation',preservesOwnership,'stale'],
+  ['Hunt handoff preserves manual ownership or observation',preservesOwnership,'manual'],
+  ['Hunt handoff preserves merchant ownership or observation',preservesOwnership,'merchant'],
+  ['Hunt handoff preserves newer-command ownership or observation',preservesOwnership,'newer-command'],
+]);
 
 test('unowned farm child cannot be retired by label alone',()=>{
   const f=fixture();f.names.forEach(f.atTown);f.child();f.state.activeConvoy.walkingParents.QwenTina.parentId=999;

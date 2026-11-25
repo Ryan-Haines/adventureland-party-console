@@ -33,13 +33,21 @@ function fixture() {
     request: (path, options) => r.request(path, options), walk: () => r.convoySignal, log: message => logs.push(message) }));
   return { r, telemetry, requests, logs, time: n => now = n, fail: f => failure = f, response: value => response = value };
 }
-for (const status of [400,409,500]) test('HTTP '+status+' retains endpoint and server explanation without payloads', async()=>{
-  const f=fixture();f.fail([{status,responseJSON:{error:'stale convoy',private:'do not retain'}},'error','']);
+const {scenarioTable}=require('./fixtures/scenarios.cjs');
+const keepsExplanation=async({f,status})=>{
   await assert.rejects(f.r.request('/status?token=secret',{method:'POST',body:{password:'private'}}),e=>{
     assert.equal(e.partyRequest.status,status);assert.equal(e.partyRequest.path,'/status');
     assert.match(e.message,/stale convoy/);assert.doesNotMatch(JSON.stringify(e),/secret|private/);return true;
   });
-});
+};
+scenarioTable('a status request the server refuses keeps its endpoint and explanation and drops its payloads',status=>{
+  const f=fixture();f.fail([{status,responseJSON:{error:'stale convoy',private:'do not retain'}},'error','']);
+  return {f,status};
+},[
+  ['HTTP 400 retains endpoint and server explanation without payloads',keepsExplanation,400],
+  ['HTTP 409 retains endpoint and server explanation without payloads',keepsExplanation,409],
+  ['HTTP 500 retains endpoint and server explanation without payloads',keepsExplanation,500],
+]);
 test('status timing records actual response receipt and failure without extra requests',async()=>{
  const f=fixture();let now=100;f.r.performance={now:()=>now};
  f.r.$.ajax=()=>({done(fn){now=450;fn({ok:true});return this;},fail(){return this;}});
@@ -56,15 +64,22 @@ test('broken diagnostic state cannot reject an otherwise successful status respo
  const f=fixture();Object.defineProperty(f.r.root,'__partyConvoyHttp',{get(){throw Error('diagnostic state unavailable');}});
  f.response({ok:true});assert.equal((await f.r.request('/status')).ok,true);
 });
-for(const [status,http,kind]of [['error',0,'network'],['timeout',0,'timeout'],['parsererror',200,'invalid-json'],['abort',0,'aborted']])
-  test('classifies '+kind,async()=>{
-    const f=fixture();f.fail([{status:http,responseText:'full response must not leak'},status,'']);
+const classifies=async({f,kind})=>{
     boundsSent(boundsPending().length);
     await assert.rejects(f.r.request('/status'),e=>e.partyRequest.kind===kind&&!JSON.stringify(e).includes('full response'));
     // A request that names no timeout of its own ends at the default bound, which reports its cut.
     assert.deepEqual(boundsPending().map(b=>b.bound),kind==='timeout'?['REQUEST_DEFAULT_MS']:[]);
     boundsSent(boundsPending().length);
-  });
+};
+scenarioTable('a failed status request is classified by its transport failure without its response text',(status,http,kind)=>{
+  const f=fixture();f.fail([{status:http,responseText:'full response must not leak'},status,'']);
+  return {f,kind};
+},[
+  ['classifies network',classifies,'error',0,'network'],
+  ['classifies timeout',classifies,'timeout',0,'timeout'],
+  ['classifies invalid-json',classifies,'parsererror',200,'invalid-json'],
+  ['classifies aborted',classifies,'abort',0,'aborted'],
+]);
 test('diagnostics survive reload, deduplicate repeats, stay bounded and retry only after success',async()=>{
   const f=fixture();f.telemetry.statusFailure(new Error('broken'),'apply navigation');
   f.telemetry.statusFailure(new Error('broken'),'apply navigation');

@@ -409,4 +409,16 @@ scenarioTable('survival\'s farm fact, Stomp hold, Town gate, healthy answer, not
   const { survivalSavedFields } = require('../../runtime/characters/survival/saved-fields.ts');
   for (const pick of ['survivalEscapeStep', 'survivalLandingMargin']) assert.equal(Object.hasOwn(survivalSavedFields.settings, pick), false, pick);
  }],
+ // SV22 (D4): on the `leave` verdict a character holding a jacko asks Scare while a monster targets
+ // it, and asks none without the jacko or the monster. The escape's Blink stage gives the verdict.
+ ['Scare goes before leaving with a jacko and a monster on the caster, and not without either', t => {
+  t.world.escapeStage = 'blink'; t.g.G.skills.scare = {};
+  t.g.character.slots = { ...t.g.character.slots, orb: { name: 'jacko' } };
+  t.g.parent.entities.m1 = { type: 'monster', target: t.g.character.name };
+  assert.equal(t.needs.scare()?.skill, 'scare', 'a jacko and a monster on the caster');
+  t.g.parent.entities.m1.target = 'Other';
+  assert.equal(t.needs.scare(), undefined, 'no monster on the caster');
+  t.g.parent.entities.m1.target = t.g.character.name; t.g.character.slots.orb = null;
+  assert.equal(t.needs.scare(), undefined, 'no jacko');
+ }, 'warrior'],
 ]);

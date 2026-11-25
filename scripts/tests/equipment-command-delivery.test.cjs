@@ -1,14 +1,14 @@
 const test=require('node:test'),assert=require('node:assert/strict');
+const {scenarioTable}=require('./fixtures/scenarios.cjs');
 const {run}=require('./helpers/coordinator-host.cjs');
 // The startup harness has no workers; register its account character only in the command fixture.
 const commandPolicies=policies=>({...policies,createCoordinatorCharacterCommands(state,workers,ports){
   return policies.createCoordinatorCharacterCommands(state,{...workers,P:{}},ports);
 }});
 
-for(const type of ['unequip','equip'])test(`${type} survives combat-only reports and polling until a full heartbeat delivers it`,async()=>{
-  const host=await run(1900000000000,{
+scenarioTable('an equipment command on a started coordinator waits for a full heartbeat to deliver it',()=>run(1900000000000,{
     '../items/coordinator/api.ts':commandPolicies,
-  });
+  }),['unequip','equip'].map(type=>[`${type} survives combat-only reports and polling until a full heartbeat delivers it`,async host=>{
   const status=host.handlers.get('/party-api/status');
   const item={name:'intbelt',level:0};
   const report={name:'P',ctype:'priest',runtime:'native',steamPrimary:true,map:'main',x:0,y:0,server:'USII',gold:0,items:Array(42).fill(null),
@@ -30,7 +30,7 @@ for(const type of ['unequip','equip'])test(`${type} survives combat-only reports
   assert.equal(send(status,report).command?.id,delivered.command.id,'a full report that has not applied the command gets it again');
   send(status,{...report,lastCommandId:delivered.command.id});
   assert.equal(send(status,report).command,null,'the command leaves the slot once a report names its id');
-});
+}]));
 
 test('escape suppression holds unequip until a full heartbeat can actually deliver it',async()=>{
   let escaping=true;

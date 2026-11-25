@@ -42,21 +42,38 @@ test('no alternative spawn starts the round of spawns over without inventing tra
  // With the owner on the Hunt, it starts the round of spawns over and does not hold.
  assert.match(huntMessage(r.hunt),/starting over from the first spawn/);assert.equal(r.entry(),undefined);
 });
+const {scenarioTable}=require('./fixtures/scenarios.cjs');
+const retiresSaved=r=>{
+ convertHunt(r.hunt);r.step();assert.equal(r.entry().phase,'excluded');assert.equal(r.entry().relocation,undefined);assert.equal(r.started[0].map,'arena');
+};
 // record.ts `convertHunt` spends an entry saved mid-relocation at load.
-for(const phase of ['relocation','post-relocation','held'])test('saved '+phase+' door recovery is retired',()=>{
+scenarioTable('a door recovery saved mid-relocation is retired at load',phase=>{
  const r=fixture();const key=routeDestinationKey(destination);r.hunt.routeRecovery={[key]:{destination,geometry:'17175:G',phase,relocation:{method:'door',origin:{map:'main',x:0,y:0},destination:{map:'bank',x:0,y:-37}},attempts:[],firstFailure:'old',message:'old'}};
  Object.assign(r.state.activeConvoy,{phase:'travel',location:{map:'bank',x:0,y:-37},routeRecovery:{key,stage:'relocation'}});
- convertHunt(r.hunt);r.step();assert.equal(r.entry().phase,'excluded');assert.equal(r.entry().relocation,undefined);assert.equal(r.started[0].map,'arena');
-});
+ return r;
+},[
+ ['saved relocation door recovery is retired',retiresSaved,'relocation'],
+ ['saved post-relocation door recovery is retired',retiresSaved,'post-relocation'],
+ ['saved held door recovery is retired',retiresSaved,'held'],
+]);
 // An event no longer reaches route recovery: the owner suspends the Hunt while an event task
 // holds the group, which the Goobrawl variants check.
-for(const kind of ['merchant','revision','cancelled','dead','turn-in'])test('recovery preserves '+kind+' ownership',()=>{
- const r=fixture();if(kind==='merchant')r.state.commands.L={type:'equip-deliveries',id:9};
- if(kind==='revision')r.state.activeConvoy.expected={L:{revision:0}};if(kind==='cancelled')r.state.navigationIntents.L.cancelled=true;if(kind==='dead')r.state.statuses.L.rip=true;if(kind==='turn-in')r.state.statuses.L.monsterHunt.count=0;
+const preservesOwnership=({r,kind})=>{
  r.step();assert.equal(r.hunt.routeRecovery,undefined);
  // The turn-in's own walk goes to Daisy; recovery starts none.
  assert.deepEqual(r.started.filter(d=>d!==r.state.monsterHunterLocation),[]);if(kind!=='turn-in')assert.equal(r.started.length,0);
-});
+};
+scenarioTable('route recovery starts nothing for a member another owner holds',kind=>{
+ const r=fixture();if(kind==='merchant')r.state.commands.L={type:'equip-deliveries',id:9};
+ if(kind==='revision')r.state.activeConvoy.expected={L:{revision:0}};if(kind==='cancelled')r.state.navigationIntents.L.cancelled=true;if(kind==='dead')r.state.statuses.L.rip=true;if(kind==='turn-in')r.state.statuses.L.monsterHunt.count=0;
+ return {r,kind};
+},[
+ ['recovery preserves merchant ownership',preservesOwnership,'merchant'],
+ ['recovery preserves revision ownership',preservesOwnership,'revision'],
+ ['recovery preserves cancelled ownership',preservesOwnership,'cancelled'],
+ ['recovery preserves dead ownership',preservesOwnership,'dead'],
+ ['recovery preserves turn-in ownership',preservesOwnership,'turn-in'],
+]);
 test('geometry changes retire the old budget',()=>{
  const r=fixture('alclient');r.step();assert.ok(r.entry());r.state.statuses.L.movementGeometry.fingerprint='new';r.step();assert.equal(r.entry(),undefined);
 });
@@ -83,7 +100,6 @@ test('a runtime replacement keeps the spawn attempts the Hunt recorded',()=>{
 // Walk rows: each plants the same reports on a walk no Hunt owns and on a walk a Hunt route owns,
 // past the moment the old setting ended the Hunt walk, and reads the same phase, failure, rung and
 // members from both after every report. A difference is a Hunt-only end still in movement.
-const {scenarioTable}=require('./fixtures/scenarios.cjs');
 const walk=require('./fixtures/convoy-coordinator-scenario.cjs');
 const {partyEngine}=require('./fixtures/shared-convoy-scenario.cjs');
 const huntOwned=p=>{p.activeConvoy.purpose='monster-hunt';p.monsterHunt={stage:'mission-travel',currentIndex:0,missions:[{destination:p.activeConvoy.location}]};};

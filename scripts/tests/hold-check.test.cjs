@@ -44,6 +44,15 @@ row('item 14: an MP potion during heavy damage takes the HP potion it blocks out
   assert.equal(short.rates.hpPotions,0);
 });
 
+row('a mage in energize range holds a priest tank whose own mana runs out before the fight ends',()=>{
+  // The priest's heal costs 100 MP a second and regeneration gives 25, a 75/s drain; the fight
+  // is 4000 HP at 200/s, 20 s. 1000 MP lasts 13.3 s, and with a mage's 1000 MP of energize it
+  // lasts 26.7 s.
+  const low=holdCheck(priest({mp:1000}));
+  assert.equal(low.fails,true);assert.equal(low.reason,'mana');
+  assert.equal(holdCheck(priest({mp:1000,energizeMp:1000})).fails,false);
+});
+
 row('item 15: the tank returns only when HP and mana last the fight, so it does not flip',()=>{
   // Net loss 50/s and a 20 s fight: 1000 HP lasts the fight, 900 does not.
   const fight={hp:1000,killRate:250,attackers:[{dps:300,hp:5000}]};

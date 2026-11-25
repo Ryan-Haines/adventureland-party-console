@@ -70,13 +70,21 @@ test('upgrade reselects a scroll moved during its asynchronous protection checkp
 });
 // The lucky slot is the verified one, else the slot search's next (cursor 0 with no rolls seen),
 // else, on discovery data the search cannot read, the item's own slot.
-for(const [verified,expected] of [[null,0],['corrupt',2],[7,7]])test('upgrade executes selected slot and restores inventory: '+JSON.stringify({verified}),async()=>{
+const {scenarioTable}=require('./fixtures/scenarios.cjs');
+const upgradesOnSlot=async({items,production,calls,stored,expected})=>{
+ await production.upgradeConfirmed(2,4,'wcap',1);
+ assert.deepEqual(calls,[[expected,4]]);assert.equal(items[2].level,1);assert.equal(items[0].name,'tracker');assert.equal(stored['party-lucky-upgrade']??null,null);
+};
+scenarioTable('an upgrade runs on the chosen lucky slot and restores the bag',(verified,expected)=>{
  const items=Array(42).fill(null);items[2]={name:'wcap',level:0};items[4]={name:'scroll0',q:2};items[0]={name:'tracker'};
  const {production,calls,stored}=merchantUpgrade(items);
  if(verified==='corrupt')production.luckyReply({luckySlotTracking:{M:{other:'corrupt'}}});else production.setLuckySlot(verified);
- await production.upgradeConfirmed(2,4,'wcap',1);
- assert.deepEqual(calls,[[expected,4]]);assert.equal(items[2].level,1);assert.equal(items[0].name,'tracker');assert.equal(stored['party-lucky-upgrade']??null,null);
-});
+ return {items,production,calls,stored,expected};
+},[
+ ['upgrade executes selected slot and restores inventory: {"verified":null}',upgradesOnSlot,null,0],
+ ['upgrade executes selected slot and restores inventory: {"verified":"corrupt"}',upgradesOnSlot,'corrupt',2],
+ ['upgrade executes selected slot and restores inventory: {"verified":7}',upgradesOnSlot,7,7],
+]);
 
 test('bank-sourced pass persists before production and resumes at its original target after relocation', () => {
   const {beginProduction, finishProduction} = require('../../runtime/items/coordinator/production.ts');

@@ -9,19 +9,6 @@ function fixture(initial=null){let saved=initial,now=1000;
  return {ports,tracker:createLuckySlotTracker(ports),advance:ms=>now+=ms,get saved(){return saved;}};
 }
 
-test('account ID bindings retain migration evidence and reset all lucky state for same-name recreation',()=>{
- const {receiveLuckySlotTracking}=require('../../runtime/items/coordinator/production.ts');
- const f=fixture();f.tracker.observe(event());const report=f.tracker.report();
- const state={luckySlotTracking:{M:{[report.streamId]:report}},luckyUpgradeSlots:{M:7},luckySlotLocks:{M:7},luckySlotResume:{M:{slot:8,rolls:1}}};
- assert.equal(receiveLuckySlotTracking(state,'M',null,'CH_old'),true);
- assert.equal(state.luckyUpgradeSlots.M,7);assert.equal(state.luckySlotCharacterIds.M,'CH_old');
- assert.equal(receiveLuckySlotTracking(state,'M',report,'CH_old','CH_old'),false);
- assert.equal(receiveLuckySlotTracking(state,'M',report,'CH_new','CH_old'),true);
- for(const key of ['luckySlotTracking','luckyUpgradeSlots','luckySlotLocks','luckySlotResume'])assert.equal(state[key].M,undefined);
- assert.equal(receiveLuckySlotTracking(state,'M',report,'CH_new','CH_old'),false);
- assert.equal(receiveLuckySlotTracking(state,'M',report,'CH_new','CH_new'),true);
-});
-
 test('verified account ID rename moves its own evidence and positions',()=>{
  const {receiveLuckySlotTracking}=require('../../runtime/items/coordinator/production.ts');
  const state={luckySlotCharacterIds:{Old:'CH_same'},luckySlotTracking:{Old:{}},luckyUpgradeSlots:{Old:7},luckySlotLocks:{Old:6},luckySlotResume:{Old:{slot:8,rolls:1}}};
@@ -43,37 +30,70 @@ test('client lucky tracking uses account ID storage and never reloads name-only 
  bind(production,'CH_new');assert.deepEqual(JSON.parse(JSON.stringify(production.tracking().report().slots)),{});
  assert.deepEqual(Object.keys(stored).filter(key=>key.startsWith('party-lucky-slot-tracking:')),['party-lucky-slot-tracking:owner:CH_old','party-lucky-slot-tracking:owner:CH_new']);
 });
-test('records reversed digits by physical slot, including zero and high rolls',()=>{
- const f=fixture();f.tracker.observe(event(0));f.tracker.observe(event(41,[9,9,9,9]));f.tracker.observe(event(7,[0,0,0,0]));
+const {scenarioTable}=require('./fixtures/scenarios.cjs');
+scenarioTable('the lucky slot tracker over fixture storage records rolls by slot and drives the slot search',fixture,[
+['account ID bindings retain migration evidence and reset all lucky state for same-name recreation',f=>{
+ const {receiveLuckySlotTracking}=require('../../runtime/items/coordinator/production.ts');
+ f.tracker.observe(event());const report=f.tracker.report();
+ const state={luckySlotTracking:{M:{[report.streamId]:report}},luckyUpgradeSlots:{M:7},luckySlotLocks:{M:7},luckySlotResume:{M:{slot:8,rolls:1}}};
+ assert.equal(receiveLuckySlotTracking(state,'M',null,'CH_old'),true);
+ assert.equal(state.luckyUpgradeSlots.M,7);assert.equal(state.luckySlotCharacterIds.M,'CH_old');
+ assert.equal(receiveLuckySlotTracking(state,'M',report,'CH_old','CH_old'),false);
+ assert.equal(receiveLuckySlotTracking(state,'M',report,'CH_new','CH_old'),true);
+ for(const key of ['luckySlotTracking','luckyUpgradeSlots','luckySlotLocks','luckySlotResume'])assert.equal(state[key].M,undefined);
+ assert.equal(receiveLuckySlotTracking(state,'M',report,'CH_new','CH_old'),false);
+ assert.equal(receiveLuckySlotTracking(state,'M',report,'CH_new','CH_new'),true);
+}],
+['records reversed digits by physical slot, including zero and high rolls',f=>{
+ f.tracker.observe(event(0));f.tracker.observe(event(41,[9,9,9,9]));f.tracker.observe(event(7,[0,0,0,0]));
  assert.deepEqual(f.tracker.report().slots,{
   0:{totalRolls:1,sumRolls:0.1234,rollsAbove96_3:0,perfectRolls:0},
   41:{totalRolls:1,sumRolls:0.9999,rollsAbove96_3:1,perfectRolls:0},
   7:{totalRolls:1,sumRolls:0,rollsAbove96_3:0,perfectRolls:1}});
-});
-test('counts a completed roll once across later success packets and CODE reload',()=>{
- const f=fixture();assert.equal(f.tracker.observe(event()),true);f.advance(500);
+}],
+['counts a completed roll once across later success packets and CODE reload',f=>{
+ assert.equal(f.tracker.observe(event()),true);f.advance(500);
  const repeated=event(7,[4,3,2,1],1500);repeated.p.success=true;
  assert.equal(f.tracker.observe(repeated),false);
  f.advance(86400000);const reloaded=createLuckySlotTracker(f.ports);assert.equal(reloaded.observe(repeated),false);
  assert.equal(reloaded.report().slots[7].totalRolls,1);
-});
-test('a managed new attempt can record the same complete roll without any partial reveals',()=>{
- const f=fixture();f.tracker.observe(event(7,[0,0,0,0],0));f.tracker.begin();f.tracker.observe(event(7,[0,0,0,0],0));
+}],
+['a managed new attempt can record the same complete roll without any partial reveals',f=>{
+ f.tracker.observe(event(7,[0,0,0,0],0));f.tracker.begin();f.tracker.observe(event(7,[0,0,0,0],0));
  assert.equal(f.tracker.report().slots[7].totalRolls,2);
-});
-test('same roll in a new operation counts again after partial digits or reset timer',()=>{
- const f=fixture();f.tracker.observe(event());f.tracker.observe(event(7,[4]));f.tracker.observe(event());
+}],
+['same roll in a new operation counts again after partial digits or reset timer',f=>{
+ f.tracker.observe(event());f.tracker.observe(event(7,[4]));f.tracker.observe(event());
  f.tracker.observe(event(7,[4,3,2,1],2500));assert.equal(f.tracker.report().slots[7].totalRolls,3);
-});
-test('malformed, partial, out-of-range, and compound packets do not count',()=>{
- const f=fixture();const compound=event();compound.q={compound:{num:7,ms:2000,len:10000,nums:[]}};
+}],
+['malformed, partial, out-of-range, and compound packets do not count',f=>{
+ const compound=event();compound.q={compound:{num:7,ms:2000,len:10000,nums:[]}};
  for(const packet of [null,{},event(-1),event(42),event('7'),event(7,[1]),event(7,[1,2,3,10]),event(7,[1,2,3,null]),event(7,[1,2,3,4,5]),compound,{...event(),q:{}}])assert.equal(f.tracker.observe(packet),false);
  assert.deepEqual(f.tracker.report().slots,{});
-});
-test('legacy digit strings are decoded and threshold is strictly above 0.963',()=>{
- const f=fixture();f.tracker.observe(event(0,['0','3','6','9']));f.tracker.observe(event(1,[1,3,6,9]));
+}],
+['legacy digit strings are decoded and threshold is strictly above 0.963',f=>{
+ f.tracker.observe(event(0,['0','3','6','9']));f.tracker.observe(event(1,[1,3,6,9]));
  assert.equal(f.tracker.report().slots[0].rollsAbove96_3,0);assert.equal(f.tracker.report().slots[1].rollsAbove96_3,1);
-});
+}],
+['stat scrolls and offering-only operations do not bias the lucky-slot search',f=>{
+ for(const scroll of ['strscroll',null,'offeringp']){const packet=event();packet.p.scroll=scroll;assert.equal(f.tracker.observe(packet),false);}
+ assert.deepEqual(f.tracker.report().slots,{});
+}],
+['a high roll advances exploration one square without waiting for a verified slot',f=>{
+ assert.equal(f.tracker.select(),0);f.tracker.observe(event(7,[9,9,9,9]));assert.equal(f.tracker.select(),8);
+}],
+['each sampled slot advances the next test across all 42 slots and survives reload',f=>{
+ for(let slot=0;slot<42;slot++){assert.equal(f.tracker.select(),slot);f.tracker.begin();f.tracker.observe(event(slot));}
+ assert.equal(f.tracker.select(),0);assert.equal(createLuckySlotTracker(f.ports).select(),0);
+}],
+['source-derived likelihoods do not treat one zero or a low average as proof',f=>{
+ const {luckySlotSearch}=require('../../runtime/items/rules.ts');
+ f.tracker.observe(event(7,[0,0,0,0]));const first=luckySlotSearch(f.tracker.report());
+ assert.equal(first.slot,7);assert.equal(first.inferred,false);
+ const ordinary=luckySlotSearch({version:1,slots:{7:{totalRolls:1000,sumRolls:100,rollsAbove96_3:37,perfectRolls:0}}});
+ assert.notEqual(ordinary.slot,7);assert.equal(ordinary.inferred,false);
+}],
+]);
 test('storage failures do not throw and malformed saved statistics are ignored',()=>{
  const tracker=createLuckySlotTracker({read:()=>{throw Error('storage denied')},write:()=>{throw Error('quota')},now:()=>0,size:()=>42,isUpgradeScroll:name=>name==='scroll0'});
  assert.equal(tracker.observe(event()),true);assert.equal(tracker.report().slots[7].totalRolls,1);
@@ -83,10 +103,6 @@ test('storage failures do not throw and malformed saved statistics are ignored',
 test('reports cannot mutate state and different storage namespaces do not share statistics',()=>{
  const a=fixture(),b=fixture();a.tracker.observe(event());const report=a.tracker.report();report.slots[7].totalRolls=99;
  assert.equal(a.tracker.report().slots[7].totalRolls,1);assert.deepEqual(b.tracker.report().slots,{});
-});
-test('stat scrolls and offering-only operations do not bias the lucky-slot search',()=>{
- const f=fixture();for(const scroll of ['strscroll',null,'offeringp']){const packet=event();packet.p.scroll=scroll;assert.equal(f.tracker.observe(packet),false);}
- assert.deepEqual(f.tracker.report().slots,{});
 });
 test('durable coordinator evidence survives replay, restart, and native/headless moves',()=>{
  const {receiveLuckySlotTracking}=require('../../runtime/items/coordinator/production.ts');
@@ -105,21 +121,6 @@ test('durable coordinator evidence survives replay, restart, and native/headless
  const {createCoordinatorPersistence}=require('../../runtime/settings/coordinator/persistence/writer.ts');const writes=new Map();
  createCoordinatorPersistence({...restored,aldata:{}},{set:(key,value)=>writes.set(key,structuredClone(value))},{setTimeout,clearTimeout}).settings();
  assert.deepEqual(writes.get('party_dashboard_settings_state_v1').luckySlotTracking,restored.luckySlotTracking);
-});
-test('a high roll advances exploration one square without waiting for a verified slot',()=>{
- const f=fixture();assert.equal(f.tracker.select(),0);f.tracker.observe(event(7,[9,9,9,9]));assert.equal(f.tracker.select(),8);
-});
-test('each sampled slot advances the next test across all 42 slots and survives reload',()=>{
- const f=fixture();
- for(let slot=0;slot<42;slot++){assert.equal(f.tracker.select(),slot);f.tracker.begin();f.tracker.observe(event(slot));}
- assert.equal(f.tracker.select(),0);assert.equal(createLuckySlotTracker(f.ports).select(),0);
-});
-test('source-derived likelihoods do not treat one zero or a low average as proof',()=>{
- const {luckySlotSearch}=require('../../runtime/items/rules.ts');
- const f=fixture();f.tracker.observe(event(7,[0,0,0,0]));const first=luckySlotSearch(f.tracker.report());
- assert.equal(first.slot,7);assert.equal(first.inferred,false);
- const ordinary=luckySlotSearch({version:1,slots:{7:{totalRolls:1000,sumRolls:100,rollsAbove96_3:37,perfectRolls:0}}});
- assert.notEqual(ordinary.slot,7);assert.equal(ordinary.inferred,false);
 });
 test('rotating search converges on a simulated lucky slot using only scheduled attempts',()=>{
  const {luckySlotSearch,emptyRolls,LUCKY_CONFIDENCE,LUCKY_HIGH_ROLL}=require('../../runtime/items/rules.ts');

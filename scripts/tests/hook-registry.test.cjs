@@ -239,6 +239,12 @@ test('a member that leaves the party for its own group sends member.assigned',()
   assert.deepEqual(heard,[],'a first sync moves no one');
   tasks.sync([{id:'party:W',kind:'party',members:['W']},{id:'solo:P',kind:'solo',members:['P']}]);
   assert.deepEqual(heard.map(p=>[p.group,p.member]),[['solo:P','P']]);
+  // F26: the moved member's assignment comes from its new group in the same sync, and a joiner's
+  // is the party's live task.
+  tasks.request('party:W',{kind:'farming',owner:'farm:W',source:'core:farm'});
+  assert.equal(tasks.assignment('P').kind,'idle',"F26: the moved member holds its solo group's task, not the party's");
+  tasks.sync([{id:'party:W',kind:'party',members:['W','P']}]);
+  assert.equal(tasks.assignment('P').owner,'farm:W',"F26: a joiner holds the party's live task");
 });
 // task.waiting: a task a higher one suspends waits behind it, named by the task that took the group.
 test('a task the event suspends sends task.waiting behind the event',()=>{
@@ -1057,6 +1063,34 @@ scenarioTable('01 O5: the owner asks the add-on of the group\'s own task for its
     assert.match(holds.resume('resume'), /shows escaping/, 'a Resume press that saw Resume is refused');
     record.escape = { stage: 'released' };
     assert.equal(holds.button(), 'escape', 'a released escape reads Escape');
+  }, {}],
+  // F53 (E1): the settled escape's hold and the button's presses. The live row reaches the lockout
+  // edge only by the wall clock, so the row reads it from the hold's own start.
+  ['E1: an Escape press never acts as Resume, and Resume waits out the lockout and lifts the escape hold', ({ o }) => {
+    const { createHolds } = require('../../runtime/tasks/coordinator/holds.ts');
+    const { ESCAPE_SETTLED } = require('../../runtime/characters/survival/lines.ts');
+    let now = Date.now();
+    const record = { headlessSlots: [], steamMembers: [], escape: { stage: ESCAPE_SETTLED[0] } };
+    const holds = createHolds(o, { now: () => now, party: () => 'party:W', lockoutMs: () => 5000, paused: () => false,
+      record: () => record, persist() {}, ask: () => undefined });
+    holds.tick([{ id: 'party:W', members: ['W', 'P', 'M'] }]);
+    assert.equal(holds.button(), 'resume');
+    assert.match(holds.escape('escape'), /shows resume/, 'F53: a press aimed at Escape is refused');
+    now = o.holds('party:W').find(h => h.by === 'escape').since;
+    assert.match(holds.resume('resume'), /locked for 5 s/, 'F53: Resume is locked inside the lockout');
+    now += 5000;
+    assert.equal(holds.resume('resume'), null);
+    assert.deepEqual(o.holds('party:W').map(h => h.by), [], 'F53: Resume lifts the escape hold');
+  }, {}],
+  // F58: the Cave Hold reaches the owner as a hold on the group, and the visit task stays live under it.
+  ['the Cave run Hold is a user hold on the group that needs the player, and leaves the live task live', ({ o }) => {
+    const { createHolds } = require('../../runtime/tasks/coordinator/holds.ts');
+    const record = { headlessSlots: [], steamMembers: [], escape: null, dailyDungeons: { phase: 'held', participants: ['W', 'P'] } };
+    const holds = createHolds(o, { now: () => Date.now(), party: () => 'party:W', lockoutMs: () => 5000, paused: () => false,
+      record: () => record, persist() {}, ask: () => undefined });
+    holds.tick([{ id: 'party:W', members: ['W', 'P', 'M'] }]);
+    assert.deepEqual(o.holds('party:W').map(h => h.by), ['cave-hold'], 'F58');
+    assert.deepEqual([o.status('party:W').phase, o.live('party:W').owner], ['hold:cave-hold', 'addon:x:1'], 'F58: the top line needs the player');
   }, {}],
   ['member.apart sends a member the add-on\'s walk left out to the point it names, or to farm under the walk verdict', () => {
     const { addonApart } = require('../../runtime/tasks/coordinator/assignment.ts');

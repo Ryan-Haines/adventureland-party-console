@@ -32,8 +32,9 @@ scenarioTable('a convoy failed by a coordinator restart rebuilds from fresh matc
   assert.doesNotMatch(f.logs.join('\n'),/exhausted/);
  }],
 ]);
-for(const change of [f=>f.intents.P.cancelled=true,f=>f.intents.P.revision++,f=>f.state.followers.P=false])
- test('changed navigation invalidates the restored convoy without replacing newer commands '+change,()=>{
- const f=fixture();change(f);f.state.commands.P={id:777,convoyId:'new'};f.advance(5000);f.service.recoverRestart();
+scenarioTable('a restored convoy whose navigation changed gives way to the newer command',fixture,
+ [f=>f.intents.P.cancelled=true,f=>f.intents.P.revision++,f=>f.state.followers.P=false].map(change=>
+ ['changed navigation invalidates the restored convoy without replacing newer commands '+change,f=>{
+ change(f);f.state.commands.P={id:777,convoyId:'new'};f.advance(5000);f.service.recoverRestart();
  assert.equal(f.state.activeConvoy,null);assert.equal(f.state.commands.P.id,777);
-});
+}]));

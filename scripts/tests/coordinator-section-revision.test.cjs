@@ -1,4 +1,5 @@
 const test=require('node:test');
+const {scenarioTable}=require('./fixtures/scenarios.cjs');
 const assert=require('node:assert/strict');
 const {publicStateRuntime}=require('./helpers/coordinator-public-state.cjs');
 const {appendGameLogs}=require('../../runtime/status/coordinator/logs.ts');
@@ -39,8 +40,8 @@ const sections={
   r=>{r.ports.aldata=()=>({hasKey:true,listings:[{id:'new'}]});}],
 };
 
-for(const [section,mutations] of Object.entries(sections)) test(`${section}: unchanged polls answer 304 and every carried field changes the revision`,()=>{
- const r=runtime(),query={section,dashboard:'1',catalog:'0'};
+scenarioTable('each dashboard section over one coordinator runtime answers 304 until a carried field changes',runtime,Object.entries(sections).map(([section,mutations])=>[`${section}: unchanged polls answer 304 and every carried field changes the revision`,r=>{
+ const query={section,dashboard:'1',catalog:'0'};
  const first=respond(r,query);
  assert.equal(first.status,200);assert.ok(first.sent,'the body is serialized once and sent as text');
  const revision=revisionOf(first);
@@ -56,7 +57,7 @@ for(const [section,mutations] of Object.entries(sections)) test(`${section}: unc
   assert.notEqual(revisionOf(changed),previous,mutate.toString());
   previous=revisionOf(changed);
  }
-});
+}]));
 
 test('clients without a revision get the same full body as before',()=>{
  const r=runtime();

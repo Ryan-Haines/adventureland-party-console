@@ -252,6 +252,208 @@ scenarioTable('the owner decides inside the service: re-aim, idle aggro, cost, t
  assert.equal(r.service.endCode('town:7'),'released','the last end is the release of the cast after it, not the click');
  r.dispose();
  }],
+ // S1.1 to S1.3, S1.6, S1.7 and S11.10 (02-movement-failures.md "movement records"): every
+ // journey writes one started and one ended entry, its end code comes from design section 6's
+ // list or rule 3's `stale`, a replaced end names its taker in `by`, the ring keeps the newest
+ // MOVEMENT_RING_SIZE entries in sequence, and none of the reads the status report takes
+ // (report.ts `movementLive`, `movementClick`, `movement`) carries the ring.
+ ['S1: each journey has one start and one coded end, a replacement names its taker, and the ring keeps its newest entries apart from the report', async r=>{
+ const {MOVEMENT_RING_SIZE}=require('../../runtime/protocol/records.ts');
+ const CODES=/^(arrived|released|kept|replaced:[\w-]+|stopped:[\w-]+|expired|stale|failed:[\w-]+|returned-to-safe|superseded|runtime-replaced)$/;
+ r.service.move({map:'main',x:100,y:0},undefined,{request:{kind:'follow',owner:'follow'}}).catch(()=>{});await r.ticks(2);
+ r.service.move({map:'main',x:100,y:0},undefined,{request:{kind:'app',owner:'app:1'}}).catch(()=>{});await r.ticks(2);
+ assert.equal(r.service.live()?.owner,'app:1');
+ for(const read of [r.service.live(),r.service.clicking(),r.service.report()||r.service.last()])
+  assert.doesNotMatch(JSON.stringify(read)??'',/"(records|ring|incidents|leadUp)"/,'the status report reads no ring');
+ r.service.release('app:1');
+ const records=r.service.records(),ids=[...new Set(records.filter(e=>e.journeyId).map(e=>e.journeyId))];
+ assert.equal(ids.length,2);
+ for(const id of ids){
+  const of=records.filter(e=>e.journeyId===id);
+  assert.deepEqual([of.filter(e=>e.decision==='started').length,of.filter(e=>e.decision==='ended').length],[1,1],id);
+  assert.match(of.find(e=>e.decision==='ended').code,CODES);
+ }
+ const replaced=records.find(e=>e.decision==='ended'&&e.owner==='follow');
+ assert.deepEqual([replaced.code,replaced.by?.kind,replaced.by?.owner],['replaced:app','app','app:1']);
+ for(let i=0;i<200;i++)r.service.hold({kind:'town',owner:'town:'+i,deadline:5000});
+ const ring=r.service.records();
+ assert.equal(ring.length,MOVEMENT_RING_SIZE);
+ assert.ok(ring.every((e,i)=>i===0||e.seq===ring[i-1].seq+1),'contiguous sequence');
+ assert.equal(ring.at(-1).owner,'town:199','the ring drops its oldest end');
+ r.dispose();
+ }, {stall:true}],
+ // S4.1 to S4.5, S8c.12, D.MG5 (02-movement-failures.md "ranked requests, the stop rule, kept and
+ // retargeted journeys, waits and holds"), design sections 2.1 to 2.3.
+ ['S4: a lower request is refused, a non-holder stop is refused, the holder keeps or retargets with no stop, and a waiting walk starts after', async r=>{
+ const stops=()=>r.calls.filter(c=>c[0]==='stop').length;
+ let stopped=0;const stop=r.host.stop;r.host.stop=(...a)=>{stopped++;return stop(...a);};
+ const native=()=>stopped;
+ const app=r.service.move({map:'main',x:100,y:0},undefined,{request:{kind:'app',owner:'app:1',deadline:5000}});app.catch(()=>{});await r.ticks(2);
+ const journeyId=r.service.report().id;
+ // 2.1 rule 1: the lower follow hears `refused` and the travel keeps the character.
+ await assert.rejects(r.service.move({map:'main',x:0,y:80},undefined,{request:{kind:'follow',owner:'follow'}}),e=>e.code==='refused');
+ assert.ok(r.service.records().some(e=>e.decision==='refused'&&e.owner==='follow'));
+ // A2: a stop by a non-holder is refused, names its caller and leaves the journey.
+ const sentBefore=r.calls.length;
+ assert.deepEqual(await r.host.stop('move',undefined,{kind:'follow',owner:'follow'}),{success:false,refused:true});
+ assert.equal(r.service.report().id,journeyId);
+ assert.deepEqual(r.service.records().filter(e=>e.decision==='refused-stop').map(e=>[e.journeyId,e.by?.owner]),[[journeyId,'follow']]);
+ assert.equal(r.calls.length,sentBefore,'a refused stop sends no packet');
+ // 2.2, A3: the holder's own repeat keeps the journey; S8c.12: it takes the new deadline.
+ const before=native();
+ r.service.move({map:'main',x:100,y:0},undefined,{request:{kind:'app',owner:'app:1',deadline:9000}}).catch(()=>{});await r.ticks(1);
+ assert.equal(r.service.report().id,journeyId);assert.ok(r.service.records().some(e=>e.decision==='kept'&&e.journeyId===journeyId));
+ r.setNow(6000);r.service.audit();assert.equal(r.service.report()?.id,journeyId,'the kept journey runs to its new deadline');
+ // 2.3: a new point on a clear line retargets in place.
+ r.service.move({map:'main',x:300,y:0},undefined,{request:{kind:'app',owner:'app:1',deadline:9000}}).catch(()=>{});await r.ticks(1);
+ assert.equal(r.service.report().id,journeyId);assert.ok(r.service.records().some(e=>e.decision==='retargeted'&&e.journeyId===journeyId));
+ assert.equal(native(),before,'kept and retargeted journeys send no stop');
+ assert.equal(r.service.records().filter(e=>e.decision==='started').length,1,'one journey');
+ // N2: a group walk asked below the travel waits, and starts after it from where the character stands.
+ let walkCurrent=true;
+ const walk=r.service.move({map:'main',x:0,y:60},undefined,{request:{kind:'group-walk',owner:'walk:party:c:1:0',tier:'farming',current:()=>walkCurrent}});walk.catch(()=>{});
+ await r.ticks(1);
+ assert.ok(r.service.records().some(e=>e.decision==='waiting'&&e.owner==='walk:party:c:1:0'));
+ r.service.release('app:1');await r.ticks(2);
+ assert.equal(r.service.live()?.owner,'walk:party:c:1:0','the walk starts after the travel');
+ r.dispose();
+ }, {stall:true}],
+ // S8a.5 (design section 3.2 invariant 2): a hold with a deadline ends expired at the next audit
+ // past it, asking again moves the deadline, and a standing hold yields to any request.
+ ['S8a.5: a hold ends expired past its deadline, a repeat moves it, and a standing hold yields', async r=>{
+ assert.equal(r.service.hold({kind:'town',owner:'town:1',deadline:2000}),'granted');
+ assert.equal(r.service.hold({kind:'town',owner:'town:1',deadline:4000}),'kept');
+ r.setNow(3000);r.service.audit();assert.equal(r.service.live()?.owner,'town:1','the repeat moved the deadline');
+ r.setNow(4000);r.service.audit();assert.equal(r.service.live(),null);
+ assert.equal(r.service.endCode('town:1'),'expired');
+ assert.equal(r.service.hold({kind:'cave',owner:'cave:1',deadline:9000,yields:true}),'granted');
+ r.service.move({map:'main',x:100,y:0},undefined,{request:{kind:'follow',owner:'follow'}}).catch(()=>{});await r.ticks(1);
+ assert.equal(r.service.live()?.owner,'follow','a standing hold yields to a lower request');
+ r.dispose();
+ }, {stall:true}],
+ // S8a.7, D.INV1, D.INV2 (design section 3.2 invariants 1 and 2): a hold with no deadline and a
+ // climber standing two ticks between rungs with nothing holding the character each count once
+ // and write one ring entry.
+ ['S8a.7: an untimed hold and an unowned climber each count once and write one ring entry', async r=>{
+ const {taskRound}=require('../../runtime/protocol/ladder.ts');
+ r.service.hold({kind:'town',owner:'town:1'});
+ r.service.audit();r.service.audit();
+ assert.equal(r.service.ownerReport().invariants.untimed,1);
+ assert.equal(r.service.records().filter(e=>e.decision==='invariant'&&e.cause==='untimed').length,1);
+ r.service.release('town:1');
+ r.service.climb('task:farm',taskRound(r.host.G,'the farm'),'farming');
+ r.service.audit();assert.equal(r.service.ownerReport().invariants.unowned,0,'one tick between rungs is no lapse');
+ r.service.audit();r.service.audit();
+ assert.equal(r.service.ownerReport().invariants.unowned,1);
+ assert.equal(r.service.records().filter(e=>e.decision==='invariant'&&e.cause==='unowned').length,1);
+ r.dispose();
+ }],
+ // B9.1 to B9.8, S8c.11, S8b.15b, S3.5, S8a.8, S2.7 and S8c.6 (02-movement-failures.md "a rung with no
+ // progress logs one stuck record"; design section 7). The fixture's clock is virtual, so the
+ // owner's cost meter must read the real clock to count anything.
+ ['B9: a rung with no progress writes one stuck record with its lead-up, the next rung comes at once, and the notice runs to progress or its bound', async r=>{
+ const {taskRound}=require('../../runtime/protocol/ladder.ts');
+ const at={map:'main',x:0,y:0},none={arrived:false,at,planned:{transitions:0,walking:100},remaining:{transitions:0,walking:100}};
+ r.service.settingsReply({movementStuckNoticeMs:3000});
+ const climbSeq=(r.service.records().at(-1)?.seq??0)+1;
+ const ladder=r.service.climb('task:farm',taskRound(r.host.G,'the farm'),'farming');
+ const first=ladder.next(at,{});
+ r.service.move({map:'main',x:100,y:0},undefined,{request:{kind:'follow',owner:'follow'}}).catch(()=>{});await r.ticks(2);
+ r.service.release('follow');
+ r.setNow(5000);
+ assert.equal(ladder.result(none),'failed');
+ const stuck=r.service.incidents().filter(i=>i.kind==='stuck');
+ assert.equal(stuck.length,1);
+ assert.equal(r.service.records().filter(e=>e.decision==='stuck').length,1);
+ const record=stuck[0];
+ assert.deepEqual([record.character,record.owner,record.activity,record.rung,record.noProgressMs,record.position.map,record.position.x,record.position.y],
+  ['Test','task:farm','farming',first.rung,4000,'main',r.c.real_x,r.c.real_y]);
+ assert.deepEqual([record.blocked?.owner,record.blocked?.code],['follow','released'],'the follow walk released before the climb');
+ const stuckSeq=r.service.records().find(e=>e.decision==='stuck').seq;
+ const ring=r.service.records().filter(e=>e.seq>=climbSeq&&e.seq<stuckSeq);
+ assert.deepEqual(record.leadUp.map(e=>e.seq),ring.map(e=>e.seq),'every entry since the climb started, cut by no count');
+ assert.deepEqual(r.service.incident(record.id),record);
+ assert.equal(r.service.records().find(e=>e.decision==='stuck').cause,record.id);
+ const second=ladder.next(at,{});
+ assert.notEqual(second.rung,first.rung,'the next rung comes at once');
+ assert.deepEqual(r.service.records().filter(e=>e.decision==='rung').map(e=>[e.owner,e.code,e.ladderStep]),[['task:farm',first.rung,0],['task:farm',second.rung,1]]);
+ assert.ok(r.service.records().some(e=>e.decision==='rung-failed'&&e.code===first.rung&&e.ladderStep===0));
+ const climb=r.service.climbing();
+ assert.deepEqual([climb.trying,climb.notice?.text,climb.notice?.incident,climb.notice?.until],[second.trying,'Stuck - trying '+second.trying,record.id,8000]);
+ r.setNow(8000);assert.equal(r.service.climbing().notice,undefined,'the notice leaves at its bound');
+ ladder.result({arrived:false,at,planned:{transitions:0,walking:100},remaining:{transitions:0,walking:100}});
+ const third=ladder.next(at,{});assert.ok(r.service.climbing().notice,'a second stuck moment shows again');
+ ladder.result({arrived:false,at:{map:'main',x:0,y:0},planned:{transitions:0,walking:100},remaining:{transitions:0,walking:10}});
+ assert.equal(r.service.climbing().notice,undefined,'progress ends the notice');
+ // S2.7, B9.8: an error inside the owner is caught and counted, the call goes on, the error is
+ // recorded with its lead-up and the climber moves to its next rung.
+ const index=r.service.climbing().index;
+ Object.defineProperty(r.host.parent,'entities',{configurable:true,get(){throw Error('planted');}});
+ const step=r.service.step({x:10,y:0},'kiting');
+ assert.equal(step.status,'sent','the call goes on as a free character\'s');
+ assert.equal(r.service.ownerReport().errors,1);
+ const caught=r.service.incidents().find(i=>i.kind==='caught-error');
+ assert.match(caught?.error??'',/planted/);assert.ok(caught.leadUp.length>0);
+ assert.equal(r.service.climbing().index,index+1,'the climber tries its next rung');
+ // S8c.6: the owner measures its calls on the real clock, which runs while the service clock stands.
+ assert.ok(r.service.ownerReport().totalMs>0,'cost read on the real clock');
+ void third;r.dispose();
+ }, {stall:true}],
+ // S5.3 to S5.10 (02-movement-failures.md "ranked requests ... waits and holds" and "six farming
+ // windows"; design section 2.4 rules 4 to 6). The fixture walks at speed 60.
+ ['S5: a combat step pauses the journey, a repeat inside 2 units sends nothing, letting go resumes it, and the pause ends on its own', async r=>{
+ // S5.8: with no journey, a let go stops the character's own step once.
+ r.service.step({x:5,y:0},'kiting');Object.assign(r.c,{moving:true,going_x:5,going_y:0});
+ r.service.letGo();r.service.letGo();
+ assert.equal(r.service.ownerReport().steps.stops,1);
+ r.c.moving=false;
+ r.service.move({map:'main',x:100,y:0},undefined,{request:{kind:'follow',owner:'follow'}}).catch(()=>{});await r.ticks(2);
+ const journeyId=r.service.report().id,searches=r.service.report().searches;
+ const moves=()=>r.calls.filter(c=>c[0]==='move').length;
+ assert.equal(r.service.step({x:10,y:0},'kiting').status,'sent');
+ assert.ok(r.service.records().some(e=>e.decision==='paused'&&e.journeyId===journeyId&&e.cause==='combat'));
+ Object.assign(r.c,{moving:true,going_x:10,going_y:0});
+ const sent=moves();
+ assert.equal(r.service.step({x:11,y:0},'kiting').status,'kept','rule 4: a repeat within 2 units is the step being walked');
+ assert.equal(moves(),sent);
+ // S5.5 (design 'Corrections', item 2): letting go of a paused journey sends no stop; the travel
+ // move replaces the step.
+ const stopsBefore=r.service.ownerReport().steps.stops;
+ r.service.letGo();
+ assert.ok(r.service.records().some(e=>e.decision==='resumed'&&e.journeyId===journeyId&&e.cause==='let-go'));
+ await r.ticks(2);
+ assert.equal(r.service.ownerReport().steps.stops,stopsBefore,'no stop for the paused journey');
+ assert.deepEqual(r.calls.filter(c=>c[0]==='move').at(-1),['move',100,0],'the travel move replaces the step');
+ assert.equal(r.service.report().searches,searches,'S5.3: a resumed journey with a valid route plans nothing again');
+ assert.equal(r.service.report().id,journeyId);
+ // S5.10: a pause with no step or hold after it holds while the last step walks (steps.ts
+ // `stepWindowMs`) and has ended by the design's 1.6 s.
+ r.c.moving=false;
+ const {stepWindowMs}=require('../../runtime/movement/character/steps.ts'),windowMs=stepWindowMs({x:0,y:0},{x:20,y:0},r.c.speed);
+ assert.ok(windowMs<=1600);
+ assert.equal(r.service.step({x:20,y:0},'kiting').status,'sent');
+ const resumes=()=>r.service.records().filter(e=>e.decision==='resumed'&&e.journeyId===journeyId).length,before=resumes();
+ r.setNow(1000+windowMs-1);await r.ticks(1);assert.equal(resumes(),before,'the pause holds while the step walks');
+ r.setNow(1000+1600);await r.ticks(1);
+ assert.deepEqual(r.service.records().filter(e=>e.decision==='resumed').at(-1)?.cause,'idle','the combat pause ended on its own');
+ // S5.9: a player command replaces the paused journey at once and the paused one ends.
+ r.service.step({x:30,y:0},'kiting');
+ r.service.move({map:'main',x:0,y:50}).catch(()=>{});await r.ticks(1);
+ assert.equal(r.service.live()?.kind,'manual');
+ assert.ok(r.service.records().some(e=>e.decision==='ended'&&e.journeyId===journeyId));
+ r.dispose();
+ }, {stall:true}],
+ // S6.8 (02-movement-failures.md "six farming windows"): a failed journey's end names the
+ // service's failure text and the planner in the journey report (report.ts `movement`).
+ ['S6.8: a journey whose plan fails ends failed, and its report names the failure text and the planner', async r=>{
+ const walk=r.service.move({map:'main',x:100,y:0},undefined,{request:{kind:'follow',owner:'follow'}});
+ const failed=assert.rejects(walk,/planner unreachable/);await r.ticks(4);await failed;
+ const end=r.service.records().find(e=>e.decision==='ended'&&e.owner==='follow');
+ assert.match(end.code,/^failed:/);
+ const last=r.service.last();
+ assert.deepEqual([last.end,last.reason,typeof last.failureContext?.planner],[end.code,'planner unreachable','string']);
+ r.dispose();
+ }, {offline:true,planError:'planner unreachable'}],
 ]);
 
 

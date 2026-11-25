@@ -51,13 +51,20 @@ test('opening response does not abort later chests',async()=>{
  await r.market.smartLoot();assert.equal(r.calls[2],'gold');
 });
 
-for(const reason of ['cooldown','openning'])test('walking retries transient '+reason+' before leaving chest range',async()=>{
- const r=setup();r.setFree(10);r.chests={drop:{x:0,y:0}};
- r.loot=async id=>{r.calls.push(id);if(r.calls.length===1)throw {reason};delete r.chests[id];return {success:true};};
+const {scenarioTable}=require('./fixtures/scenarios.cjs');
+const retriesInRange=async r=>{
  await r.market.smartLoot();assert.equal(r.calls.length,1);
  r.character.x=25;await r.market.smartLoot();
  assert.deepEqual(r.calls,['drop','drop']);assert.equal(r.chests.drop,undefined);
-});
+};
+scenarioTable('a walking merchant retries a chest after a transient refusal before it leaves range',reason=>{
+ const r=setup();r.setFree(10);r.chests={drop:{x:0,y:0}};
+ r.loot=async id=>{r.calls.push(id);if(r.calls.length===1)throw {reason};delete r.chests[id];return {success:true};};
+ return r;
+},[
+ ['walking retries transient cooldown before leaving chest range',retriesInRange,'cooldown'],
+ ['walking retries transient openning before leaving chest range',retriesInRange,'openning'],
+]);
 
 // The window is the game client's (items/rules.ts CHEST_OPENING_MS).
 test('a chest the game opened in the last 5 s is not asked again, so no admission goes unsent',async()=>{

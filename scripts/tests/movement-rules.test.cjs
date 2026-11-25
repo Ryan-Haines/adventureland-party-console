@@ -342,6 +342,85 @@ scenarioTable('the rule table ranks each request by the tier it names', ()=>unde
   assert.deepEqual([1,2,3].map(()=>owner.fail(handle,'e2e-farm')?.rung),['regroup','safe-point','wait']);
   assert.deepEqual(owner.ring('party:L').filter(r=>r.decision==='stuck').map(r=>r.ladderStep),[RUNGS.indexOf('wait')]);
  }],
+ // F2 to F4: invariants 2 to 4 of 4.3 on a planted owner. The live fixture's per-tick check reads
+ // the same owner in play, where no run plants a lapsed or unbounded waiting entry on demand.
+ ['F2 to F4: every member holds its group\'s live task, a waiting entry lapses at its expiry, and every end names the next task',()=>{
+  const {createTaskOwner}=require('../../runtime/tasks/coordinator/owner.ts');
+  let now=1000;const ended=[],owner=createTaskOwner({now:()=>now,notify:(hook,p)=>{if(hook==='task.ended')ended.push([p.owner,p.code,p.next]);},snapshot(){}});
+  owner.sync([{id:'party:L',kind:'party',members:['L','F']}]);
+  owner.request('party:L',{kind:'farming',owner:'farm:L',source:'core:farm'});
+  const trip=owner.request('party:L',{kind:'manual',owner:'manual:trip',source:'core:manual'});
+  assert.deepEqual(['L','F'].map(name=>owner.assignment(name).owner),['manual:trip','manual:trip'],'F2: the suspended farm task is no member\'s assignment');
+  owner.request('party:L',{kind:'hunt-mission',owner:'hunt:L',deadline:now+500});
+  now+=500;owner.tick();
+  assert.deepEqual(ended.map(e=>e.slice(0,2)).at(-1),['hunt:L','expired'],'F3: a waiting entry ends at its expiry');
+  owner.request('party:L',{kind:'farming',owner:'farm:bare'});owner.tick();
+  assert.deepEqual(owner.diagnostics().breaks.map(b=>b.invariant),[3],'F3: a waiting entry with no source and no expiry is a break');
+  owner.release(trip,'done');
+  assert.deepEqual(ended.at(-1),['manual:trip','done','farming'],'F4: the end names the task that became live');
+ }],
+ // F17: the planted pair no run reaches on demand, a suspended task whose bound lapses under the
+ // death recovery.
+ ['F17: a task the escape or the death recovery suspends resumes when it ends, unless its bound lapsed',()=>{
+  const {createTaskOwner}=require('../../runtime/tasks/coordinator/owner.ts');
+  let now=1000;const owner=createTaskOwner({now:()=>now,notify(){},snapshot(){}});
+  owner.sync([{id:'party:L',kind:'party',members:['L','F']}]);
+  owner.request('party:L',{kind:'farming',owner:'farm:L',source:'core:farm'});
+  owner.release(owner.request('party:L',{kind:'escape',owner:'escape:1',source:'core:survival-tasks'}),'done');
+  assert.equal(owner.live('party:L').owner,'farm:L','the farm resumes after the escape');
+  owner.request('party:L',{kind:'hunt-mission',owner:'hunt:L',deadline:now+500});
+  const death=owner.request('party:L',{kind:'death-recovery',owner:'death:1',source:'core:survival-tasks'});
+  now+=500;owner.release(death,'recovered');
+  assert.equal(owner.live('party:L').owner,'farm:L','the lapsed Hunt does not resume; the farm under it does');
+ }],
+ // F31 to F33: the status line's derived state. The live rows read the card, which shows this line.
+ ['F31 to F33: the status phase names the live task, the reasons are the holds then the waiting rows, and the line writes only on a change',()=>{
+  const {createTaskOwner}=require('../../runtime/tasks/coordinator/owner.ts');
+  const writes=[],owner=createTaskOwner({now:()=>1000,notify:(hook,p)=>{if(hook==='status.changed')writes.push(p.status);},snapshot(){}});
+  owner.sync([{id:'party:L',kind:'party',members:['L','F']}]);
+  owner.request('party:L',{kind:'farming',owner:'farm:L',source:'core:farm',label:'Farming bees'});
+  const rare=owner.request('party:L',{kind:'rare',owner:'rare:L',source:'core:rare',label:'Rare: phoenix'});
+  assert.equal(owner.status('party:L').phase,'rare:start','F31: a rare reads as the rare, never as an event');
+  owner.hold('F','manual',{reason:'On Manual'});
+  const line=owner.status('party:L');
+  assert.deepEqual([line.phase,line.label],['hold:manual','F: On Manual - needs your action'],'F32: the hold that needs the player is the top line');
+  assert.deepEqual(line.reasons.map(r=>[r.kind,r.needsAction]),[['hold:manual',true],['farming',false]],'F32: the holds, then one line per waiting row');
+  owner.hold('F','manual',null);
+  const before=writes.length;
+  owner.update(rare,{label:'Rare: phoenix'});for(let i=0;i<5;i++)owner.tick();
+  assert.equal(writes.length,before,'F33: an update and ticks that change nothing write nothing');
+  owner.update(rare,{phase:'walk'});
+  assert.equal(writes.length,before+1,'F33: a phase change writes once');
+ }],
+ // F34 to F36: the ladder on a planted owner. The live row reaches the wait rung only through an
+ // unreachable Hunt target, and never the fall-back of a trip under a suspended farm.
+ ['F34 to F36: each failure climbs a rung, the wait rung reads Stuck and asks again on a changed report, progress returns it to walk, and a fall-back ends the task',()=>{
+  const {createTaskOwner}=require('../../runtime/tasks/coordinator/owner.ts'),{PROGRESS_DISTANCE}=require('../../runtime/protocol/ladder.ts');
+  const at={L:{map:'main',x:0,y:0},F:{map:'main',x:0,y:0}},owner=createTaskOwner({now:()=>1000,notify(){},snapshot(){},report:name=>at[name]});
+  owner.sync([{id:'party:L',kind:'party',members:['L','F']}]);
+  const farm=owner.request('party:L',{kind:'farming',owner:'farm:L',source:'core:farm'});
+  for(let i=0;i<3;i++)owner.fail(farm,'no-path',{trying:'the regroup'});
+  assert.equal(owner.status('party:L').label,'Stuck - trying the regroup','F36: the wait rung names what it tries next');
+  owner.tick();
+  assert.equal(owner.rung(farm),'wait','F35: an unchanged report keeps the wait');
+  at.F={map:'main',x:PROGRESS_DISTANCE,y:0};owner.tick();
+  assert.equal(owner.rung(farm),'walk','F35: the first changed report asks again, with no series of waits');
+  owner.fail(farm,'no-path');owner.progress(farm);
+  assert.equal(owner.rung(farm),'walk','F35: progress returns the ladder to walk');
+  const trip=owner.request('party:L',{kind:'manual',owner:'manual:trip',source:'core:manual'});
+  assert.deepEqual([1,2,3].map(()=>owner.fail(trip,'no-path')?.rung),['regroup','safe-point','fall-back']);
+  assert.equal(owner.live('party:L').owner,'farm:L','F34: the fall-back ends the trip and the next task takes the group');
+ }],
+ ['F38: the group ring keeps the protocol ring size, a trigger writes one snapshot, and no live read carries the ring',()=>{
+  const {createTaskOwner}=require('../../runtime/tasks/coordinator/owner.ts'),{MOVEMENT_RING_SIZE}=require('../../runtime/protocol/records.ts');
+  const saved=[],owner=createTaskOwner({now:()=>1000,notify(){},snapshot:(group,trigger)=>saved.push(trigger)});
+  owner.sync([{id:'party:L',kind:'party',members:['L','F']}]);
+  for(let i=0;i<=MOVEMENT_RING_SIZE;i++)owner.request('party:L',{kind:'farming',owner:'farm:L',source:'core:farm'});
+  assert.equal(owner.ring('party:L').length,MOVEMENT_RING_SIZE);
+  owner.died('F');
+  assert.deepEqual(saved,['death'],'one death writes one snapshot');
+  assert.equal(JSON.stringify([owner.live('party:L'),owner.status('party:L'),owner.assignment('F')]).includes('decision'),false,'the ring reaches no live read');
+ }],
 ]);
 
 
@@ -1892,6 +1971,43 @@ scenarioTable('the task owner asks movement for its walks', installedTasks, [
   assert.deepEqual(moves,['apart:party:L'],'the arrival ends the asks');
   assert.equal(t.hooks.registrations().filter(r=>r.name==='core:apart-walk').length,1);
   assert.equal(globalThis.__partyApartEnded,undefined,'01 holds no global');
+ }],
+ // F16 and F19: the acting gates of `runs` under the two tasks above every walk but the player's.
+ // The live rows reach each pair only through a death or an escape timed into a farm move or a return.
+ ['no farm-area move and no event return acts while the death recovery or the escape holds the group, and a turn-in suspends the return',t=>{
+  t.tasks.taskTick();
+  for(const kind of ['death-recovery','escape']){
+   const held=t.tasks.owner.request('party:L',{kind,owner:kind+':1'});
+   assert.equal(t.tasks.runs('party:L','farm-area'),false,'F16: '+kind);
+   assert.equal(t.tasks.runs('party:L','event-return'),false,'F19: '+kind);
+   t.tasks.owner.release(held,'done');
+  }
+  t.tasks.owner.request('party:L',{kind:'event-return',owner:'return:goobrawl'});
+  t.tasks.owner.request('party:L',{kind:'hunt-turn-in',owner:'hunt:L'});
+  assert.equal(t.tasks.owner.diagnostics().groups[0].waiting.some(w=>w.owner==='return:goobrawl'),true,'F19: the turn-in suspends the return');
+ }],
+ // F42: rule 2.3.2 on the heartbeat read. The live rows list the priest in the return, so no run
+ // leaves a member out on demand.
+ ['a member the event return left out still gets the return as its heartbeat task',t=>{
+  t.tasks.taskTick();
+  t.tasks.owner.request('party:L',{kind:'event-return',owner:'return:goobrawl',members:['L']});
+  assert.equal(t.tasks.memberTask('F')?.owner,'return:goobrawl','F42');
+ }],
+ // F45 and F57: a Manual toggle through its own settings.changed, as the dashboard switch saves it.
+ ["a Manual toggle holds its member from the toggle's own request until the toggle ends, and Carries on refuses the merchant's visit",t=>{
+  t.tasks.taskTick();
+  const hand=over=>{t.party.handControlByCharacter={F:{on:true,usePotions:true,combat:true,party:'carries-on',...over}};
+   t.hooks.notify('settings.changed',{field:'handControlByCharacter',by:'test'});};
+  t.party.steamMembers=['F'];hand({});
+  assert.equal(t.tasks.holds.held('F'),true,"F57: the toggle's own request starts the hold");
+  assert.equal(t.tasks.visitAllowed('F'),false,'F45: Carries on treats the held member as absent');
+  // Past the stale bound, the longest the console waits on a silent runtime.
+  t.advance(STALE_MS);t.tasks.taskTick();
+  assert.equal(t.tasks.holds.held('F'),true,'F57: the hold does not end on its own');
+  hand({party:'follows-me'});
+  assert.equal(t.tasks.visitAllowed('F'),true,'F45: under Follows me the merchant delivers where the character stands');
+  hand({on:false});
+  assert.equal(t.tasks.holds.held('F'),false,"F57: the toggle's own request ends the hold");
  }],
 ]);
 // The server caps a walker at parseInt(cap) and reports round(max(5, speed)), so a walk paced at

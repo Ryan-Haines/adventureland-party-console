@@ -1,4 +1,5 @@
 const test=require('node:test'),assert=require('node:assert/strict');
+const {scenarioTable}=require('./fixtures/scenarios.cjs');
 const {createInitialCoordinatorState}=require('../../runtime/settings/coordinator/initial.ts');
 
 test('state initialization retains persisted Hunt trip and event boundary records, and loads a Hunt paused for an event at its own stage',()=>{
@@ -16,10 +17,10 @@ test('a combatEventHandoff loads as the event boundary',()=>{
   {now:()=>100,loadBankVaultDefinitions:()=>[]});
  assert.deepEqual(state.eventBoundary,{startedAt:10});
 });
-for(const merchant of ['FonzeMerch','GoldMajesty'])test('new merchant '+merchant+' has no invented lucky slot',()=>{
+scenarioTable('a merchant with no saved settings starts with no lucky slot',null,['FonzeMerch','GoldMajesty'].map(merchant=>['new merchant '+merchant+' has no invented lucky slot',()=>{
  const {initialMerchantRuntime}=require('../../runtime/settings/coordinator/initial.ts');
  assert.deepEqual(initialMerchantRuntime({},merchant).luckyUpgradeSlots,{});
-});
+}]));
 test('persisted character-specific lucky slots retain zero and other verified values',()=>{
  const {initialMerchantRuntime}=require('../../runtime/settings/coordinator/initial.ts');
  assert.deepEqual(initialMerchantRuntime({luckyUpgradeSlots:{FonzeMerch:0,Other:41}},'FonzeMerch').luckyUpgradeSlots,{FonzeMerch:0,Other:41});

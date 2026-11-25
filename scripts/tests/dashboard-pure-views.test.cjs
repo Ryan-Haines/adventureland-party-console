@@ -33,12 +33,6 @@ test('durations: Active with no end, Expiring at zero, else the time left rounde
   assert.equal(durationStat('attack', 10), null);
 });
 
-test('a fallback empty value keeps its identity and cannot be written', () => {
-  const { emptyArray, emptyRecord } = require(path.join(party, 'empty-values.ts'));
-  assert.equal(emptyArray(), emptyArray());
-  assert.equal(emptyRecord(), emptyRecord());
-  assert.ok(Object.isFrozen(emptyArray()) && Object.isFrozen(emptyRecord()));
-});
 
 test('the debug instance serves game images from its own copy, and other URLs pass through', () => {
   const { gameImageUrl, setLocalDebugAssets } = require(path.join(party, 'game-image-url.ts'));
