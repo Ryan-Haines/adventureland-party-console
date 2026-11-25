@@ -858,8 +858,8 @@ export function installPartyMovement(host: MovementHost, ports: MovementPorts) {
   // falls through to `move`.
   function ownerDecides(destination: unknown, callback: ((done: boolean) => void) | undefined, options: MovementOptions, from: Point): Promise<unknown> | undefined {
     expireHeld();
-    // A standing hold gives way to any request.
-    if (!journey && hold?.yields) endHold('replaced:' + options.request!.kind, caller(options.request, new Error().stack));
+    // A standing hold gives way to any request. Its own owner's walk releases it, as `hold` does below.
+    if (!journey && hold?.yields) endHold(hold.owner === options.request!.owner ? 'released' : 'replaced:' + options.request!.kind, caller(options.request, new Error().stack));
     const clickRule = clickDecides(options.request!);
     if (clickRule) {
       const asked: MovementRecordInput = { decision: 'asked', kind: options.request!.kind, owner: options.request!.owner, tier: options.request!.tier, by: caller(options.request, new Error().stack) };

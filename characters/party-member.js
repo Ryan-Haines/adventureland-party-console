@@ -33029,7 +33029,7 @@ ${hook}`, was = errors.get(key3);
     }
     function ownerDecides(destination, callback, options, from) {
       expireHeld();
-      if (!journey && hold2?.yields) endHold("replaced:" + options.request.kind, caller(options.request, new Error().stack));
+      if (!journey && hold2?.yields) endHold(hold2.owner === options.request.owner ? "released" : "replaced:" + options.request.kind, caller(options.request, new Error().stack));
       const clickRule2 = clickDecides(options.request);
       if (clickRule2) {
         const asked = { decision: "asked", kind: options.request.kind, owner: options.request.owner, tier: options.request.tier, by: caller(options.request, new Error().stack) };

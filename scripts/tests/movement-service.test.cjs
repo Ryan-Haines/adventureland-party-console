@@ -172,6 +172,20 @@ scenarioTable('the owner decides inside the service: re-aim, idle aggro, cost, t
  late();await cast;assert.equal(r.service.live()?.owner,'errand','the journey of the errand keeps walking');assert.equal(r.service.live()?.journey,true);
  r.dispose();
  }],
+ // Design section 2.2 for a yielding hold: the walk its own owner starts from it releases it, as a
+ // standing hold does; a walk by another owner replaces it. W43 run 1 read the escape's walk home
+ // end its own hold as `replaced:escape` on each rung.
+ ['a yielding hold ends released when its own owner walks and replaced when another owner does', async r=>{
+ const ends=owner=>r.service.records().filter(e=>e.decision==='ended'&&e.owner===owner&&!e.journeyId).map(e=>e.code);
+ r.service.hold({kind:'escape',owner:'escape:1',deadline:5000,yields:true});
+ r.service.move({map:'main',x:100,y:0},undefined,{request:{kind:'escape',owner:'escape:1'}}).catch(()=>{});await r.ticks(1);
+ assert.deepEqual(ends('escape:1'),['released']);
+ await r.host.stop('smart',undefined,{kind:'escape',owner:'escape:1'});await r.ticks(1);
+ r.service.hold({kind:'escape',owner:'escape:2',deadline:5000,yields:true});
+ r.service.move({map:'main',x:100,y:0},undefined,{request:{kind:'manual',owner:'manual'}}).catch(()=>{});await r.ticks(1);
+ assert.deepEqual(ends('escape:2'),['replaced:manual']);
+ r.dispose();
+ }],
  // Rows 02-06, 06-41 and 07-25 of the removed numbers audit (bigcheck/bounds.md): a transport, leave or
  // Town reply the network lost ends the crossing timed out at its kept bound, which tells the status
  // owner's bound record, and a Town cast stops counting. Each bound is v1.5.0's value
