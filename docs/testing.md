@@ -1,5 +1,15 @@
 # Testing
 
+## The live suite: windows
+
+The live project runs the windows in `e2e/windows/`. A window is one play script, run once, and every
+check it holds is an observer of that play (`e2e/windows.ts`, `e2e/window-runner.ts`). A window's
+title starts with its id, so `npm run test:e2e:live -- --grep "W41a "` runs one window. The windows
+replaced the old `e2e/live-*.spec.ts` files, which commit 21fe30a2b still holds; the sections below
+cite those file names as history. `e2e/coverage/ledger.tsv` maps every assertion of the old files to
+the window observer or unit row that checks it now, and `node e2e/coverage/ledger.mts --final` checks
+that map.
+
 ## Roaming target setup
 
 The queued Goo regression holds its initial monster stationary until all clients
@@ -13,7 +23,7 @@ consume the required movement window and fail before gameplay is exercised.
 
 ## Merchant observation and Cave visit budgets
 
-Run the focused native scenarios matching `auto merchant collects twelve native copies alongside a finite compound rule|merchant gathering waits at capacity|Cave entry closes|Cave completes native rooms`.
+Run W03 (the twelve native copies beside a finite compound rule) and W41a (the Cave entry and its native rooms). The gathering capacity wait is a unit row now (gathering-ownership.test.cjs).
 Compound failures legitimately leave null inventory cells before the successful
 item; restart assertions must skip those cells while retaining exact native
 consumption, result counts and the exhausted finite rule. Gathering capacity
@@ -52,32 +62,32 @@ the required item-inspection assertions.
 
 The game strips tiles, placements and groups from every generated floor it sends
 to a socket whose handshake says `no_graphics=1`, which every caracAL worker does.
-`live-cave-headless.spec.ts` runs the leader and its follower as real headless
+W42 (from `live-cave-headless.spec.ts`) runs the leader and its follower as real headless
 workers (`liveHeadless`). Only the leader's worker sends `no_graphics=0`
 (`runtime/lifecycle/character/host.ts`), so the test checks the server's
 socket flags, the follower card's textured floor, one definition per stream
 subscriber, closed map streams in a hidden tab, and a released visit with no floor
 or interrupted state left. It attaches `headless-cave-floor-bytes` with the floor,
 stripped floor, frame and tile image sizes. Run it with
-`npm test -- -- --project=live --grep "headless party sees the Cave floor"`.
+`npm run test:e2e:live -- --grep "W42 "`.
 
-`live-cave-talk.spec.ts` uses the seeded entry shop, replaces the current vote as a
+W41c (from `live-cave-talk.spec.ts`) uses the seeded entry shop, replaces the current vote as a
 later encounter does, and checks that selecting the merchant room talks to it
 (`cave_talk`) and that the reopened shop sells. A waypoint inside solid rock then
 makes the automatic repairs climb the Cave ladder past three with no cap, and Retry
 must keep at least the repair count it found.
 
-The rendezvous rows (`e2e/event-checkpoint-rows.ts`) target only one member's `/party-api/shared-travel`
-requests: a moved destination and a member that never requests. Cipher and door
+W27a's checkpoint play (`e2e/event-checkpoint-rows.ts`) moves one member's `/party-api/shared-travel`
+destination. A member that never requests is a unit row (convoy-coordinator.test.cjs). Cipher and door
 legs retain exact destination matching. Existing owned failure recovery is retained.
-`live-convoy-event-defense.spec.ts` keeps a follower fighting a live Mr. Pumpkin in
+W29a (from `live-convoy-event-defense.spec.ts`) keeps a follower fighting a live Mr. Pumpkin in
 halloween while the leader starts a convoy in main. See `pr-151-integration.md`
 for retained behavior, exclusions, and validation.
 
 
 ## Town channel healing
 
-Run the native cases matching `Town executes a real cast|Halloween mrgreen stages`.
+Run W09 (the Town cast) and W25b (the Mr. Green round).
 The minor-injury Town variant declares a 15-HP deficit and 40% MP once during
 the first actual native channel, matching the incident's MP-recovery priority
 without changing casts, healing, transport or responses.
@@ -91,8 +101,7 @@ barrier remains pending. Recovery potions/regeneration remain available.
 ## CI parallelism
 
 The full native workflow uses 16 isolated GitHub runners with one Playwright
-worker each. Shards 1–3 run the named `live-cave.spec.ts` journey groups separately;
-shard 2 includes the fresh floor-completion/stairs visit alongside route pacing.
+worker each. Shards 1-3 run the Cave windows separately: W41a, then W41b with W41c, then W42.
 shards 4–16 set `E2E_SKIP_CAVE=1` and distribute the remaining live project over
 13 shards. Focused `grep` runs retain one runner and include Cave normally.
 When adding or renaming a Cave scenario, update its workflow filter. Validate
@@ -283,7 +292,7 @@ a fabricated discovery or game outcome. The focused journey passed with 33
 verified evidence files; retained lucky-upgrade/recovery checks also passed (45).
 This is not full-suite coverage. Activation requires the ordinary full restart.
 
-The native `live-cave.spec.ts` journey covers cave party assembly/cruise, room
+W41a (from `live-cave.spec.ts`) covers cave party assembly/cruise, room
 arrival, stopping/resuming, encounter funds, full-floor pins/waypoint selection,
 native help-one-side duel completion and manual stairs through a farewell vote.
 Encounter selection is bounded to upstream duel/gift/shop definitions, avoiding
@@ -404,7 +413,7 @@ The current inventory contains **286 scenarios: 78 console, two debug and 206 ga
 This is aggregate evidence from separate runs and source snapshots, not one
 clean 63-case execution at the final snapshot.
 
-The solo-ranger regression runs with `npx playwright test e2e/live-solo-ranger.spec.ts`.
+The solo-ranger regression is W02: `npm run test:e2e:live -- --grep "W02 "`.
 It uses `primaryClass: 'ranger'` to seed the existing primary fixture account as a
 native ranger before login and equipment calculation. The account name remains
 `E2EWarrior`; actual native class and class-specific equipment are verified.
@@ -513,9 +522,8 @@ Docker, or `npm run test:e2e:live` for gameplay only. Normal game runs
 collect server logs and remove the disposable containers/database at completion.
 
 The console scenarios cover invalid settings/retry, persisted preferences,
-coordinator restart, inventory menus and previews. The real-game scenarios are in
-`live-game.spec.ts`, `live-economy.spec.ts`, `live-catalog.spec.ts`,
-`live-franky*.spec.ts` and `live-hunt-*.spec.ts`: native
+coordinator restart, inventory menus and previews. The real-game scenarios are the windows
+in `e2e/windows/`: native
 movement, party travel, Hunt, event interruption, recovery, economic operations
 and catalog acknowledgement. A scenario's presence
 is not evidence of success: inspect its result and attached server observations.
@@ -591,10 +599,10 @@ checksummed proof remain required regardless of recording. See
 These tests cover a locally running game server; public realms, Steam itself and
 future upstream versions remain outside that boundary.
 
-The Franky regressions cover two boundaries. `live-franky-party.spec.ts` uses
+The Franky regressions cover two boundaries. W24 (from `live-franky-party.spec.ts`) uses
 real event entry, visible-boss damage and native runtime reports to verify that
 inherited deselection interrupts combat, installs both exit owners and brings
-both fighters to Mainland while Franky remains alive. `live-franky.spec.ts` restores a
+both fighters to Mainland while Franky remains alive. W17b (from `live-franky.spec.ts`) restores a
 sanitized historical recovery captured from the reported stuck Hunt: Town was
 already acknowledged, nobody was pending, and the quest owner was in Desertland.
 That prior acknowledgement and a completed gscorpion quest are declared initial
@@ -807,7 +815,7 @@ and `live-server-initial` with the native calculated HP/MP, attack, frequency,
 speed, armor, and resistance. These scenarios validate workflow behavior rather
 than normal player combat difficulty or natural gear progression.
 
-The native Cave regression is in live-cave.spec.ts. Run npm test -- -- --project=live --grep 'Cave entry closes'. It seeds the party beside Dorr, uses native entry and votes, captures both participant maps, verifies both characters reach selected rooms, stops and restarts manual travel, inspects the shop item, and checks exit confirmation through the dashboard. Artifacts include native-cave-entry, native-cave-choice, participant cave-map screenshots, native-cave-manual-travel, and native-cave-exit. Fixture reset destroys only generated runs belonging entirely to its test account, preventing a prior failed run from becoming a resume visit.
+The native Cave regression is W41a. Run `npm run test:e2e:live -- --grep "W41a "`. It seeds the party beside Dorr, uses native entry and votes, captures both participant maps, verifies both characters reach selected rooms, stops and restarts manual travel, inspects the shop item, and checks exit confirmation through the dashboard. Artifacts include native-cave-entry, native-cave-choice, participant cave-map screenshots, native-cave-manual-travel, and native-cave-exit. Fixture reset destroys only generated runs belonging entirely to its test account, preventing a prior failed run from becoming a resume visit.
 
 ## Native merchant skill scenario timing
 

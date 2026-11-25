@@ -83,8 +83,8 @@ test('the elixir countdown reads the shared display clock and nothing of its own
  } finally {await act(async()=>view?.unmount());}
 });
 
-// The Escape button's burst guard, planted click gaps. The play half is the tasks
-// owner's e2e spec (e2e/live-movement-owner.spec.ts).
+// The Escape button's burst guard, planted click gaps. The play half is the Escape row
+// (e2e/user-holds-rows.ts `e1Row`), which W29a plays.
 test('a burst aimed at Escape never resumes, and a press after the burst acts',()=>{
  const file='dashboard/features/party/escape-control.tsx';
  const code=require('esbuild').transformSync(fs.readFileSync(file,'utf8'),{loader:'tsx',format:'cjs'}).code;

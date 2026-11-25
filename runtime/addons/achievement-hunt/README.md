@@ -73,10 +73,9 @@ its rules and failure modes are the fork's docs/achievement-hunt.md), rebuilt as
 - J. Tests, all in tests/ here: achievement-hunt.test.cjs (the fork's isolated checks on the
   add-on) and achievement-boss-zones.test.cjs (the zones, the step check, the retreat, the
   targeting answer and the status report's sightings); fork.ts, the fork's own registration beside the target mode, which load refuses; and
-  rows.ts, this add-on's rows of two shared tables: the Achievement Hunt row in
-  e2e/live-movement-owner.spec.ts's table, which runs it on the game stack (the switch on, the target picked, its task live, the
-  kills, and the switch off), and the console journey in e2e/addon-console.case.ts's add-on
-  table.
+  rows.ts, this add-on's row of the console journey in e2e/addon-console.case.ts's add-on table.
+  Its game stack play is window W60 (e2e/windows/W60-addon-hunt.spec.ts): the switch on, the target
+  picked, its task live, the kills, and the switch off.
 
 ## Waiting
 - **The persistence split:** the fork moved these fields to their own save key

@@ -5,8 +5,8 @@ import type { Entity } from 'typed-adventureland';
 import type { HookRow, ReadRow, SlotRow } from '../registry.ts';
 import { doorOnly, readsOf, rowsFor } from './row.ts';
 
-const SPEC = 'e2e/live-status-hooks.spec.ts', SLOT_SPEC = 'scripts/tests/dashboard-addon-slots.test.cjs', PART = 'dashboard status (12)';
-const { notice, read } = rowsFor(PART, `${SPEC}#L: `);
+const W01 = 'e2e/windows/W01-goo-field.spec.ts', W09 = 'e2e/windows/W09-party-walk.spec.ts', SLOT_SPEC = 'scripts/tests/dashboard-addon-slots.test.cjs', PART = 'dashboard status (12)';
+const { notice, read } = rowsFor(PART, '');
 
 // Core-only points (14 0.4's closed list, D4 part 1), one per line with its reason:
 // - Table L's order: an add-on adds its line through `status.line`, below L's.
@@ -20,12 +20,12 @@ export const HOOKS = {
   // Add-ons answer it, so an ask would run every answer (D4 part 3, `addonMayAsk` false).
   'status.report': { kind: 'request', side: 'character', part: 'dashboard status (12), the character report', answers: 'many', addonMayAsk: false,
     bound: "data only: fields under the add-on's own name in the report; it decides nothing",
-    fixture: `${SPEC}#L: the add-on's report field reaches the card`,
+    fixture: `${W09}#addonReports?.['status-hooks-fixture']?.[REPORT_FIELD]`,
     receives: "the character's view on each report", returns: 'the fields to report, or nothing' },
   // One line under table L's line on the card, under the add-on's name.
   'status.line': { kind: 'request', side: 'coordinator', part: PART, answers: 'many', addonMayAsk: false,
     bound: "data only: one line under the add-on's own name, below table L's line, never in place of it",
-    fixture: `${SPEC}#L: the add-on's line shows under the card line with its name`,
+    fixture: `${W09}#{ op: 'line', line: STATUS_LINE }`,
     receives: '{character, line}', returns: '{label} or nothing' },
   // An add-on's own dashboard command: a card piece's `send` or a section's `save` posts it to
   // POST /party-api/addon-command, and only the add-on it names answers.
@@ -34,21 +34,21 @@ export const HOOKS = {
     fixture: 'scripts/tests/hook-registry.test.cjs#addon.command: the named add-on answers its own command and writes its own scope store',
     receives: '{owner, character, store, now, body}', returns: '{ok: true, reply} or {ok: false, status, error}' },
   // Part 2: the read-only events, one notify at each change.
-  'status.lineChanged': notice("the add-on task's line arrives as status.lineChanged", "character, line, task, phase; by the table L row (L1 to L9)", 'coordinator'),
-  'status.received': notice('each report sends status.received', "character, seq, seenAt; by 'core:status'", 'coordinator'),
-  'status.replied': notice('each reply names its sections', "character, the sections sent; by 'core:status'", 'coordinator'),
-  'dashboard.command': notice('a dashboard command arrives as dashboard.command by user', "route, character or group, the body less secrets; by 'user' or 'app:<name>'", 'coordinator'),
-  'dashboard.opened': notice('the dashboard opens and closes', "the stream's client count; by 'core:status'", 'coordinator'),
-  'dashboard.closed': notice('the dashboard opens and closes', "the stream's client count; by 'core:status'", 'coordinator'),
-  'diagnostics.leased': notice('the diagnostics view leases the rings, then releases them', "character, the rings named; by 'user'", 'coordinator'),
-  'diagnostics.released': notice('the diagnostics view leases the rings, then releases them', "character, the rings ended; by 'user'", 'coordinator'),
-  'app.keyIssued': notice('a key is issued, used once and revoked', "key name, scopes, tier; by 'user'", 'coordinator'),
-  'app.keyRevoked': notice('a key is issued, used once and revoked', "key name, scopes, tier; by 'user'", 'coordinator'),
-  'app.used': notice('a key is issued, used once and revoked', "key name, scopes, tier; by 'app:<name>'", 'coordinator'),
+  'status.lineChanged': notice(`${W09}#'status.lineChanged'`, "character, line, task, phase; by the table L row (L1 to L9)", 'coordinator'),
+  'status.received': notice(`${W01}#'status.received'`, "character, seq, seenAt; by 'core:status'", 'coordinator'),
+  'status.replied': notice(`${W01}#'status.replied'`, "character, the sections sent; by 'core:status'", 'coordinator'),
+  'dashboard.command': notice(`${W09}#'dashboard.command'`, "route, character or group, the body less secrets; by 'user' or 'app:<name>'", 'coordinator'),
+  'dashboard.opened': notice(`${W09}#'dashboard.opened'`, "the stream's client count; by 'core:status'", 'coordinator'),
+  'dashboard.closed': notice(`${W09}#'dashboard.closed'`, "the stream's client count; by 'core:status'", 'coordinator'),
+  'diagnostics.leased': notice(`${W09}#'diagnostics.leased'`, "character, the rings named; by 'user'", 'coordinator'),
+  'diagnostics.released': notice(`${W09}#'diagnostics.released'`, "character, the rings ended; by 'user'", 'coordinator'),
+  'app.keyIssued': notice(`${W09}#'app.keyIssued'`, "key name, scopes, tier; by 'user'", 'coordinator'),
+  'app.keyRevoked': notice(`${W09}#'app.keyRevoked'`, "key name, scopes, tier; by 'user'", 'coordinator'),
+  'app.used': notice(`${W09}#'app.used'`, "key name, scopes, tier; by 'app:<name>'", 'coordinator'),
   // Part 3: the published reads, each from stored state (`addonMayAsk` true).
-  'status.cardLine': read('the add-on reads the card line', 'character', "table L's answer with its group, or null", true, 'coordinator'),
-  'status.lastReport': read("the add-on reads its character's report", 'character', 'the last stored report and its seenAt, or null', true, 'coordinator'),
-  'status.connected': read('the stopped character reads not connected', 'character', 'the one connection state', true, 'coordinator'),
+  'status.cardLine': read(`${W01}#'status.cardLine'`, 'character', "table L's answer with its group, or null", true, 'coordinator'),
+  'status.lastReport': read(`${W01}#'status.lastReport'`, 'character', 'the last stored report and its seenAt, or null', true, 'coordinator'),
+  'status.connected': read(`${W01}#'status.connected'`, 'character', 'the one connection state', true, 'coordinator'),
 } as const satisfies Record<string, HookRow>;
 
 // C3: the view each add-on's `status.report` answer gets on the character (status/character/report.ts
@@ -74,11 +74,11 @@ export const DOOR_ONLY = {
 export const SLOTS = {
   // Part 4: each add-on's `status.line` answer, drawn under table L's line on the card.
   'card-line': { owner: '12', data: '{character, label} from status.line answers', section: false, 
-    fixture: `${SPEC}#L: the add-on's line shows under the card line with its name` },
+    fixture: `${W09}#{ op: 'line', line: STATUS_LINE }` },
   // Part 4: an add-on's own ring (Registration `rings`), posted through table G's lease and drawn
   // as a tab of the diagnostics view by the add-on's own records component.
   'diagnostics-ring': { owner: '12', data: "{ring, label, records} for an add-on's own ring, posted through table G's lease", section: true, 
-    fixture: `${SPEC}#L: the add-on's ring shows as a tab of the diagnostics view` },
+    fixture: `${W09}#The \`diagnostics-ring\` slot: the add-on list names the ring with its label` },
   // The general slots (decisions.md 2026-11-16): each draws an add-on's piece through `<AddonSlot
   // name part>` after its place's core content (runtime/hooks/dashboard/slots.tsx, addon-kit.ts
   // ADDON_PLACES).

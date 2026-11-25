@@ -24,7 +24,7 @@ import { partyHooks } from '../../hooks/index.ts';
 import { coreRegistrations } from '../../hooks/core.ts';
 import { departureGate, type WalkClient } from './walk-client.ts';
 import { CLICK_WAIT_DEFAULT_MS, movementSavedFields } from '../saved-fields.ts';
-import { closer, createOwnerLadder, journeyRound, walkCloseness, rejoinRound, taskRound, movementRelocation, type Closeness, type OwnerLadder, type Rung } from '../../protocol/ladder.ts';
+import { closer, createOwnerLadder, journeyRound, walkCloseness, taskRound, movementRelocation, type Closeness, type OwnerLadder, type Rung } from '../../protocol/ladder.ts';
 import { stepSafety, chooseStep, fighting, type SafetyMonster, type SafetyPoint, type StepSafetyInput } from '../geometry/step-safety.ts';
 import { routeAroundIdleAggro } from '../geometry/route-aggro.ts';
 import { fresh, setReadings, setClockError, reportInterval, STATUS_TIMER_MS } from '../../protocol/reports.ts';
@@ -1718,10 +1718,9 @@ function withAddonRungs(round: readonly Rung[], added: readonly Rung[]): readonl
   const cut = fallback >= 0 ? fallback : round.length;
   return [...round.slice(0, cut), ...added, ...round.slice(cut)];
 }
-// characters/shared.js reads installPartyMovement from the realm. The only realm reader of
-// `partySurvival` is e2e/live-movement-owner.spec.ts item 7, which builds a rejoin round in the
-// game realm; movement's own files import their rounds from runtime/protocol/ladder.ts.
-Object.assign(globalThis, { installPartyMovement, partySurvival: { rejoinRound } });
+// characters/shared.js reads installPartyMovement from the realm. Movement's own files import their
+// rounds from runtime/protocol/ladder.ts.
+Object.assign(globalThis, { installPartyMovement });
 
 // The requester identities a character's movers name to the movement owner, and the holds, the
 // Town cast and the task walk climb they share. Each identity takes its tier from the member's

@@ -21,7 +21,7 @@ export const HOOKS = {
   // stopped short, and cuts the try when the re-sent step's round trip passes with the character
   // still standing. An add-on may read it.
   'calls.margin': { kind: 'request', side: 'character', part: 'the call budget (09)', answers: 'one', core: true, addonMayAsk: true,
-    fixture: 'e2e/live-calls-hooks.spec.ts#calls.margin: the add-on reads the margin while the figure holds',
+    fixture: 'e2e/windows/W05-call-pressure.spec.ts#calls.margin: the add-on reads the margin while the figure holds',
     receives: 'nothing', returns: 'the margin in ms' },
   // The call budget's window, the span of game time the server counts a socket's calls over
   // (`CALL_WINDOW_MS`). The turns owner keeps each family's own replies
@@ -34,22 +34,22 @@ export const HOOKS = {
   // is unknown to it (the game client, the player, or an owner not built yet), so it says
   // `untagged`. A call admitted at once sends none.
   'calls.held': { kind: 'notice', side: 'character', part: 'the call budget (09)', answers: 'many', 
-    fixture: 'e2e/live-calls-hooks.spec.ts#calls.held: an untagged players emit under the planted figure is held',
+    fixture: 'e2e/windows/W05-call-pressure.spec.ts#calls.held: an untagged players emit under the planted figure is held',
     receives: 'character, method, cost, used, margin, source, by', returns: 'nothing' },
   'calls.released': { kind: 'notice', side: 'character', part: 'the call budget (09)', answers: 'many', 
-    fixture: 'e2e/live-calls-hooks.spec.ts#calls.released: the held players emit goes once the figure leaves',
+    fixture: 'e2e/windows/W05-call-pressure.spec.ts#calls.released: the held players emit goes once the figure leaves',
     receives: 'character, method, cost, waitedMs, margin, sentMargin, by', returns: 'nothing' },
   'calls.waited': { kind: 'notice', side: 'character', part: 'the call budget (09)', answers: 'many', 
-    fixture: 'e2e/live-calls-hooks.spec.ts#calls.waited: a job question waits on the planted figure, then goes',
+    fixture: 'e2e/windows/W05-call-pressure.spec.ts#calls.waited: a job question waits on the planted figure, then goes',
     receives: 'character, band, method, cost, waitedMs, by', returns: 'nothing' },
   'calls.raised': { kind: 'notice', side: 'character', part: 'the call budget (09)', answers: 'many', 
-    fixture: 'e2e/live-calls-hooks.spec.ts#calls.raised: a background read waits one window and goes in the job band',
+    fixture: 'e2e/windows/W05-call-pressure.spec.ts#calls.raised: a background read waits one window and goes in the job band',
     receives: 'character, method, waitedMs, by', returns: 'nothing' },
   'calls.unmatched': { kind: 'notice', side: 'character', part: 'the call budget (09)', answers: 'many', 
-    fixture: 'e2e/live-calls-hooks.spec.ts#calls.unmatched: a question with no call after it is unmatched',
+    fixture: 'e2e/windows/W05-call-pressure.spec.ts#calls.unmatched: a question with no call after it is unmatched',
     receives: 'character, method, band, by', returns: 'nothing' },
   'calls.limitdc': { kind: 'notice', side: 'character', part: 'the call budget (09)', answers: 'many', 
-    fixture: 'e2e/live-calls-hooks.spec.ts#calls.limitdc: the planted overflow writes the limitdc snapshot',
+    fixture: 'e2e/windows/W05-call-pressure.spec.ts#calls.limitdc: the planted overflow writes the limitdc snapshot',
     receives: 'character, total, limit, by', returns: 'nothing' },
   // P5: an add-on's answer to an owner's retry of a failure. 09 holds it because its floor is the
   // call window: each retry costs a game call or a login. the merchant jobs owner's job endings, the realm owner's

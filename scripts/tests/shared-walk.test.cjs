@@ -179,7 +179,7 @@ scenarioTable('an event or staging walk replaces a trip by rank and spawn time, 
   t.walks.submit(t.body('F',{token:'F2'}));assert.equal(t.starts(),1);
   assert.deepEqual([...t.state.activeConvoy.participants].sort(),['F','L','P']);
  }],
- // (4) (shared-walk.ts:502-509; e2e/live-event-runtime-recovery.spec.ts:54-72): P died on the
+ // (4) (shared-walk.ts:502-509; e2e/live-event-runtime-recovery.spec.ts:54-72 at 21fe30a2b): P died on the
  // event's trip and the party's walk travels on without it.
  ['a revived member\'s rejoin beside the party\'s travelling walk runs as its own leg', t=>{
   const lives={};t.hooks.register({name:'core:test-life',folder:'core',author:'test',summary:"05's life.",hooks:{'survival.life':n=>lives[n]||0}});

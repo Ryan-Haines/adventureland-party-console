@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const { statusReport } = require('./helpers/status-report.cjs');
 
 // The warm-up yields one item per slice through the status owner's run scope (report.ts `prepareCatalog`); each
-// `step` runs the next yield. Real timer throughput and publication are verified by live-catalog.spec.ts.
+// `step` runs the next yield. W01's M01 (e2e/catalog-rows.ts) verifies real timer throughput and publication.
 function fixture() {
   const timers = [], warmed = [], errors = [];
   const c = { character: {}, G: { items: { coat: {}, staff: {}, potion: {} } }, root: {}, current: () => true,

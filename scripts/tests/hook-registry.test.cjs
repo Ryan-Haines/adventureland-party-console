@@ -1138,7 +1138,7 @@ test('the turns owner surface declares fixture and who may answer and ask', () =
     const h = HOOKS[name];
     assert.ok(h, `the hook table declares ${name}`);
     // `skills.pullSafe`'s row sits in this file.
-    assert.match(String(h.fixture), /^(e2e\/live-turns-hooks\.spec\.ts|scripts\/tests\/(turns-executor|hook-registry)\.test\.cjs)#/, `${name}: its fixture row`);
+    assert.match(String(h.fixture), /^(e2e\/windows\/W04-low-vitals\.spec\.ts|scripts\/tests\/(turns-executor|hook-registry)\.test\.cjs)#/, `${name}: its fixture row`);
   }
   for (const name of ['skills.ready', 'skills.incoming', 'skills.allows', 'skills.pullSafe']) {
     assert.equal(HOOKS[name].core, true, name); assert.equal(HOOKS[name].addonMayAsk, true, name);

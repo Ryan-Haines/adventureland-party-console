@@ -88,8 +88,8 @@ scenarioTable("the targeting owner's ring, overkill skip, retire and scope",targ
     w.fighting=false;w.retire.pass();w.fighting=true;w.retire.pass();
     assert.deepEqual(Object.keys(w.marks),[],'the fight after it starts clear');
   })],
-  // e2e/live-targeting-hooks.spec.ts "targeting.cleared": the fight ended and started again between
-  // two passes, with movement's notice in the gap. The notice reads the fight fact, so the start
+  // e2e/live-targeting-hooks.spec.ts "targeting.cleared" at 21fe30a2b: the fight ended and started again
+  // between two passes, with movement's notice in the gap. The notice reads the fight fact, so the start
   // after it clears the marks; a notice in a fight that started since the last pass clears the
   // marks from before it and its own mark holds.
   ['a notice between two passes reads the fight, so the next start clears the marks',w=>w.as('W',()=>{
@@ -106,7 +106,7 @@ scenarioTable("the targeting owner's ring, overkill skip, retire and scope",targ
     w.retire.notice({character:'W',target:'ghost4',why:'approach'});w.retire.pass();
     assert.deepEqual(Object.keys(w.marks),['ghost4'],"a notice at a fight's start clears the marks from before it and its own holds");
   })],
-  // e2e/live-targeting-hooks.spec.ts "the walled goo is retired once": movement repeats its
+  // e2e/live-targeting-hooks.spec.ts "the walled goo is retired once" at 21fe30a2b: movement repeats its
   // unreachable notice for the same goo across passes and fights; each repeat renews the mark and
   // the drop, and the ring and its notice hold one retired entry per goo.
   ['repeated unreachable notices for one goo give one retired entry',w=>w.as('W',()=>{
@@ -140,8 +140,8 @@ scenarioTable("the targeting owner's ring, overkill skip, retire and scope",targ
     w.marks.ghost1=Date.now()-1;
     assert.equal(w.retire.retiring('ghost1'),false,'the approach starts again once the mark lapses');
   })],
-  // e2e/live-targeting-hooks.spec.ts TG13: the queue's retire lands and the lock goes null, while
-  // the member's cached lock target is still the retired one for one more game update. The
+  // e2e/live-targeting-hooks.spec.ts TG13 at 21fe30a2b: the queue's retire lands and the lock goes null,
+  // while the member's cached lock target is still the retired one for one more game update. The
   // approach reads retiring in that gap and must not start.
   ['a target whose mark is live stays retiring after the lock goes null',w=>w.as('W',()=>{
     w.lock={id:'ghost1',map:'main',in:'main'};w.leader=true;

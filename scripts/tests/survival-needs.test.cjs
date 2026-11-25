@@ -3,7 +3,7 @@
 // reason (13, "Each separate test"): no live fixture carries a rogue or a paladin; the heal
 // choice's rows plant members out of range, dead, on another map, of another event team or a
 // merchant, and heal numbers the fixture's priest does not have (its heal is 21189); the Stomp's
-// rows plant party reports, weapon swaps and missing weapon data the default table does not.
+// rows plant party reports, weapon swaps and missing weapon data the live windows do not.
 // Failure modes: a class drinks no HP below its HP line (bug 3b, 2026-11-01); a class drinks
 // MP first below its HP line (2026-11-02); a class drinks no MP below its MP line; the escape's
 // MP budget or the warrior leader's Taunt MP comes before the HP line (bug 3 part); the merchant's

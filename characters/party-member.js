@@ -2572,7 +2572,7 @@
       part: "groups and tasks (01), the target mode slot",
       answers: "slot",
       addonMayAsk: false,
-      fixture: "e2e/live-tasks-hooks.spec.ts#L: the Achievements-like entry farms its target, and lets go once on a Hunt switch",
+      fixture: "e2e/tasks-hooks-rows.ts#L: the Achievements-like entry farms its target, and lets go once on a Hunt switch",
       receives: "the scope's farming view and its ports",
       returns: "the state each character of the scope reads, or nothing"
     },
@@ -2586,7 +2586,7 @@
       part: "groups and tasks (01), the combat mode slot",
       answers: "slot",
       addonMayAsk: false,
-      fixture: "e2e/live-tasks-hooks.spec.ts#L: an add-on combat mode reaches the members on the next reply",
+      fixture: "e2e/tasks-hooks-rows.ts#L: an add-on combat mode reaches the members on the next reply",
       receives: "the group's members and their reports",
       returns: "grouped (one nominated target) or scatter (each fighter its own)"
     },
@@ -2599,7 +2599,7 @@
       part: "groups and tasks (01)",
       answers: "many",
       addonMayAsk: false,
-      fixture: "e2e/live-tasks-hooks.spec.ts#L: the add-on's task takes the farming group, and ranks below the event",
+      fixture: "e2e/tasks-hooks-rows.ts#L: the add-on's task takes the farming group, and ranks below the event",
       receives: "the group, its kind, its members, its live task and the tick",
       returns: "one request of kind addon:<name> at tier addon-task (with its interrupted, windDown, visit and reunion, and the group kinds it runs in), or nothing",
       bound: "P7: the group kinds name only kinds the composition builds (party, solo, merchant), or the answer is dropped and recorded; the core rows keep their own kinds"
@@ -2613,7 +2613,7 @@
       part: "groups and tasks (01), the task ladder (T5)",
       answers: "many",
       addonMayAsk: false,
-      fixture: "e2e/live-tasks-hooks.spec.ts#L: the add-on's task fails once and walks to its named alternative",
+      fixture: "e2e/tasks-hooks-rows.ts#L: the add-on's task fails once and walks to its named alternative",
       receives: "group, taskId, code",
       returns: "its task's next goal, or nothing for the ladder's regroup"
     },
@@ -2623,7 +2623,7 @@
       part: "groups and tasks (01), the task ladder (T5)",
       answers: "many",
       addonMayAsk: false,
-      fixture: "e2e/live-tasks-hooks.spec.ts#L: the add-on's task reaches the safe-point rung at its own point",
+      fixture: "e2e/tasks-hooks-rows.ts#L: the add-on's task reaches the safe-point rung at its own point",
       receives: "group, taskId",
       returns: "the point {map, x, y} its task restarts from, or nothing"
     },
@@ -2633,7 +2633,7 @@
       part: "groups and tasks (01), the questions (T3)",
       answers: "many",
       addonMayAsk: false,
-      fixture: "e2e/live-tasks-hooks.spec.ts#L: a merchant visit to a member under the add-on's task is refused by its answer",
+      fixture: "e2e/tasks-hooks-rows.ts#L: a merchant visit to a member under the add-on's task is refused by its answer",
       receives: "question (merchant-visit, event-attendance, rare, preempt), group, kind, on rare the monster type as rare, on preempt the incoming core kind and its tier",
       returns: "false to refuse, or nothing; it never allows what the table refuses",
       bound: "P6: preempt is asked only for a core task ranked from hunt-mission (62) to event-attendance (72), never for the player's commands or a task at town (85) or above; a refused core task waits"
@@ -2644,7 +2644,7 @@
       part: "groups and tasks (01), the holds (T4)",
       answers: "many",
       addonMayAsk: false,
-      fixture: "e2e/live-tasks-hooks.spec.ts#L: the add-on holds its group, and the hold ends with its task",
+      fixture: "e2e/tasks-hooks-rows.ts#L: the add-on holds its group, and the hold ends with its task",
       receives: "group, members, live",
       returns: "{target, reason} for its group or one of its members, or nothing to end its hold"
     },
@@ -2654,7 +2654,7 @@
       part: "groups and tasks (01), the left-out member (GT2)",
       answers: "many",
       addonMayAsk: false,
-      fixture: "e2e/live-tasks-hooks.spec.ts#L: a member left out of the add-on's walk waits at the point it names",
+      fixture: "e2e/tasks-hooks-rows.ts#L: a member left out of the add-on's walk waits at the point it names",
       receives: "group, member, taskId",
       returns: "{wait: {map, x, y}} or {farm: true}, or nothing for the member's own setting"
     },
@@ -2665,7 +2665,7 @@
       side: "coordinator",
       part: "groups and tasks (01)",
       answers: "many",
-      fixture: "e2e/live-tasks-hooks.spec.ts#L: the event takes the group: one started, one suspended",
+      fixture: "e2e/tasks-hooks-rows.ts#L: the event takes the group: one started, one suspended",
       receives: "group, taskId, kind, owner, rank, members, resumed, by",
       returns: "nothing"
     },
@@ -2674,7 +2674,7 @@
       side: "coordinator",
       part: "groups and tasks (01)",
       answers: "many",
-      fixture: "e2e/live-tasks-hooks.spec.ts#L: the event takes the group: one started, one suspended",
+      fixture: "e2e/tasks-hooks-rows.ts#L: the event takes the group: one started, one suspended",
       receives: "group, taskId, kind, owner, by",
       returns: "nothing"
     },
@@ -2683,7 +2683,7 @@
       side: "coordinator",
       part: "groups and tasks (01)",
       answers: "many",
-      fixture: "e2e/live-tasks-hooks.spec.ts#L: the event ends and farming resumes",
+      fixture: "e2e/tasks-hooks-rows.ts#L: the event ends and farming resumes",
       receives: "group, taskId, kind, owner, by",
       returns: "nothing"
     },
@@ -2692,7 +2692,7 @@
       side: "coordinator",
       part: "groups and tasks (01)",
       answers: "many",
-      fixture: "e2e/live-tasks-hooks.spec.ts#L: the event ends and farming resumes",
+      fixture: "e2e/tasks-hooks-rows.ts#L: the event ends and farming resumes",
       receives: "group, taskId, kind, owner, code, next, by",
       returns: "nothing"
     },
@@ -2701,7 +2701,7 @@
       side: "coordinator",
       part: "groups and tasks (01)",
       answers: "many",
-      fixture: "e2e/live-tasks-hooks.spec.ts#L: the add-on's task waits behind the event",
+      fixture: "e2e/tasks-hooks-rows.ts#L: the add-on's task waits behind the event",
       receives: "group, taskId, by",
       returns: "nothing"
     },
@@ -2719,7 +2719,7 @@
       side: "coordinator",
       part: "groups and tasks (01)",
       answers: "many",
-      fixture: "e2e/live-tasks-hooks.spec.ts#L: the event task's walk phase changes",
+      fixture: "e2e/tasks-hooks-rows.ts#L: the event task's walk phase changes",
       receives: "group, taskId, phase, label, by",
       returns: "nothing"
     },
@@ -2728,7 +2728,7 @@
       side: "coordinator",
       part: "groups and tasks (01)",
       answers: "many",
-      fixture: "e2e/live-tasks-hooks.spec.ts#L: the add-on's task fails once and walks to its named alternative",
+      fixture: "e2e/tasks-hooks-rows.ts#L: the add-on's task fails once and walks to its named alternative",
       receives: "group, taskId, rung, by",
       returns: "nothing"
     },
@@ -2746,7 +2746,7 @@
       side: "coordinator",
       part: "groups and tasks (01)",
       answers: "many",
-      fixture: "e2e/live-tasks-hooks.spec.ts#L: the event becomes due during a Hunt hand-in",
+      fixture: "e2e/tasks-hooks-rows.ts#L: the event becomes due during a Hunt hand-in",
       receives: "group, due, by",
       returns: "nothing"
     },
@@ -2755,7 +2755,7 @@
       side: "coordinator",
       part: "groups and tasks (01)",
       answers: "many",
-      fixture: "e2e/live-tasks-hooks.spec.ts#L: a Follow change moves the priest",
+      fixture: "e2e/tasks-hooks-rows.ts#L: a Follow change moves the priest",
       receives: "group, members, leader, by",
       returns: "nothing"
     },
@@ -2764,7 +2764,7 @@
       side: "coordinator",
       part: "groups and tasks (01)",
       answers: "many",
-      fixture: "e2e/live-tasks-hooks.spec.ts#L: Manual on the priest, then off",
+      fixture: "e2e/tasks-hooks-rows.ts#L: Manual on the priest, then off",
       receives: "group, member, hold, by",
       returns: "nothing"
     },
@@ -2773,7 +2773,7 @@
       side: "both",
       part: "groups and tasks (01)",
       answers: "many",
-      fixture: "e2e/live-tasks-hooks.spec.ts#L: Manual on the priest, then off",
+      fixture: "e2e/tasks-hooks-rows.ts#L: Manual on the priest, then off",
       receives: "group, member, hold, by",
       returns: "nothing"
     },
@@ -2782,7 +2782,7 @@
       side: "coordinator",
       part: "groups and tasks (01)",
       answers: "many",
-      fixture: "e2e/live-tasks-hooks.spec.ts#L: a Follow change moves the priest",
+      fixture: "e2e/tasks-hooks-rows.ts#L: a Follow change moves the priest",
       receives: "group, member, assignment, by",
       returns: "nothing"
     },
@@ -2791,7 +2791,7 @@
       side: "coordinator",
       part: "groups and tasks (01)",
       answers: "many",
-      fixture: "e2e/live-tasks-hooks.spec.ts#L: Manual on the priest, then off",
+      fixture: "e2e/tasks-hooks-rows.ts#L: Manual on the priest, then off",
       receives: "group, status, by",
       returns: "nothing"
     },
@@ -2800,7 +2800,7 @@
       side: "coordinator",
       part: "groups and tasks (01)",
       answers: "many",
-      fixture: "e2e/live-tasks-hooks.spec.ts#L: the Achievements-like entry farms its target, and lets go once on a Hunt switch",
+      fixture: "e2e/tasks-hooks-rows.ts#L: the Achievements-like entry farms its target, and lets go once on a Hunt switch",
       receives: "group, slot, entry, by",
       returns: "nothing"
     }
@@ -2835,13 +2835,13 @@
       data: "{entry, label, reads: settings names, returnsTo, scoped: hook names}, riding on the target.mode registration's slot entry",
       section: true,
       bound: "an entry's ports write only the settings it reads, when it lists them; leave writes its returnsTo (Farming when unset); its scoped hooks are asked only for a character whose scope selected it; the target inside the entry's focus is still core's pick, the class role (S9, characters/targeting/rules.ts), since the entry names what to fight and core picks which one",
-      fixture: "e2e/live-tasks-hooks.spec.ts#L: the Achievements-like entry farms its target, and lets go once on a Hunt switch"
+      fixture: "e2e/tasks-hooks-rows.ts#L: the Achievements-like entry farms its target, and lets go once on a Hunt switch"
     },
     "combat-mode": {
       owner: "01",
       data: "{entry, label} on the combat.mode registration",
       section: false,
-      fixture: "e2e/live-tasks-hooks.spec.ts#L: an add-on combat mode reaches the members on the next reply"
+      fixture: "e2e/tasks-hooks-rows.ts#L: an add-on combat mode reaches the members on the next reply"
     }
   };
   function dispatch(ctx) {
@@ -2930,7 +2930,7 @@
       answers: "many",
       addonMayAsk: false,
       bound: "tier: its registration's tier, at most manual",
-      fixture: "e2e/live-movement-hooks.spec.ts#movement.request: holds, steps or walks the character at its add-on tier",
+      fixture: "e2e/windows/W09-party-walk.spec.ts#An add-on's hold is a combat hold: the movement tick stops the character's own step",
       receives: "the character's view on each role runner movement tick",
       returns: "hold, a step to a point, a walk to a point on any map, or nothing"
     },
@@ -2941,7 +2941,7 @@
       answers: "one",
       addonMayAsk: false,
       bound: "a member of the group only",
-      fixture: "e2e/live-movement-hooks.spec.ts#group.anchor: the group record asks it with its members in a fight",
+      fixture: "e2e/windows/W01-goo-field.spec.ts#'group.anchor'",
       receives: "the group's members and their reports",
       returns: "the member the formation centres on, or nothing"
     },
@@ -2954,7 +2954,7 @@
       answers: "many",
       addonMayAsk: false,
       bound: "refusal only",
-      fixture: "e2e/live-movement-hooks.spec.ts#step.safety: refuses a step that ends inside its zone",
+      fixture: "e2e/windows/W09-party-walk.spec.ts#'step.safety'",
       receives: "the character's view and the step's end point",
       returns: "a refusal in plain words, or nothing"
     },
@@ -2963,7 +2963,7 @@
       side: "character",
       part: "movement (02)",
       answers: "many",
-      fixture: "e2e/live-movement-hooks.spec.ts#journey.started: fires when a request is granted, kept, retargeted or resumed",
+      fixture: "e2e/windows/W01-goo-field.spec.ts#'journey.started'",
       receives: "character, requestId, kind, owner, destination, status",
       returns: "nothing"
     },
@@ -2972,7 +2972,7 @@
       side: "character",
       part: "movement (02)",
       answers: "many",
-      fixture: "e2e/live-movement-hooks.spec.ts#journey.paused: fires when a pause source, a click or a combat step pauses the journey",
+      fixture: "e2e/windows/W06a-console-pause.spec.ts#'journey.paused'",
       receives: "character, requestId, by, reason, state",
       returns: "nothing"
     },
@@ -2981,7 +2981,7 @@
       side: "character",
       part: "movement (02)",
       answers: "many",
-      fixture: "e2e/live-movement-hooks.spec.ts#journey.ended: fires once with its end code",
+      fixture: "e2e/windows/W01-goo-field.spec.ts#'journey.ended'",
       receives: "character, requestId, kind, owner, code, by",
       returns: "nothing"
     },
@@ -2995,7 +2995,7 @@
       answers: "one",
       core: true,
       addonMayAsk: false,
-      fixture: "e2e/live-movement-hooks.spec.ts#movement.followIfFar: a member inside the distance does not walk",
+      fixture: "e2e/windows/W01-goo-field.spec.ts#'movement.followIfFar'",
       receives: "character",
       returns: "a promise of whether the follow took the tick"
     },
@@ -3008,7 +3008,7 @@
       answers: "one",
       core: true,
       addonMayAsk: false,
-      fixture: "e2e/live-movement-hooks.spec.ts#walks.end: ends the group's walk with the asker's code",
+      fixture: "e2e/windows/W09-party-walk.spec.ts#'walks.end'",
       receives: "a group, an end code and optionally the one member that leaves",
       returns: "whether a walk ended"
     },
@@ -3021,7 +3021,7 @@
       answers: "one",
       core: true,
       addonMayAsk: true,
-      fixture: "e2e/live-events-hooks.spec.ts#L: Mr. Green becomes due at the walk estimate",
+      fixture: "e2e/events-hooks-rows.ts#L: Mr. Green becomes due at the walk estimate",
       receives: "a group, a destination and the reporting member",
       returns: "the planned time of the group's walk there, else of the member's own walk, or nothing with no route"
     },
@@ -3048,7 +3048,7 @@
       side: "coordinator",
       part: "movement (02)",
       answers: "many",
-      fixture: "e2e/live-movement-hooks.spec.ts#walk.formed: fires once when a group walk is created",
+      fixture: "e2e/windows/W01-goo-field.spec.ts#'walk.formed'",
       receives: "group, walk, members, tier, purpose, destination",
       returns: "nothing"
     },
@@ -3057,7 +3057,7 @@
       side: "coordinator",
       part: "movement (02)",
       answers: "many",
-      fixture: "e2e/live-movement-hooks.spec.ts#walk.phase: fires on each phase change of the walk",
+      fixture: "e2e/windows/W01-goo-field.spec.ts#'walk.phase'",
       receives: "group, walk, phase, from",
       returns: "nothing"
     },
@@ -3066,7 +3066,7 @@
       side: "coordinator",
       part: "movement (02)",
       answers: "many",
-      fixture: "e2e/live-movement-hooks.spec.ts#walk.member: fires when a member completes or leaves the walk",
+      fixture: "e2e/windows/W09-party-walk.spec.ts#'walk.member'",
       receives: "group, walk, member, change ('completed', 'left' or 'rejoined'), code ('died' when the member died on the walk, 'silent' when the console knows it is gone)",
       returns: "nothing"
     },
@@ -3075,7 +3075,7 @@
       side: "coordinator",
       part: "movement (02)",
       answers: "many",
-      fixture: "e2e/live-movement-hooks.spec.ts#walk.ended: fires once with the end code",
+      fixture: "e2e/windows/W01-goo-field.spec.ts#'walk.ended'",
       receives: "group, walk, code (`arrived`, `released`, `replaced`, `cancelled`, a `walks.end` code or the T5 code of a failed walk), reason",
       returns: "nothing"
     },
@@ -3093,7 +3093,7 @@
       answers: "one",
       core: true,
       addonMayAsk: false,
-      fixture: "e2e/live-movement-hooks.spec.ts#walks.request: starts the group's walk at the asker's tier, and a lower ask is refused",
+      fixture: "e2e/windows/W09-party-walk.spec.ts#'walks.request'",
       receives: "a group and the walk it asks for: its purpose, destination, members, tier and label",
       returns: "whether the walk started, was kept or was retargeted; false when T1 refuses it"
     },
@@ -3104,7 +3104,7 @@
       answers: "one",
       core: true,
       addonMayAsk: false,
-      fixture: "e2e/live-movement-hooks.spec.ts#movement.step: one step through step safety at the asker's turn",
+      fixture: "e2e/windows/W09-party-walk.spec.ts#'movement.step'",
       receives: "the step's point, the mover that asks and its options (target, closes)",
       returns: "sent, kept or refused with the reason, and the send"
     },
@@ -3126,7 +3126,7 @@
       answers: "one",
       core: true,
       addonMayAsk: true,
-      fixture: "e2e/live-movement-hooks.spec.ts#movement.live: names who holds movement",
+      fixture: "scripts/tests/hook-registry.test.cjs#X3: the character's requests and reads are the movement owner's own functions",
       receives: "nothing",
       returns: "kind, owner, tier, whether a journey runs and whether it is paused, or null"
     },
@@ -3139,7 +3139,7 @@
       answers: "one",
       core: true,
       addonMayAsk: false,
-      fixture: "e2e/live-lifecycle-hooks.spec.ts#movement.park: the drain parks the warrior where it stands",
+      fixture: "e2e/lifecycle-hooks-rows.ts#movement.park: the drain parks the warrior where it stands",
       receives: "the character",
       returns: "nothing: a journey pauses and a character moving with no journey stands still"
     },
@@ -3150,7 +3150,7 @@
       answers: "one",
       core: true,
       addonMayAsk: true,
-      fixture: "e2e/live-movement-hooks.spec.ts#reports.fresh: answers the one freshness rule for a reading",
+      fixture: "scripts/tests/hook-registry.test.cjs#X3: the character's requests and reads are the movement owner's own functions",
       receives: "a stamp, the time and the reading",
       returns: "whether the stamp is fresh"
     },
@@ -3161,7 +3161,7 @@
       answers: "one",
       core: true,
       addonMayAsk: true,
-      fixture: "e2e/live-movement-hooks.spec.ts#movement.climbing: names the live climb's rung and try",
+      fixture: "scripts/tests/hook-registry.test.cjs#X3: the character's requests and reads are the movement owner's own functions",
       receives: "nothing",
       returns: "the climber, its activity, rung and try, or null"
     },
@@ -3183,7 +3183,7 @@
       answers: "one",
       core: true,
       addonMayAsk: false,
-      fixture: "e2e/live-movement-hooks.spec.ts#movement.records: answers the character's ring",
+      fixture: "scripts/tests/hook-registry.test.cjs#X3: the character's requests and reads are the movement owner's own functions",
       receives: "nothing",
       returns: "the ring's records, oldest first"
     },
@@ -3194,7 +3194,7 @@
       answers: "one",
       core: true,
       addonMayAsk: false,
-      fixture: "e2e/live-movement-hooks.spec.ts#movement.incidents: answers the character's stuck and caught-error records",
+      fixture: "scripts/tests/hook-registry.test.cjs#X3: the character's requests and reads are the movement owner's own functions",
       receives: "nothing",
       returns: "the incidents, oldest first"
     },
@@ -3224,7 +3224,7 @@
       answers: "one",
       core: true,
       addonMayAsk: false,
-      fixture: "e2e/live-movement-hooks.spec.ts#movement.formationRecovery: answers the group's terrain recovery round",
+      fixture: "scripts/tests/hook-registry.test.cjs#CC: the group record's movement decisions are the module's own functions",
       receives: "the group's last record, its members, the target, the group key, the time, whether pulls pause, the healer's range and the target's identity",
       returns: "the recovery round, or nothing when none runs"
     },
@@ -3235,7 +3235,7 @@
       answers: "one",
       core: true,
       addonMayAsk: false,
-      fixture: "e2e/live-movement-hooks.spec.ts#movement.independentApproach: answers whether every member approaches on its own",
+      fixture: "scripts/tests/hook-registry.test.cjs#CC: the group record's movement decisions are the module's own functions",
       receives: "the members and the time",
       returns: "whether every member is available, in one place and reports the capability"
     },
@@ -3246,7 +3246,7 @@
       answers: "one",
       core: true,
       addonMayAsk: false,
-      fixture: "e2e/live-movement-hooks.spec.ts#movement.independentReadiness: answers each member's readiness report",
+      fixture: "scripts/tests/hook-registry.test.cjs#CC: the group record's movement decisions are the module's own functions",
       receives: "the members",
       returns: "each member's last readiness report by name"
     },
@@ -3257,7 +3257,7 @@
       answers: "one",
       core: true,
       addonMayAsk: false,
-      fixture: "e2e/live-movement-hooks.spec.ts#movement.confirmIndependentApproach: issues and settles the confirmation round",
+      fixture: "scripts/tests/hook-registry.test.cjs#CC: the group record's movement decisions are the module's own functions",
       receives: "the group's last record, the members, the selection, the target id and the time",
       returns: "the confirmation revision, round and whether every member confirmed"
     },
@@ -3273,7 +3273,7 @@
       answers: "many",
       addonMayAsk: false,
       bound: "refusal only: it takes maps out of a route",
-      fixture: "e2e/live-movement-hooks.spec.ts#route.avoid: the planner asks it for every route it plans",
+      fixture: "e2e/windows/W01-goo-field.spec.ts#'route.avoid'",
       receives: "the route's start and end points",
       returns: "the maps the route must not cross, or nothing"
     },
@@ -3284,7 +3284,7 @@
       answers: "many",
       addonMayAsk: false,
       bound: "refusal only",
-      fixture: "e2e/live-movement-hooks.spec.ts#crossing.allows: refuses a crossing in plain words, and the crossing ends refused",
+      fixture: "e2e/windows/W09-party-walk.spec.ts#'crossing.allows'",
       receives: "the character, the crossing and the request it ranks as",
       returns: "a refusal in plain words, or nothing; it cannot allow"
     },
@@ -3295,7 +3295,7 @@
       answers: "one",
       addonMayAsk: false,
       bound: "a point step safety still judges",
-      fixture: "e2e/live-movement-hooks.spec.ts#step.point: offers this character's step point, which step safety judges",
+      fixture: "e2e/windows/W09-party-walk.spec.ts#'step.point'",
       receives: "the character, the mover, its point and target",
       returns: "a point for the step, or nothing"
     },
@@ -3384,7 +3384,7 @@
       side: "character",
       part: "movement (02)",
       answers: "many",
-      fixture: "e2e/live-movement-hooks.spec.ts#journey.resumed: fires when the pause ends",
+      fixture: "e2e/windows/W06a-console-pause.spec.ts#'journey.resumed'",
       receives: "character, requestId, by, reason",
       returns: "nothing"
     },
@@ -3456,7 +3456,7 @@
       side: "character",
       part: "movement (02)",
       answers: "many",
-      fixture: "e2e/live-movement-hooks.spec.ts#crossing.started: fires when a crossing is sent",
+      fixture: "e2e/windows/W09-party-walk.spec.ts#'crossing.started'",
       receives: "character, crossing, kind, owner",
       returns: "nothing"
     },
@@ -3465,7 +3465,7 @@
       side: "character",
       part: "movement (02)",
       answers: "many",
-      fixture: "e2e/live-movement-hooks.spec.ts#crossing.ended: fires once when a crossing lands, is refused, interrupted or times out",
+      fixture: "e2e/windows/W09-party-walk.spec.ts#'crossing.ended'",
       receives: "character, crossing, kind, owner, code ('landed', 'refused', 'interrupted' or 'timed-out'), reason",
       returns: "nothing"
     },
@@ -3474,7 +3474,7 @@
       side: "character",
       part: "movement (02)",
       answers: "many",
-      fixture: "e2e/live-movement-hooks.spec.ts#step.sent: fires when a combat step is sent, with its mover and point",
+      fixture: "e2e/windows/W01-goo-field.spec.ts#'step.sent'",
       receives: "character, mover, point, target",
       returns: "nothing"
     },
@@ -3483,7 +3483,7 @@
       side: "character",
       part: "movement (02)",
       answers: "many",
-      fixture: "e2e/live-movement-hooks.spec.ts#formation.moved: fires when a formation step is sent",
+      fixture: "e2e/windows/W01-goo-field.spec.ts#'formation.moved'",
       receives: "character, mover, point, target",
       returns: "nothing"
     }
@@ -3820,7 +3820,7 @@
       answers: "many",
       addonMayAsk: false,
       bound: "rank: its requester's rank, at most task for an add-on",
-      fixture: "e2e/live-turns-hooks.spec.ts#skills.request: the add-on asks Charge at task when its target is out of range",
+      fixture: "e2e/windows/W04-low-vitals.spec.ts#skills.request: the add-on asks Charge at task when its target is out of range",
       receives: "the character's turns view on each pass: the character and its target",
       returns: "a spend request at a rank, or nothing"
     },
@@ -3847,7 +3847,7 @@
       answers: "many",
       addonMayAsk: false,
       bound: "refusal only, below survival",
-      fixture: "e2e/live-turns-hooks.spec.ts#skills.refuses: the add-on refuses the warrior's damage casts while it holds a pull",
+      fixture: "e2e/windows/W04-low-vitals.spec.ts#skills.refuses: the add-on refuses the warrior's damage casts while it holds a pull",
       receives: "the request: skill, family, rank, category and targets",
       returns: "a refusal in plain words, or nothing; it cannot allow"
     },
@@ -3858,7 +3858,7 @@
       answers: "one",
       core: true,
       addonMayAsk: true,
-      fixture: "e2e/live-turns-hooks.spec.ts#skills.ready: the add-on reads the potion family's readiness and cost",
+      fixture: "e2e/windows/W04-low-vitals.spec.ts#skills.ready: the add-on reads the potion family's readiness and cost",
       receives: "a skill and the member it would go to",
       returns: "whether its family is ready, a spend in flight with its target, its cost, the reserve and the lost-reply margin"
     },
@@ -3871,7 +3871,7 @@
       answers: "one",
       core: true,
       addonMayAsk: true,
-      fixture: "e2e/live-turns-hooks.spec.ts#skills.incoming: the add-on reads the priest's own damage in flight on its target",
+      fixture: "e2e/windows/W04-low-vitals.spec.ts#skills.incoming: the add-on reads the priest's own damage in flight on its target",
       receives: "a target and the attacker",
       returns: "the attacker's damage in flight on the target"
     },
@@ -3883,7 +3883,7 @@
       answers: "one",
       core: true,
       addonMayAsk: true,
-      fixture: "e2e/live-turns-hooks.spec.ts#skills.allows: on Manual with Combat off the add-on reads the H4 row",
+      fixture: "e2e/windows/W04-low-vitals.spec.ts#skills.allows: on Manual with Combat off the add-on reads the H4 row",
       receives: "a rank, the passing flag, and `occupied` to read only the occupied rows",
       returns: "nothing when allowed, or T1's row and its source"
     },
@@ -3918,7 +3918,7 @@
       answers: "one",
       core: true,
       addonMayAsk: false,
-      fixture: "e2e/live-status-hooks.spec.ts#table G: each leased ring posts after the report",
+      fixture: "e2e/windows/W09-party-walk.spec.ts#answer the turns and targeting rings",
       receives: "nothing",
       returns: "the turns ring's records, oldest first"
     },
@@ -3927,7 +3927,7 @@
       side: "character",
       part: "turns and cooldowns (03)",
       answers: "many",
-      fixture: "e2e/live-turns-hooks.spec.ts#skills.sent: every accepted attack of the window has one sent notice",
+      fixture: "e2e/windows/W04-low-vitals.spec.ts#skills.sent: every accepted attack of the window has one sent notice",
       receives: "character, skill, family, targets, rank, edge, by; the basic attack's context",
       returns: "nothing"
     },
@@ -3936,7 +3936,7 @@
       side: "character",
       part: "turns and cooldowns (03)",
       answers: "many",
-      fixture: "e2e/live-turns-hooks.spec.ts#skills.settled: the dropped reply settles lost after its cooldown and the margin",
+      fixture: "e2e/windows/W04-low-vitals.spec.ts#skills.settled: the dropped reply settles lost after its cooldown and the margin",
       receives: "character, skill, family, outcome ('accepted', 'rejected', 'lost' or 'stale'), reason, ms, roundTrip, by; the basic attack's context, sentAt and reply",
       returns: "nothing"
     },
@@ -3945,7 +3945,7 @@
       side: "character",
       part: "turns and cooldowns (03)",
       answers: "many",
-      fixture: "e2e/live-turns-hooks.spec.ts#skills.dropped: at the plant the priest's attack is dropped, outranked by the heal",
+      fixture: "e2e/windows/W04-low-vitals.spec.ts#skills.dropped: at the plant the priest's attack is dropped, outranked by the heal",
       receives: "character, skill, family, rank, reason, by; on each change of reason per requester and family; the attack source's skip names its selection",
       returns: "nothing"
     },
@@ -3954,7 +3954,7 @@
       side: "character",
       part: "turns and cooldowns (03)",
       answers: "many",
-      fixture: "e2e/live-turns-hooks.spec.ts#skills.waiting: an attack waits on the planted call figure, then goes",
+      fixture: "e2e/windows/W04-low-vitals.spec.ts#skills.waiting: an attack waits on the planted call figure, then goes",
       receives: "character, family, skill, since, by",
       returns: "nothing"
     },
@@ -3963,7 +3963,7 @@
       side: "character",
       part: "turns and cooldowns (03)",
       answers: "many",
-      fixture: "e2e/live-turns-hooks.spec.ts#skills.readied: the potion family readies after its 2000 ms",
+      fixture: "e2e/windows/W04-low-vitals.spec.ts#skills.readied: the potion family readies after its 2000 ms",
       receives: "character, family, by 'core:turns'",
       returns: "nothing"
     },
@@ -3981,7 +3981,7 @@
       side: "character",
       part: "turns and cooldowns (03), T1",
       answers: "many",
-      fixture: "e2e/live-turns-hooks.spec.ts#skills.released: Manual's Combat off holds every family but the potion, then releases",
+      fixture: "e2e/windows/W04-low-vitals.spec.ts#skills.released: Manual's Combat off holds every family but the potion, then releases",
       receives: "character, row, source, by (the row's owner)",
       returns: "nothing"
     },
@@ -3990,7 +3990,7 @@
       side: "character",
       part: "turns and cooldowns (03), the projectile tracker",
       answers: "many",
-      fixture: "e2e/live-turns-hooks.spec.ts#skills.shot: each own hit the server records is shot and lands once",
+      fixture: "e2e/windows/W04-low-vitals.spec.ts#skills.shot: each own hit the server records is shot and lands once",
       receives: "character, projectile, target, damage, by 'core:turns'",
       returns: "nothing"
     },
@@ -3999,7 +3999,7 @@
       side: "character",
       part: "turns and cooldowns (03), the projectile tracker",
       answers: "many",
-      fixture: "e2e/live-turns-hooks.spec.ts#skills.landed: each own hit the server records lands once",
+      fixture: "e2e/windows/W04-low-vitals.spec.ts#skills.landed: each own hit the server records lands once",
       receives: "character, projectile, target, damage, attacker, kill, miss, by 'core:turns'",
       returns: "nothing"
     },
@@ -4008,7 +4008,7 @@
       side: "character",
       part: "turns and cooldowns (03), the role loop",
       answers: "many",
-      fixture: "e2e/live-turns-hooks.spec.ts#skills.passed: the fixture add-on's listener runs once per role loop pass",
+      fixture: "e2e/windows/W04-low-vitals.spec.ts#skills.passed: the fixture add-on's listener runs once per role loop pass",
       receives: "character, kind, by 'core:turns'",
       returns: "nothing"
     }
@@ -4179,7 +4179,7 @@
       answers: "many",
       addonMayAsk: false,
       bound: "refusal only",
-      fixture: "e2e/live-targeting-hooks.spec.ts#targeting.candidates: the add-on narrows the goos to the ones it names, reading the view's party",
+      fixture: "e2e/windows/W08b-unreachable-plant.spec.ts#targeting.candidates: the add-on narrows the goos to the ones it names, reading the view's party",
       receives: "the character's target candidates, the character, the entities in view, the party and the leader's nomination; on the grouped queue its planned pulls, the leader's report as the character and no entities",
       returns: "the candidates it allows, or nothing"
     },
@@ -4190,7 +4190,7 @@
       answers: "many",
       addonMayAsk: false,
       bound: "an order inside one M priority",
-      fixture: "e2e/live-targeting-hooks.spec.ts#targeting.prefers: the add-on prefers the farther goo and the warrior takes it",
+      fixture: "e2e/windows/W08b-unreachable-plant.spec.ts#targeting.prefers: the add-on prefers the farther goo and the warrior takes it",
       receives: "the candidates of the top M priority, the character, the entities in view and the party; on the grouped queue each priority's planned pulls, the leader's report as the character and no entities",
       returns: "the candidates in the order it prefers, or nothing for distance"
     },
@@ -4201,7 +4201,7 @@
       answers: "one",
       addonMayAsk: false,
       bound: "a member of the party only",
-      fixture: "e2e/live-targeting-hooks.spec.ts#targeting.aggroOwner: the add-on names the priest as aggro owner and the warrior's Taunt waits",
+      fixture: "e2e/windows/W08b-unreachable-plant.spec.ts#targeting.aggroOwner: the add-on names the priest as aggro owner and the warrior's Taunt waits",
       receives: "the party's leader and members",
       returns: "the member that owns Taunt, Absorb and Agitate, or nothing for the leader"
     },
@@ -4212,7 +4212,7 @@
       answers: "many",
       addonMayAsk: false,
       bound: "refusal only",
-      fixture: "e2e/live-targeting-hooks.spec.ts#targeting.refuses: the add-on refuses the warrior's attack on the planted goo",
+      fixture: "e2e/windows/W08b-unreachable-plant.spec.ts#targeting.refuses: the add-on refuses the warrior's attack on the planted goo",
       receives: "a monster and the skill that would go to it",
       returns: "a refusal in plain words, or nothing; it cannot allow"
     },
@@ -4236,7 +4236,7 @@
       side: "character",
       part: "targeting (04)",
       answers: "many",
-      fixture: "e2e/live-turns-hooks.spec.ts#targeting.changed: a new target runs a pass before the next report",
+      fixture: "e2e/windows/W04-low-vitals.spec.ts#targeting.changed: a new target runs a pass before the next report",
       receives: "character, from, to, by",
       returns: "nothing"
     },
@@ -4251,7 +4251,7 @@
       answers: "one",
       core: true,
       addonMayAsk: true,
-      fixture: "e2e/live-targeting-hooks.spec.ts#targeting.target: the add-on reads the warrior's target, its due flag and the threat",
+      fixture: "e2e/windows/W08b-unreachable-plant.spec.ts#targeting.target: the add-on reads the warrior's target, its due flag and the threat",
       receives: "the character's turns view",
       returns: "the target, whether it is passing, and whether support casts may go on it, or nothing"
     },
@@ -4262,7 +4262,7 @@
       answers: "one",
       core: true,
       addonMayAsk: true,
-      fixture: "e2e/live-targeting-hooks.spec.ts#targeting.allows: the add-on asks whether the planted goo is allowed and reads the refusal",
+      fixture: "e2e/windows/W08b-unreachable-plant.spec.ts#targeting.allows: the add-on asks whether the planted goo is allowed and reads the refusal",
       receives: "a monster and the skill that would go to it",
       returns: "nothing when allowed, or the refusal in plain words"
     },
@@ -4273,7 +4273,7 @@
       answers: "one",
       core: true,
       addonMayAsk: true,
-      fixture: "e2e/live-targeting-hooks.spec.ts#targeting.target: the add-on reads the warrior's target, its due flag and the threat",
+      fixture: "e2e/windows/W08b-unreachable-plant.spec.ts#targeting.target: the add-on reads the warrior's target, its due flag and the threat",
       receives: "the character's view",
       returns: "whether a monster in view targets a party member, whether a party member's target is alive in view, and the policy the fact counts"
     },
@@ -4284,7 +4284,7 @@
       answers: "one",
       core: true,
       addonMayAsk: false,
-      fixture: "e2e/live-status-hooks.spec.ts#table G: each leased ring posts after the report",
+      fixture: "e2e/windows/W09-party-walk.spec.ts#answer the turns and targeting rings",
       receives: "nothing",
       returns: "the targeting ring's records, oldest first"
     },
@@ -4295,7 +4295,7 @@
       answers: "one",
       core: true,
       addonMayAsk: true,
-      fixture: "e2e/live-targeting-hooks.spec.ts#targeting.passing: the add-on asks whether a passing goo may interrupt a farm walk",
+      fixture: "e2e/windows/W08b-unreachable-plant.spec.ts#targeting.passing: the add-on asks whether a passing goo may interrupt a farm walk",
       receives: "a walk (its task's tier and, for a Hunt walk, its target) and the cause, passive or rare",
       returns: "whether a passing monster may interrupt the walk"
     },
@@ -4317,7 +4317,7 @@
       side: "character",
       part: "targeting (04)",
       answers: "many",
-      fixture: "e2e/live-targeting-hooks.spec.ts#targeting.unreachable: movement's notice reaches the add-on",
+      fixture: "e2e/windows/W08b-unreachable-plant.spec.ts#targeting.unreachable: movement's notice reaches the add-on",
       receives: "character, target, why",
       returns: "nothing"
     },
@@ -4328,7 +4328,7 @@
       side: "character",
       part: "targeting (04)",
       answers: "many",
-      fixture: "e2e/live-targeting-hooks.spec.ts#targeting.refused: the planted refusal sends one refused notice",
+      fixture: "e2e/windows/W08b-unreachable-plant.spec.ts#targeting.refused: the planted refusal sends one refused notice",
       receives: "character, target, skill, row (the G check, with A's row when A refused), why; by the refusing add-on or 'core:targeting'",
       returns: "nothing"
     },
@@ -4337,7 +4337,7 @@
       side: "character",
       part: "targeting (04)",
       answers: "many",
-      fixture: "e2e/live-targeting-hooks.spec.ts#targeting.skipped: the priest's covered goo is skipped once",
+      fixture: "e2e/windows/W08b-unreachable-plant.spec.ts#targeting.skipped: the priest's covered goo is skipped once",
       receives: "character, target, damage in flight, HP, why",
       returns: "nothing"
     },
@@ -4346,7 +4346,7 @@
       side: "character",
       part: "targeting (04)",
       answers: "many",
-      fixture: "e2e/live-targeting-hooks.spec.ts#targeting.retired: the walled goo is retired once",
+      fixture: "e2e/windows/W08b-unreachable-plant.spec.ts#targeting.retired: the walled goo is retired once",
       receives: "character, target, why; by 'core:targeting'",
       returns: "nothing"
     },
@@ -4355,7 +4355,7 @@
       side: "character",
       part: "targeting (04)",
       answers: "many",
-      fixture: "e2e/live-targeting-hooks.spec.ts#targeting.cleared: the next fight's start clears the walled goo's mark",
+      fixture: "e2e/windows/W08b-unreachable-plant.spec.ts#targeting.cleared: the next fight's start clears the walled goo's mark",
       receives: "character, why; the set-aside list cleared at a fight's start",
       returns: "nothing"
     },
@@ -4364,7 +4364,7 @@
       side: "coordinator",
       part: "targeting (04)",
       answers: "many",
-      fixture: "e2e/live-targeting-hooks.spec.ts#targeting.nominated: each group nomination of the window has one notice",
+      fixture: "e2e/windows/W08b-unreachable-plant.spec.ts#targeting.nominated: each group nomination of the window has one notice",
       receives: "group, target, revision; by the nominating member",
       returns: "nothing"
     },
@@ -4373,7 +4373,7 @@
       side: "coordinator",
       part: "targeting (04)",
       answers: "many",
-      fixture: "e2e/live-targeting-hooks.spec.ts#targeting.fightState: the killed goo's fight goes engaged then retired",
+      fixture: "e2e/windows/W08b-unreachable-plant.spec.ts#targeting.fightState: the killed goo's fight goes engaged then retired",
       receives: "group, target, from, to (planned, engaged, retired, lost or reset), reason",
       returns: "nothing"
     },
@@ -4402,7 +4402,7 @@
       side: "character",
       part: "targeting (04)",
       answers: "many",
-      fixture: "e2e/live-targeting-hooks.spec.ts#targeting.passed: each selection pass of the window sends one passed notice, with none while no goo is in view",
+      fixture: "e2e/windows/W08b-unreachable-plant.spec.ts#targeting.passed: each selection pass of the window sends one passed notice, with none while no goo is in view",
       receives: "character, target or none, S's row",
       returns: "nothing"
     },
@@ -4666,7 +4666,7 @@
       answers: "one",
       core: true,
       addonMayAsk: true,
-      fixture: "e2e/live-survival-hooks.spec.ts#L: the add-on asks its own fight's verdict",
+      fixture: "e2e/survival-hooks-rows.ts#L: the add-on asks its own fight's verdict",
       receives: "a group, a walk with its members and attackers, a hold with its tank, attackers and supply, or a character",
       returns: "fight, finish or leave; for a hold, hold or step"
     },
@@ -4704,7 +4704,7 @@
       answers: "one",
       core: true,
       addonMayAsk: true,
-      fixture: "e2e/live-survival-hooks.spec.ts#L: the add-on asks its own fight's verdict",
+      fixture: "e2e/survival-hooks-rows.ts#L: the add-on asks its own fight's verdict",
       receives: "a character",
       returns: "whether its party is in a fight"
     },
@@ -4715,7 +4715,7 @@
       answers: "one",
       core: true,
       addonMayAsk: true,
-      fixture: "e2e/live-survival-hooks.spec.ts#L: the add-on reads the escape's stage",
+      fixture: "e2e/survival-hooks-rows.ts#L: the add-on reads the escape's stage",
       receives: "a character name",
       returns: "the escape that owns it: its id, its stage and the one command purpose it admits; or nothing"
     },
@@ -4726,7 +4726,7 @@
       answers: "one",
       core: true,
       addonMayAsk: true,
-      fixture: "e2e/live-survival-hooks.spec.ts#L: the add-on reads the recovery's phase",
+      fixture: "e2e/survival-hooks-rows.ts#L: the add-on reads the recovery's phase",
       receives: "a group",
       returns: "the party death recovery's last computed phase, names, fight rule and finishing list; or nothing"
     },
@@ -4795,7 +4795,7 @@
       answers: "one",
       core: true,
       addonMayAsk: false,
-      fixture: "e2e/live-survival-hooks.spec.ts#L: the dead member's respawn is sent and accepted",
+      fixture: "e2e/survival-hooks-rows.ts#L: the dead member's respawn is sent and accepted",
       receives: "who asks (by)",
       returns: "sent, not-now, or refused with the reason (the console Pause)"
     },
@@ -4804,7 +4804,7 @@
       side: "both",
       part: "survival (05)",
       answers: "many",
-      fixture: "e2e/live-survival-hooks.spec.ts#L: the death is noticed once",
+      fixture: "e2e/survival-hooks-rows.ts#L: the death is noticed once",
       receives: "name, at, cause, map, x, y, event, by 'core:survival'",
       returns: "nothing"
     },
@@ -4815,7 +4815,7 @@
       side: "coordinator",
       part: "survival (05)",
       answers: "many",
-      fixture: "e2e/live-survival-hooks.spec.ts#L: the escape's cause is noticed",
+      fixture: "e2e/survival-hooks-rows.ts#L: the escape's cause is noticed",
       receives: "names, at, cause (bad luck or too hard), mtypes, repeat, deaths, model, trend, by",
       returns: "nothing"
     },
@@ -4824,7 +4824,7 @@
       side: "coordinator",
       part: "survival (05)",
       answers: "many",
-      fixture: "e2e/live-survival-hooks.spec.ts#L: the recovery starts on the death",
+      fixture: "e2e/survival-hooks-rows.ts#L: the recovery starts on the death",
       receives: "group, id, names, deaths, home, by 'core:survival'",
       returns: "nothing"
     },
@@ -4833,7 +4833,7 @@
       side: "coordinator",
       part: "survival (05)",
       answers: "many",
-      fixture: "e2e/live-survival-hooks.spec.ts#L: the recovery goes finishing to escaping",
+      fixture: "e2e/survival-hooks-rows.ts#L: the recovery goes finishing to escaping",
       receives: "group, id, from, to, reason, resetsFight, names, by",
       returns: "nothing"
     },
@@ -4842,7 +4842,7 @@
       side: "coordinator",
       part: "survival (05)",
       answers: "many",
-      fixture: "e2e/live-survival-hooks.spec.ts#L: the recovery ends complete",
+      fixture: "e2e/survival-hooks-rows.ts#L: the recovery ends complete",
       receives: "group, id, code (complete, cancelled or arrived-at-farm), by",
       returns: "nothing"
     },
@@ -4851,7 +4851,7 @@
       side: "coordinator",
       part: "survival (05)",
       answers: "many",
-      fixture: "e2e/live-survival-hooks.spec.ts#L: the escape starts",
+      fixture: "e2e/survival-hooks-rows.ts#L: the escape starts",
       receives: "group, id, leader, participants, walk, home, resetsFight, by",
       returns: "nothing"
     },
@@ -4860,7 +4860,7 @@
       side: "coordinator",
       part: "survival (05)",
       answers: "many",
-      fixture: "e2e/live-survival-hooks.spec.ts#L: the escape goes recovering to recovery-convoy to home",
+      fixture: "e2e/survival-hooks-rows.ts#L: the escape goes recovering to recovery-convoy to home",
       receives: "group, id, from, to, member, reason, by",
       returns: "nothing"
     },
@@ -4869,7 +4869,7 @@
       side: "coordinator",
       part: "survival (05)",
       answers: "many",
-      fixture: "e2e/live-survival-hooks.spec.ts#L: the player's release ends the escape",
+      fixture: "e2e/survival-hooks-rows.ts#L: the player's release ends the escape",
       receives: "group, id, the stage at the end (home, complete, failed-hold or released), by (player for a release)",
       returns: "nothing"
     },
@@ -4878,7 +4878,7 @@
       side: "character",
       part: "survival (05)",
       answers: "many",
-      fixture: "e2e/live-survival-hooks.spec.ts#L: each member joins and leaves the escape",
+      fixture: "e2e/survival-hooks-rows.ts#L: each member joins and leaves the escape",
       receives: "character, id, stage, change (joined, stage or left), landed, ported, blinkFailed, portFailed, by 'core:survival'",
       returns: "nothing"
     },
@@ -4887,7 +4887,7 @@
       side: "coordinator",
       part: "survival (05)",
       answers: "many",
-      fixture: "e2e/live-survival-hooks.spec.ts#L: the verdict's first judgement is noticed",
+      fixture: "e2e/survival-hooks-rows.ts#L: the verdict's first judgement is noticed",
       receives: "key, verdict, model, restart, foeRate, toKill, by 'core:survival'",
       returns: "nothing"
     },
@@ -4896,7 +4896,7 @@
       side: "character",
       part: "survival (05)",
       answers: "many",
-      fixture: "e2e/live-survival-hooks.spec.ts#L: the dead member's respawn is sent and accepted",
+      fixture: "e2e/survival-hooks-rows.ts#L: the dead member's respawn is sent and accepted",
       receives: "character, by (the asker), outcome (sent, not-now, refused, accepted, or cant_respawn with ms)",
       returns: "nothing"
     },
@@ -4905,7 +4905,7 @@
       side: "character",
       part: "survival (05)",
       answers: "many",
-      fixture: "e2e/live-survival-hooks.spec.ts#L: the respawned member's recovery completes",
+      fixture: "e2e/survival-hooks-rows.ts#L: the respawned member's recovery completes",
       receives: "character, stage, phase, trying, label (the card words while it runs, or null), by 'core:survival'",
       returns: "nothing"
     },
@@ -5446,7 +5446,7 @@
       kind: "notice",
       part: "events (06)",
       answers: "many",
-      fixture: "e2e/live-tasks-hooks.spec.ts#L: the event takes the group: one started, one suspended",
+      fixture: "e2e/tasks-hooks-rows.ts#L: the event takes the group: one started, one suspended",
       receives: "member, presence, by",
       returns: "nothing"
     },
@@ -5459,7 +5459,7 @@
       answers: "one",
       core: true,
       addonMayAsk: true,
-      fixture: "e2e/live-events-hooks.spec.ts#L: the add-on reads presence while attending",
+      fixture: "e2e/events-hooks-rows.ts#L: the add-on reads presence while attending",
       receives: "a member name",
       returns: "the member's event, occurrence, realm, phase (walking, attending, returning) and since; or nothing"
     },
@@ -5471,7 +5471,7 @@
       answers: "one",
       core: true,
       addonMayAsk: true,
-      fixture: "e2e/live-events-hooks.spec.ts#L: the add-on reads the event targets while attending",
+      fixture: "e2e/events-hooks-rows.ts#L: the add-on reads the event targets while attending",
       receives: "nothing",
       returns: "the current event's monster types and the area event of the map the character stands on"
     },
@@ -5482,7 +5482,7 @@
       answers: "one",
       core: true,
       addonMayAsk: true,
-      fixture: "e2e/live-events-hooks.spec.ts#L: the add-on reads the schedule when due",
+      fixture: "e2e/events-hooks-rows.ts#L: the add-on reads the schedule when due",
       receives: "an occurrence id (a group's event, `occurrenceId`)",
       returns: "the spawn, the planned walk and its lead, the phase (scheduled, due, live) and the short window; or nothing"
     },
@@ -5517,7 +5517,7 @@
       kind: "notice",
       part: "events (06)",
       answers: "many",
-      fixture: "e2e/live-events-hooks.spec.ts#L: the Mr. Green spawn is scheduled",
+      fixture: "e2e/events-hooks-rows.ts#L: the Mr. Green spawn is scheduled",
       receives: "event, occurrence, realm, spawnAt, by",
       returns: "nothing"
     },
@@ -5526,7 +5526,7 @@
       kind: "notice",
       part: "events (06)",
       answers: "many",
-      fixture: "e2e/live-events-hooks.spec.ts#L: Mr. Green becomes due at the walk estimate",
+      fixture: "e2e/events-hooks-rows.ts#L: Mr. Green becomes due at the walk estimate",
       receives: "occurrence, event, group, leadMs, by",
       returns: "nothing"
     },
@@ -5535,7 +5535,7 @@
       kind: "notice",
       part: "events (06)",
       answers: "many",
-      fixture: "e2e/live-events-hooks.spec.ts#L: Goobrawl goes live",
+      fixture: "e2e/events-hooks-rows.ts#L: Goobrawl goes live",
       receives: "occurrence, event, by",
       returns: "nothing"
     },
@@ -5544,7 +5544,7 @@
       kind: "notice",
       part: "events (06)",
       answers: "many",
-      fixture: "e2e/live-events-hooks.spec.ts#L: Goobrawl ends",
+      fixture: "e2e/events-hooks-rows.ts#L: Goobrawl ends",
       receives: "occurrence, event, reason (ended, missed), by",
       returns: "nothing"
     },
@@ -5554,7 +5554,7 @@
       kind: "notice",
       part: "events (06)",
       answers: "many",
-      fixture: "e2e/live-events-hooks.spec.ts#L: the warrior is admitted to Goobrawl",
+      fixture: "e2e/events-hooks-rows.ts#L: the warrior is admitted to Goobrawl",
       receives: "member, event, occurrence, checkpoint, by",
       returns: "nothing"
     },
@@ -5563,7 +5563,7 @@
       kind: "notice",
       part: "events (06)",
       answers: "many",
-      fixture: "e2e/live-events-hooks.spec.ts#L: the warrior joins Goobrawl",
+      fixture: "e2e/events-hooks-rows.ts#L: the warrior joins Goobrawl",
       receives: "member, event, occurrence, by",
       returns: "nothing"
     },
@@ -5572,7 +5572,7 @@
       kind: "notice",
       part: "events (06)",
       answers: "many",
-      fixture: "e2e/live-events-hooks.spec.ts#L: an add-on refuses the priest's admission",
+      fixture: "e2e/events-hooks-rows.ts#L: an add-on refuses the priest's admission",
       receives: "member, event, occurrence, the join reply or the refusing hook, by",
       returns: "nothing"
     },
@@ -5581,7 +5581,7 @@
       kind: "notice",
       part: "events (06)",
       answers: "many",
-      fixture: "e2e/live-events-hooks.spec.ts#L: a manual move off the map leaves",
+      fixture: "e2e/events-hooks-rows.ts#L: a manual move off the map leaves",
       receives: "member, event, occurrence, the destination of the command, by",
       returns: "nothing"
     },
@@ -5599,7 +5599,7 @@
       kind: "notice",
       part: "events (06)",
       answers: "many",
-      fixture: "e2e/live-events-hooks.spec.ts#L: the Goobrawl return starts",
+      fixture: "e2e/events-hooks-rows.ts#L: the Goobrawl return starts",
       receives: "members, event, occurrence, the K6 row, by",
       returns: "nothing"
     },
@@ -5608,7 +5608,7 @@
       kind: "notice",
       part: "events (06)",
       answers: "many",
-      fixture: "e2e/live-events-hooks.spec.ts#L: the return completes into farming",
+      fixture: "e2e/events-hooks-rows.ts#L: the return completes into farming",
       receives: "members, event, occurrence, by",
       returns: "nothing"
     },
@@ -5651,7 +5651,7 @@
       answers: "many",
       addonMayAsk: false,
       bound: "refusal only",
-      fixture: "e2e/live-events-hooks.spec.ts#L: an add-on refuses the priest's admission",
+      fixture: "e2e/events-hooks-rows.ts#L: an add-on refuses the priest's admission",
       receives: "the member, its event and occurrence, and K4's answer",
       returns: "`refuse` with a reason, or nothing"
     },
@@ -5665,7 +5665,7 @@
       answers: "many",
       addonMayAsk: false,
       bound: "refusal only for a core name; an add-on kind ranks event-attendance through 01, never a new tier",
-      fixture: "e2e/live-events-hooks.spec.ts#L: an add-on event kind is attended and returned from",
+      fixture: "e2e/events-hooks-rows.ts#L: an add-on event kind is attended and returned from",
       receives: "nothing",
       returns: "a K1 row for a new event name: name, label, kind (join or walk), map, targets, point, exit rungs"
     }
@@ -5865,7 +5865,7 @@
       answers: "many",
       addonMayAsk: false,
       bound: "refusal only",
-      fixture: "e2e/live-hunting-hooks.spec.ts#L: the add-on refuses the planted quest, and the cycle backs up",
+      fixture: "e2e/windows/W60-addon-hunt.spec.ts#The add-on refuses the planted quest, and the cycle backs up",
       receives: "group, owner, quest (id, count, ms), candidates",
       returns: "`false` to refuse, or nothing"
     },
@@ -5876,7 +5876,7 @@
       answers: "many",
       addonMayAsk: false,
       bound: "refusal, or a rank among the alternatives H4 already allows; it cannot add an area",
-      fixture: "e2e/live-hunting-hooks.spec.ts#L: the add-on keeps the relocation to its own spawn",
+      fixture: "scripts/tests/hunting-hooks.test.cjs#U: the add-on's farm spot answer refuses and prefers among the alternatives, and the move tells farm.relocated",
       receives: "group, focus, active, alternatives",
       returns: "`{refuse: [ids]}` or `{prefer: id}`, or nothing"
     },
@@ -5922,7 +5922,7 @@
       kind: "notice",
       part: "hunts and farming (07)",
       answers: "many",
-      fixture: "e2e/live-hunting-hooks.spec.ts#L: the cycle goes to Daisy, takes the quest and travels",
+      fixture: "e2e/windows/W60-addon-hunt.spec.ts#The cycle goes to Daisy, takes the quest and travels",
       receives: "group, cycle, from, to, by",
       returns: "nothing"
     },
@@ -5931,7 +5931,7 @@
       kind: "notice",
       part: "hunts and farming (07)",
       answers: "many",
-      fixture: "e2e/live-hunting-hooks.spec.ts#L: the planted quest is turned in",
+      fixture: "e2e/windows/W60-addon-hunt.spec.ts#The planted quest is turned in",
       receives: "group, owner, quest, change (taken, turnedIn), by",
       returns: "nothing"
     },
@@ -5958,7 +5958,7 @@
       kind: "notice",
       part: "hunts and farming (07)",
       answers: "many",
-      fixture: "e2e/live-hunting-hooks.spec.ts#L: the add-on reads the focus change",
+      fixture: "e2e/windows/W60-addon-hunt.spec.ts#the focus change, the learned type and the mode answer",
       receives: "focus, member or party, by",
       returns: "nothing"
     },
@@ -5967,7 +5967,7 @@
       kind: "notice",
       part: "hunts and farming (07)",
       answers: "many",
-      fixture: "e2e/live-hunting-hooks.spec.ts#L: the add-on keeps the relocation to its own spawn",
+      fixture: "scripts/tests/hunting-hooks.test.cjs#U: the add-on's farm spot answer refuses and prefers among the alternatives, and the move tells farm.relocated",
       receives: "group, from, to, cause (contested, focus, failed), by",
       returns: "nothing"
     },
@@ -5976,7 +5976,7 @@
       kind: "notice",
       part: "hunts and farming (07)",
       answers: "many",
-      fixture: "e2e/live-hunting-hooks.spec.ts#L: Auto scatters on a learned goo",
+      fixture: "e2e/windows/W60-addon-hunt.spec.ts#Auto scatters on a learned goo",
       receives: "group, mode (grouped, scatter), by",
       returns: "nothing"
     },
@@ -5985,7 +5985,7 @@
       kind: "notice",
       part: "hunts and farming (07)",
       answers: "many",
-      fixture: "e2e/live-hunting-hooks.spec.ts#L: Auto scatters on a learned goo",
+      fixture: "e2e/windows/W60-addon-hunt.spec.ts#Auto scatters on a learned goo",
       receives: "group, type, by",
       returns: "nothing"
     },
@@ -6012,7 +6012,7 @@
       kind: "notice",
       part: "hunts and farming (07)",
       answers: "many",
-      fixture: "e2e/live-cave.spec.ts#C: `cave.phase` tells each phase change once, the entry by the player",
+      fixture: "e2e/cave-rows.ts#C: `cave.phase` tells each phase change once, the entry by the player",
       receives: "party, visit, from, to, by",
       returns: "nothing"
     },
@@ -6033,7 +6033,7 @@
       answers: "one",
       core: true,
       addonMayAsk: true,
-      fixture: "e2e/live-hunting-hooks.spec.ts#L: the add-on reads the focus, the area and the Hunt target",
+      fixture: "e2e/windows/W60-addon-hunt.spec.ts#The add-on reads the focus, the area and the Hunt target",
       receives: "a group (coordinator) or nothing (character)",
       returns: "focus types, priorities, radius, the area and contains(point), the Hunt target, the party type, the combat mode answer, the rare state with its rejections, blocksPulls, the farm spot label (H8), loot pending, the Hunt walk defense and control"
     },
@@ -6044,7 +6044,7 @@
       answers: "one",
       core: true,
       addonMayAsk: true,
-      fixture: "e2e/live-cave.spec.ts#C: `cave.state` answers each member inside and owned, and the visit active",
+      fixture: "e2e/cave-rows.ts#C: `cave.state` answers each member inside and owned, and the visit active",
       receives: "a member, or nothing for the party",
       returns: "per member inside or not; per party the phase, the run, its end and rewards; caveFloors(name)"
     },
@@ -6055,7 +6055,7 @@
       answers: "one",
       core: true,
       addonMayAsk: true,
-      fixture: "e2e/live-hunting-hooks.spec.ts#L: the add-on reads the goo's passive rule and the Fairy's priority",
+      fixture: "e2e/windows/W60-addon-hunt.spec.ts#The add-on reads the goo's passive rule and the Fairy's priority",
       receives: "a monster type",
       returns: "the effective rule with its default, and whether the monster has a core priority"
     },
@@ -6066,7 +6066,7 @@
       answers: "one",
       core: true,
       addonMayAsk: true,
-      fixture: "e2e/live-hunting-hooks.spec.ts#L: the cycle goes to Daisy, takes the quest and travels",
+      fixture: "e2e/windows/W60-addon-hunt.spec.ts#The cycle goes to Daisy, takes the quest and travels",
       receives: "a group",
       returns: "the cycle stage, mission, target, owner and counts, or nothing"
     }
@@ -6293,7 +6293,7 @@
     SLOTS: () => SLOTS8,
     dispatch: () => dispatch8
   });
-  var SPEC = "e2e/live-merchant-hooks.spec.ts";
+  var SPEC = "e2e/gathering-session-rows.ts";
   var UNIT = "scripts/tests/hook-registry.test.cjs";
   var HOOKS8 = {
     // A4 part 1: an add-on's job kinds and its one job of them per dispatch pass. The job owner clamps
@@ -7850,7 +7850,7 @@
       answers: "one",
       core: true,
       addonMayAsk: true,
-      fixture: "e2e/live-calls-hooks.spec.ts#calls.margin: the add-on reads the margin while the figure holds",
+      fixture: "e2e/windows/W05-call-pressure.spec.ts#calls.margin: the add-on reads the margin while the figure holds",
       receives: "nothing",
       returns: "the margin in ms"
     },
@@ -7877,7 +7877,7 @@
       side: "character",
       part: "the call budget (09)",
       answers: "many",
-      fixture: "e2e/live-calls-hooks.spec.ts#calls.held: an untagged players emit under the planted figure is held",
+      fixture: "e2e/windows/W05-call-pressure.spec.ts#calls.held: an untagged players emit under the planted figure is held",
       receives: "character, method, cost, used, margin, source, by",
       returns: "nothing"
     },
@@ -7886,7 +7886,7 @@
       side: "character",
       part: "the call budget (09)",
       answers: "many",
-      fixture: "e2e/live-calls-hooks.spec.ts#calls.released: the held players emit goes once the figure leaves",
+      fixture: "e2e/windows/W05-call-pressure.spec.ts#calls.released: the held players emit goes once the figure leaves",
       receives: "character, method, cost, waitedMs, margin, sentMargin, by",
       returns: "nothing"
     },
@@ -7895,7 +7895,7 @@
       side: "character",
       part: "the call budget (09)",
       answers: "many",
-      fixture: "e2e/live-calls-hooks.spec.ts#calls.waited: a job question waits on the planted figure, then goes",
+      fixture: "e2e/windows/W05-call-pressure.spec.ts#calls.waited: a job question waits on the planted figure, then goes",
       receives: "character, band, method, cost, waitedMs, by",
       returns: "nothing"
     },
@@ -7904,7 +7904,7 @@
       side: "character",
       part: "the call budget (09)",
       answers: "many",
-      fixture: "e2e/live-calls-hooks.spec.ts#calls.raised: a background read waits one window and goes in the job band",
+      fixture: "e2e/windows/W05-call-pressure.spec.ts#calls.raised: a background read waits one window and goes in the job band",
       receives: "character, method, waitedMs, by",
       returns: "nothing"
     },
@@ -7913,7 +7913,7 @@
       side: "character",
       part: "the call budget (09)",
       answers: "many",
-      fixture: "e2e/live-calls-hooks.spec.ts#calls.unmatched: a question with no call after it is unmatched",
+      fixture: "e2e/windows/W05-call-pressure.spec.ts#calls.unmatched: a question with no call after it is unmatched",
       receives: "character, method, band, by",
       returns: "nothing"
     },
@@ -7922,7 +7922,7 @@
       side: "character",
       part: "the call budget (09)",
       answers: "many",
-      fixture: "e2e/live-calls-hooks.spec.ts#calls.limitdc: the planted overflow writes the limitdc snapshot",
+      fixture: "e2e/windows/W05-call-pressure.spec.ts#calls.limitdc: the planted overflow writes the limitdc snapshot",
       receives: "character, total, limit, by",
       returns: "nothing"
     },
@@ -8204,7 +8204,7 @@
     SLOTS: () => SLOTS10,
     dispatch: () => dispatch10
   });
-  var SPEC2 = "e2e/live-items-hooks.spec.ts";
+  var SPEC2 = "e2e/windows/W03-merchant-visits.spec.ts";
   var UNIT2 = "scripts/tests/hook-registry.test.cjs";
   var PART = "items (10)";
   var { notice, read: read2 } = rowsFor(PART, "");
@@ -8217,7 +8217,7 @@
       answers: "many",
       addonMayAsk: false,
       bound: "after every core claim; refused at load when it cannot fit its place",
-      fixture: `${SPEC2}#items.claim: an add-on claim of 2 stacks of hpot1 keeps them through a bank visit`,
+      fixture: `${SPEC2}#items.claim: two stacks of hpot1 claimed through the collection below`,
       receives: "the item view: bag, bank, the place",
       returns: "{item, quantity, place, reason}"
     },
@@ -8228,7 +8228,7 @@
       answers: "many",
       addonMayAsk: false,
       bound: "only copies with no player mark or claim, so a copy another fate holds stays held; an action naming one of F5's core actions (CF-S10); over a core rule's action only when its order places it before that action (P11)",
-      fixture: `${SPEC2}#items.action: an add-on action takes an unclaimed copy; a claimed copy is not offered`,
+      fixture: `${SPEC2}#'items.action'`,
       receives: "the copy, its owner and the core rule's action when one holds it",
       returns: "{action, order?: {before | after: a core action}} or nothing"
     },
@@ -8239,7 +8239,7 @@
       answers: "many",
       addonMayAsk: false,
       bound: "after the core sources; the gold reserve and the PVP refusal bind it",
-      fixture: `${SPEC2}#items.source: an add-on source's listing is bought after the core sources`,
+      fixture: `${SPEC2}#'items.source'`,
       receives: "the bid",
       returns: "listings {key, realm, price, quantity}"
     },
@@ -8256,20 +8256,20 @@
     },
     // Part 2: one notice at each change, with its subject and `by` (the player, a core rule's name or
     // `addon:<name>`). coordinator/records.ts sends them.
-    "items.fateChanged": notice(`${SPEC2}#items.fateChanged: the exchange reward's fate is the merchant's restock claim`, "subject (the owner), slot, fate, by", "coordinator"),
-    "items.claimShort": notice(`${SPEC2}#items.claimShort: a claim larger than the bag holds names its shortfall`, "subject, item, short, by", "coordinator"),
-    "items.banked": notice(`${SPEC2}#items.banked, .withdrawn: a bank visit banks the unclaimed rest`, "subject, item, quantity, by", "coordinator"),
-    "items.withdrawn": notice(`${SPEC2}#items.banked, .withdrawn: a bank visit banks the unclaimed rest`, "subject, item, quantity, by", "coordinator"),
-    "items.bought": notice(`${SPEC2}#items.bought, .sold: a stand purchase and an NPC sale`, "subject, item, quantity, source, by", "coordinator"),
-    "items.sold": notice(`${SPEC2}#items.bought, .sold: a stand purchase and an NPC sale`, "subject, item, quantity, source, by", "coordinator"),
-    "items.listed": notice(`${SPEC2}#items.listed, .unlisted: an offer replaced after its slot empties`, "subject, item, kind (sale or offer), by", "coordinator"),
-    "items.unlisted": notice(`${SPEC2}#items.listed, .unlisted: an offer replaced after its slot empties`, "subject, item, kind, by", "coordinator"),
+    "items.fateChanged": notice(`${SPEC2}#'items.fateChanged'`, "subject (the owner), slot, fate, by", "coordinator"),
+    "items.claimShort": notice(`${SPEC2}#'items.claimShort'`, "subject, item, short, by", "coordinator"),
+    "items.banked": notice(`${SPEC2}#'items.banked'`, "subject, item, quantity, by", "coordinator"),
+    "items.withdrawn": notice(`${SPEC2}#'items.banked'`, "subject, item, quantity, by", "coordinator"),
+    "items.bought": notice(`${SPEC2}#'items.sold'`, "subject, item, quantity, source, by", "coordinator"),
+    "items.sold": notice(`${SPEC2}#'items.sold'`, "subject, item, quantity, source, by", "coordinator"),
+    "items.listed": notice(`${SPEC2}#'items.listed'`, "subject, item, kind (sale or offer), by", "coordinator"),
+    "items.unlisted": notice(`${SPEC2}#'items.unlisted'`, "subject, item, kind, by", "coordinator"),
     "items.produced": notice(`${UNIT2}#items.produced: an upgrade result is reported once`, "subject, item, kind, result, by", "coordinator"),
     "items.exchanged": notice(`${UNIT2}#items.exchanged: each reward once across checkpoints`, "subject, item, by", "coordinator"),
     "items.dismantled": notice(`scripts/tests/deconstruction.test.cjs#items.dismantled: each result once`, "subject, item, by", "coordinator"),
-    "items.mailed": notice(`${SPEC2}#items.mailed: a mail sent with postage`, "subject, action (sent, collected or deleted), by", "coordinator"),
+    "items.mailed": notice(`${SPEC2}#'items.mailed'`, "subject, action (sent, collected or deleted), by", "coordinator"),
     "items.storage": notice(`scripts/tests/bankboi-recovery.test.cjs#items.storage: a transaction's start and end`, "subject (the BankBoi), phase (started or ended), by", "coordinator"),
-    "items.bankChanged": notice(`${SPEC2}#items.bankChanged: the snapshot changes once per changed report`, "subject (the bank), by", "coordinator"),
+    "items.bankChanged": notice(`${SPEC2}#'items.bankChanged'`, "subject (the bank), by", "coordinator"),
     "items.orderPaused": notice(`scripts/tests/native-stand.test.cjs#a buy order short of gold is paused once and placed again when gold arrives`, "subject (the merchant), item, by", "coordinator"),
     "items.claimRefused": notice(`${UNIT2}#items.claimRefused: a claim that cannot fit its place is refused at load`, "subject (the add-on), item, place, by", "coordinator"),
     "items.sortLease": notice(`${UNIT2}#items.sortLease: a sort lease taken, retried and settled`, "subject, phase (taken, retry or settled), code on a retry, by", "coordinator"),
@@ -8277,14 +8277,14 @@
     "items.saleBlocked": notice(`${UNIT2}#items.saleBlocked: a failed sale blocks and lifts at the bag change`, "subject, item, phase (blocked or lifted), code, by", "coordinator"),
     "items.intent": notice(`${UNIT2}#items.intent: an intent written and ended once each`, "subject, slot, phase (written or ended), by", "coordinator"),
     // Part 3: the published reads, `addonMayAsk` by X-C8.
-    "items.stock": read2(`${SPEC2}#items.stock: the stock read leaves out claimed copies`, "character, item", "the copies it may use, claims kept (C50)", true, "coordinator"),
+    "items.stock": read2(`${SPEC2}#'items.stock'`, "character, item", "the copies it may use, claims kept (C50)", true, "coordinator"),
     "items.claimPending": read2(`${UNIT2}#items.claimPending: a stored copy an all claim names is fetched`, "character, claimer", "the stored copies 10 still fetches for the claimer's claims at the character (G01)", true, "coordinator"),
-    "items.needs": read2(`${SPEC2}#items.needs: a job's needs name gold and withdrawals`, "the job", "{gold, withdrawals, slots, postage, blockedBy?} (C59)", true, "coordinator"),
-    "items.fate": read2(`${SPEC2}#items.fate: the fate read names its row and by`, "character, slot or mark", "the copy's fate, its I1 row and by", true, "coordinator"),
-    "items.freeSlots": read2(`${SPEC2}#items.freeSlots: the lucky slot's hold is counted`, "character", "free bag cells past the lucky slot's hold and the protected free slots", true, "coordinator"),
+    "items.needs": read2(`${SPEC2}#'items.needs'`, "the job", "{gold, withdrawals, slots, postage, blockedBy?} (C59)", true, "coordinator"),
+    "items.fate": read2(`${SPEC2}#'items.fate'`, "character, slot or mark", "the copy's fate, its I1 row and by", true, "coordinator"),
+    "items.freeSlots": read2(`${SPEC2}#'items.freeSlots'`, "character", "free bag cells past the lucky slot's hold and the protected free slots", true, "coordinator"),
     "items.luckySlot": read2(`${UNIT2}#items.luckySlot: lock, resume, verified, tracker`, "character", "the lucky slot (P8), or null", true, "coordinator"),
     "items.fetch": read2(`${UNIT2}#items.fetch: a missing item withdrawn or not found`, "character, item", "withdrawn or not found (C83)", false, "character"),
-    "items.bank": read2(`${SPEC2}#items.bank: the snapshot read`, "nothing", "the bank snapshot", true, "coordinator"),
+    "items.bank": read2(`${SPEC2}#'items.bank'`, "nothing", "the bank snapshot", true, "coordinator"),
     "items.storagePending": read2(`${UNIT2}#items.storagePending: a pending BankBoi transfer is named`, "character", "whether storage work waits for it", true, "coordinator"),
     "items.productionPending": read2(`${UNIT2}#items.productionPending: a pending intent is named`, "character", "whether production work waits for it", true, "coordinator"),
     "items.bag": read2("scripts/tests/items-bag.test.cjs#each fact follows the holder", "character", "the bag holder's facts (3.4)", true, "character"),
@@ -8887,7 +8887,7 @@
       part: "settings (11), a target mode add-on",
       answers: "slot",
       addonMayAsk: false,
-      fixture: "e2e/live-tasks-hooks.spec.ts#L: the entry's settings route writes its scope store",
+      fixture: "e2e/tasks-hooks-rows.ts#L: the entry's settings route writes its scope store",
       receives: "the scope's add-on store, the scope and the player's change",
       returns: "the reply, or an error in plain words"
     },
@@ -9073,10 +9073,11 @@
     RULE_FILES: () => RULE_FILES12,
     SLOTS: () => SLOTS12
   });
-  var SPEC3 = "e2e/live-status-hooks.spec.ts";
+  var W01 = "e2e/windows/W01-goo-field.spec.ts";
+  var W09 = "e2e/windows/W09-party-walk.spec.ts";
   var SLOT_SPEC = "scripts/tests/dashboard-addon-slots.test.cjs";
   var PART2 = "dashboard status (12)";
-  var { notice: notice2, read: read3 } = rowsFor(PART2, `${SPEC3}#L: `);
+  var { notice: notice2, read: read3 } = rowsFor(PART2, "");
   var HOOKS12 = {
     // A character's own report for an add-on: fields the coordinator keeps per character.
     // Add-ons answer it, so an ask would run every answer (D4 part 3, `addonMayAsk` false).
@@ -9087,7 +9088,7 @@
       answers: "many",
       addonMayAsk: false,
       bound: "data only: fields under the add-on's own name in the report; it decides nothing",
-      fixture: `${SPEC3}#L: the add-on's report field reaches the card`,
+      fixture: `${W09}#addonReports?.['status-hooks-fixture']?.[REPORT_FIELD]`,
       receives: "the character's view on each report",
       returns: "the fields to report, or nothing"
     },
@@ -9099,7 +9100,7 @@
       answers: "many",
       addonMayAsk: false,
       bound: "data only: one line under the add-on's own name, below table L's line, never in place of it",
-      fixture: `${SPEC3}#L: the add-on's line shows under the card line with its name`,
+      fixture: `${W09}#{ op: 'line', line: STATUS_LINE }`,
       receives: "{character, line}",
       returns: "{label} or nothing"
     },
@@ -9117,21 +9118,21 @@
       returns: "{ok: true, reply} or {ok: false, status, error}"
     },
     // Part 2: the read-only events, one notify at each change.
-    "status.lineChanged": notice2("the add-on task's line arrives as status.lineChanged", "character, line, task, phase; by the table L row (L1 to L9)", "coordinator"),
-    "status.received": notice2("each report sends status.received", "character, seq, seenAt; by 'core:status'", "coordinator"),
-    "status.replied": notice2("each reply names its sections", "character, the sections sent; by 'core:status'", "coordinator"),
-    "dashboard.command": notice2("a dashboard command arrives as dashboard.command by user", "route, character or group, the body less secrets; by 'user' or 'app:<name>'", "coordinator"),
-    "dashboard.opened": notice2("the dashboard opens and closes", "the stream's client count; by 'core:status'", "coordinator"),
-    "dashboard.closed": notice2("the dashboard opens and closes", "the stream's client count; by 'core:status'", "coordinator"),
-    "diagnostics.leased": notice2("the diagnostics view leases the rings, then releases them", "character, the rings named; by 'user'", "coordinator"),
-    "diagnostics.released": notice2("the diagnostics view leases the rings, then releases them", "character, the rings ended; by 'user'", "coordinator"),
-    "app.keyIssued": notice2("a key is issued, used once and revoked", "key name, scopes, tier; by 'user'", "coordinator"),
-    "app.keyRevoked": notice2("a key is issued, used once and revoked", "key name, scopes, tier; by 'user'", "coordinator"),
-    "app.used": notice2("a key is issued, used once and revoked", "key name, scopes, tier; by 'app:<name>'", "coordinator"),
+    "status.lineChanged": notice2(`${W09}#'status.lineChanged'`, "character, line, task, phase; by the table L row (L1 to L9)", "coordinator"),
+    "status.received": notice2(`${W01}#'status.received'`, "character, seq, seenAt; by 'core:status'", "coordinator"),
+    "status.replied": notice2(`${W01}#'status.replied'`, "character, the sections sent; by 'core:status'", "coordinator"),
+    "dashboard.command": notice2(`${W09}#'dashboard.command'`, "route, character or group, the body less secrets; by 'user' or 'app:<name>'", "coordinator"),
+    "dashboard.opened": notice2(`${W09}#'dashboard.opened'`, "the stream's client count; by 'core:status'", "coordinator"),
+    "dashboard.closed": notice2(`${W09}#'dashboard.closed'`, "the stream's client count; by 'core:status'", "coordinator"),
+    "diagnostics.leased": notice2(`${W09}#'diagnostics.leased'`, "character, the rings named; by 'user'", "coordinator"),
+    "diagnostics.released": notice2(`${W09}#'diagnostics.released'`, "character, the rings ended; by 'user'", "coordinator"),
+    "app.keyIssued": notice2(`${W09}#'app.keyIssued'`, "key name, scopes, tier; by 'user'", "coordinator"),
+    "app.keyRevoked": notice2(`${W09}#'app.keyRevoked'`, "key name, scopes, tier; by 'user'", "coordinator"),
+    "app.used": notice2(`${W09}#'app.used'`, "key name, scopes, tier; by 'app:<name>'", "coordinator"),
     // Part 3: the published reads, each from stored state (`addonMayAsk` true).
-    "status.cardLine": read3("the add-on reads the card line", "character", "table L's answer with its group, or null", true, "coordinator"),
-    "status.lastReport": read3("the add-on reads its character's report", "character", "the last stored report and its seenAt, or null", true, "coordinator"),
-    "status.connected": read3("the stopped character reads not connected", "character", "the one connection state", true, "coordinator")
+    "status.cardLine": read3(`${W01}#'status.cardLine'`, "character", "table L's answer with its group, or null", true, "coordinator"),
+    "status.lastReport": read3(`${W01}#'status.lastReport'`, "character", "the last stored report and its seenAt, or null", true, "coordinator"),
+    "status.connected": read3(`${W01}#'status.connected'`, "character", "the one connection state", true, "coordinator")
   };
   var STATUS = "runtime/status/api.ts";
   var STATUS_COORDINATOR = "runtime/status/coordinator/api.ts";
@@ -9152,7 +9153,7 @@
       owner: "12",
       data: "{character, label} from status.line answers",
       section: false,
-      fixture: `${SPEC3}#L: the add-on's line shows under the card line with its name`
+      fixture: `${W09}#{ op: 'line', line: STATUS_LINE }`
     },
     // Part 4: an add-on's own ring (Registration `rings`), posted through table G's lease and drawn
     // as a tab of the diagnostics view by the add-on's own records component.
@@ -9160,7 +9161,7 @@
       owner: "12",
       data: "{ring, label, records} for an add-on's own ring, posted through table G's lease",
       section: true,
-      fixture: `${SPEC3}#L: the add-on's ring shows as a tab of the diagnostics view`
+      fixture: `${W09}#The \`diagnostics-ring\` slot: the add-on list names the ring with its label`
     },
     // The general slots (decisions.md 2026-11-16): each draws an add-on's piece through `<AddonSlot
     // name part>` after its place's core content (runtime/hooks/dashboard/slots.tsx, addon-kit.ts
@@ -9407,7 +9408,7 @@
       side: "character",
       part: "lifecycle (13), the report timer",
       answers: "many",
-      fixture: "e2e/live-lifecycle-hooks.spec.ts#report.sent: each report sends report.sent",
+      fixture: "e2e/lifecycle-hooks-rows.ts#report.sent: each report sends report.sent",
       receives: "character, sequence (the run's report count), by 'core:lifecycle'",
       returns: "nothing"
     },
@@ -9421,7 +9422,7 @@
       answers: "many",
       addonMayAsk: false,
       bound: "refusal only: an answer can hold readiness, never grant it",
-      fixture: "e2e/live-lifecycle-hooks.spec.ts#lifecycle.ready: the add-on holds the drain while its own work runs, and the deploy waits on its reason",
+      fixture: "e2e/lifecycle-hooks-rows.ts#lifecycle.ready: the add-on holds the drain while its own work runs, and the deploy waits on its reason",
       receives: "the character and the deploy lease",
       returns: "{ready, reason}: ready false holds the drain with the reason"
     },
@@ -9455,7 +9456,7 @@
       side: "coordinator",
       part: "lifecycle (13), the coordinator's start (C70)",
       answers: "many",
-      fixture: "e2e/live-lifecycle-hooks.spec.ts#lifecycle.started: the restart sends started with reason start",
+      fixture: "e2e/lifecycle-hooks-rows.ts#lifecycle.started: the restart sends started with reason start",
       receives: "the realm, the generation and the reason: start, reload or resume; by 'core:lifecycle'",
       returns: "nothing"
     },
@@ -9464,7 +9465,7 @@
       side: "coordinator",
       part: "lifecycle (13), the Pause",
       answers: "many",
-      fixture: "e2e/live-lifecycle-hooks.spec.ts#lifecycle.paused: Pause sends paused by user",
+      fixture: "e2e/lifecycle-hooks-rows.ts#lifecycle.paused: Pause sends paused by user",
       receives: "the Pause's id and the running names; by 'user' or 'shutdown'",
       returns: "nothing"
     },
@@ -9473,7 +9474,7 @@
       side: "coordinator",
       part: "lifecycle (13), Play",
       answers: "many",
-      fixture: "e2e/live-lifecycle-hooks.spec.ts#lifecycle.played: Play sends played by user",
+      fixture: "e2e/lifecycle-hooks-rows.ts#lifecycle.played: Play sends played by user",
       receives: "by 'user', 'auto-resume' or 'shutdown-cancel', and the skipped names",
       returns: "nothing"
     },
@@ -9482,7 +9483,7 @@
       side: "coordinator",
       part: "lifecycle (13), the deploy lease",
       answers: "many",
-      fixture: "e2e/live-lifecycle-hooks.spec.ts#lifecycle.drainStarted: the safe deploy sends drainStarted",
+      fixture: "e2e/lifecycle-hooks-rows.ts#lifecycle.drainStarted: the safe deploy sends drainStarted",
       receives: "the lease id, mode and load mode; by 'host'",
       returns: "nothing"
     },
@@ -9491,7 +9492,7 @@
       side: "coordinator",
       part: "lifecycle (13), the deploy lease",
       answers: "many",
-      fixture: "e2e/live-lifecycle-hooks.spec.ts#lifecycle.drainEnded: the safe deploy's release sends drainEnded",
+      fixture: "e2e/lifecycle-hooks-rows.ts#lifecycle.drainEnded: the safe deploy's release sends drainEnded",
       receives: "the lease id; by 'host'",
       returns: "nothing"
     },
@@ -9500,7 +9501,7 @@
       side: "character",
       part: "lifecycle (13), drain readiness (table R)",
       answers: "many",
-      fixture: "e2e/live-lifecycle-hooks.spec.ts#lifecycle.readiness: the add-on's hold appears in waiting, then clears",
+      fixture: "e2e/lifecycle-hooks-rows.ts#lifecycle.readiness: the add-on's hold appears in waiting, then clears",
       receives: "the character, the lease id and the waiting reasons; by 'core:lifecycle'",
       returns: "nothing"
     },
@@ -9509,7 +9510,7 @@
       side: "coordinator",
       part: "lifecycle (13), the clean shutdown",
       answers: "many",
-      fixture: "e2e/live-lifecycle-hooks.spec.ts#lifecycle.shutdown: the clean shutdown sends draining then safe",
+      fixture: "e2e/lifecycle-hooks-rows.ts#lifecycle.shutdown: the clean shutdown sends draining then safe",
       receives: "the phase (deferred, draining, safe or cancelled) and the hold reason; by 'user'",
       returns: "nothing"
     },
@@ -9518,7 +9519,7 @@
       side: "coordinator",
       part: "lifecycle (13), the CODE reload (table W)",
       answers: "many",
-      fixture: "e2e/live-lifecycle-hooks.spec.ts#lifecycle.reloaded: the CODE reload sends reloaded ready",
+      fixture: "e2e/lifecycle-hooks-rows.ts#lifecycle.reloaded: the CODE reload sends reloaded ready",
       receives: "the character, the script hash and the outcome: ready, busy or failed; by 'core:lifecycle'",
       returns: "nothing"
     },
@@ -9527,7 +9528,7 @@
       side: "both",
       part: "lifecycle (13), the run scope (table P)",
       answers: "many",
-      fixture: "e2e/live-lifecycle-hooks.spec.ts#lifecycle.holdChanged: the paused warrior sends holdChanged held, then released at Play",
+      fixture: "e2e/lifecycle-hooks-rows.ts#lifecycle.holdChanged: the paused warrior sends holdChanged held, then released at Play",
       receives: "the character, whether it is held, and by: 01's hold (`user` or `pause`) or 'core:lifecycle' for the first reply",
       returns: "nothing"
     },
@@ -9536,7 +9537,7 @@
       side: "coordinator",
       part: "lifecycle (13), the headless workers (table W)",
       answers: "many",
-      fixture: "e2e/live-lifecycle-hooks.spec.ts#worker.started, worker.exited: the restart's workers send exited then started",
+      fixture: "e2e/lifecycle-hooks-rows.ts#worker.started, worker.exited: the restart's workers send exited then started",
       receives: "the character and the pid; by 'core:lifecycle'",
       returns: "nothing"
     },
@@ -9545,7 +9546,7 @@
       side: "coordinator",
       part: "lifecycle (13), the headless workers (table W)",
       answers: "many",
-      fixture: "e2e/live-lifecycle-hooks.spec.ts#worker.started, worker.exited: the restart's workers send exited then started",
+      fixture: "e2e/lifecycle-hooks-rows.ts#worker.started, worker.exited: the restart's workers send exited then started",
       receives: "the character, the pid and the exit {at, code, signal, reason}; by 'core:lifecycle'",
       returns: "nothing"
     },
@@ -9567,7 +9568,7 @@
       answers: "one",
       core: true,
       addonMayAsk: true,
-      fixture: "e2e/live-lifecycle-hooks.spec.ts#lifecycle.state: the add-on reads paused true while paused",
+      fixture: "e2e/lifecycle-hooks-rows.ts#lifecycle.state: the add-on reads paused true while paused",
       receives: "nothing",
       returns: "{paused, pausedAt, drain, shutdown}"
     },
@@ -9578,7 +9579,7 @@
       answers: "one",
       core: true,
       addonMayAsk: true,
-      fixture: "e2e/live-lifecycle-hooks.spec.ts#lifecycle.drain: the add-on reads the drain's targets during the safe deploy",
+      fixture: "e2e/lifecycle-hooks-rows.ts#lifecycle.drain: the add-on reads the drain's targets during the safe deploy",
       receives: "nothing",
       returns: "on the character {targets, park} or null; on the coordinator {lease, participants} or null"
     },
@@ -9600,7 +9601,7 @@
       answers: "one",
       core: true,
       addonMayAsk: false,
-      fixture: "e2e/live-lifecycle-hooks.spec.ts#lifecycle.boundary: a boundary opened during the deploy settles on drainEnded",
+      fixture: "e2e/lifecycle-hooks-rows.ts#lifecycle.boundary: a boundary opened during the deploy settles on drainEnded",
       receives: "nothing",
       returns: "a promise that settles once neither a drain nor table P1 holds the character (C69, K-B2)"
     },
@@ -9611,7 +9612,7 @@
       answers: "one",
       core: true,
       addonMayAsk: true,
-      fixture: "e2e/live-lifecycle-hooks.spec.ts#lifecycle.held: the add-on reads held while paused",
+      fixture: "e2e/lifecycle-hooks-rows.ts#lifecycle.held: the add-on reads held while paused",
       receives: "nothing",
       returns: "table P on the character: whether it is held or starting"
     }
@@ -11462,9 +11463,9 @@ ${hook}`, was = errors.get(key3);
     lifecycleReportMs: 1e3,
     // The CODE loader's picks (character/loader.ts). The host answers its deployment reply and the
     // activation record on request and sends nothing to a CODE frame, so the loader asks each
-    // `loaderPollMs`; with no record named it asks for activation.json each `loaderRecordRecheckMs` (a
-    // record the reply does not name, as live-console-explicit-activation.spec.ts serves, is adopted
-    // within it). A source fetch and the deployment reply each end after their kept bound, since a
+    // `loaderPollMs`; with no record named it asks for activation.json each `loaderRecordRecheckMs`, so
+    // it adopts a record the reply does not name within that interval. e2e/deploy-session-rows.ts
+    // `codeDeployPlay` serves such a record. A source fetch and the deployment reply each end after their kept bound, since a
     // request the host never answers sends no fact; each firing tells the status owner's bound record.
     loaderPollMs: 2e3,
     loaderRecordRecheckMs: 1e4,
@@ -34052,7 +34053,7 @@ ${hook}`, was = errors.get(key3);
     const cut = fallback >= 0 ? fallback : round.length;
     return [...round.slice(0, cut), ...added, ...round.slice(cut)];
   }
-  Object.assign(globalThis, { installPartyMovement, partySurvival: { rejoinRound } });
+  Object.assign(globalThis, { installPartyMovement });
   function installMovementRequesters(client, ports) {
     const movement = () => ports.movement(), character2 = () => ports.character();
     const manualRequest = { kind: "manual", owner: "manual" };

@@ -9,40 +9,40 @@ import type { formationRecovery, GameMonster } from '../../movement/api/coordina
 
 export const HOOKS = {
   'movement.request': { kind: 'request', side: 'character', part: 'movement (02)', answers: 'many', addonMayAsk: false, bound: "tier: its registration's tier, at most manual",
-    fixture: 'e2e/live-movement-hooks.spec.ts#movement.request: holds, steps or walks the character at its add-on tier',
+    fixture: "e2e/windows/W09-party-walk.spec.ts#An add-on's hold is a combat hold: the movement tick stops the character's own step",
     receives: "the character's view on each role runner movement tick", returns: 'hold, a step to a point, a walk to a point on any map, or nothing' },
   'group.anchor': { kind: 'request', side: 'coordinator', part: 'grouped combat, a movement sub-owner (runtime/coordinator/targeting/queue.ts)', answers: 'one', addonMayAsk: false, bound: 'a member of the group only',
-    fixture: 'e2e/live-movement-hooks.spec.ts#group.anchor: the group record asks it with its members in a fight',
+    fixture: "e2e/windows/W01-goo-field.spec.ts#'group.anchor'",
     receives: "the group's members and their reports", returns: 'the member the formation centres on, or nothing' },
   // Step 9b. Step safety's monster entries (13.2 item 8): an add-on refuses a combat step that
   // ends inside a zone it keeps, such as a boss's aggro reach.
   'step.safety': { kind: 'request', side: 'character', part: 'movement (02), step safety (3.1)', answers: 'many', addonMayAsk: false, bound: 'refusal only',
-    fixture: 'e2e/live-movement-hooks.spec.ts#step.safety: refuses a step that ends inside its zone',
+    fixture: "e2e/windows/W09-party-walk.spec.ts#'step.safety'",
     receives: "the character's view and the step's end point", returns: 'a refusal in plain words, or nothing' },
   'journey.started': { kind: 'notice', side: 'character', part: 'movement (02)', answers: 'many', 
-    fixture: 'e2e/live-movement-hooks.spec.ts#journey.started: fires when a request is granted, kept, retargeted or resumed',
+    fixture: "e2e/windows/W01-goo-field.spec.ts#'journey.started'",
     receives: 'character, requestId, kind, owner, destination, status', returns: 'nothing' },
   'journey.paused': { kind: 'notice', side: 'character', part: 'movement (02)', answers: 'many', 
-    fixture: 'e2e/live-movement-hooks.spec.ts#journey.paused: fires when a pause source, a click or a combat step pauses the journey',
+    fixture: "e2e/windows/W06a-console-pause.spec.ts#'journey.paused'",
     receives: 'character, requestId, by, reason, state', returns: 'nothing' },
   'journey.ended': { kind: 'notice', side: 'character', part: 'movement (02)', answers: 'many', 
-    fixture: 'e2e/live-movement-hooks.spec.ts#journey.ended: fires once with its end code',
+    fixture: "e2e/windows/W01-goo-field.spec.ts#'journey.ended'",
     receives: 'character, requestId, kind, owner, code, by', returns: 'nothing' },
   // Movement's follow: a member with no target walks to its leader, or
   // under Follows me to the character on Manual, when it stands farther than FOLLOW_DISTANCE. 04's
   // selection asks it on every publish with no target and awaits the answer's promise.
   'movement.followIfFar': { kind: 'request', side: 'character', part: 'movement (02)', answers: 'one', core: true, addonMayAsk: false,
-    fixture: 'e2e/live-movement-hooks.spec.ts#movement.followIfFar: a member inside the distance does not walk',
+    fixture: "e2e/windows/W01-goo-field.spec.ts#'movement.followIfFar'",
     receives: 'character', returns: 'a promise of whether the follow took the tick' },
   // Movement's end of a group walk: the realm switch asks it for each
   // group whose walk carries a member leaving the realm. Its answer is on the coordinator.
   'walks.end': { kind: 'request', side: 'coordinator', part: 'movement (02)', answers: 'one', core: true, addonMayAsk: false,
-    fixture: "e2e/live-movement-hooks.spec.ts#walks.end: ends the group's walk with the asker's code",
+    fixture: "e2e/windows/W09-party-walk.spec.ts#'walks.end'",
     receives: 'a group, an end code and optionally the one member that leaves', returns: 'whether a walk ended' },
   // The walk estimate: a read that starts no walk. The events owner's K2 times a
   // staged event's `due` and the Cipher merchant's walk to the Witch by it.
   'walks.estimate': { kind: 'request', side: 'coordinator', part: 'movement (02)', answers: 'one', core: true, addonMayAsk: true,
-    fixture: "e2e/live-events-hooks.spec.ts#L: Mr. Green becomes due at the walk estimate",
+    fixture: "e2e/events-hooks-rows.ts#L: Mr. Green becomes due at the walk estimate",
     receives: 'a group, a destination and the reporting member', returns: "the planned time of the group's walk there, else of the member's own walk, or nothing with no route" },
   // Who holds a walk member that is not walking. The walk asks
   // it for each member while it rallies (movement/coordinator/walk.ts `letGo`), and each holder
@@ -55,16 +55,16 @@ export const HOOKS = {
   // fires each at the transition that makes the change (movement/coordinator/walk.ts `formWalk`,
   // `walkPhase`, `completeMembers`, `walkEnds`), and `walks.end` fires `walk.ended` with its own code.
   'walk.formed': { kind: 'notice', side: 'coordinator', part: 'movement (02)', answers: 'many', 
-    fixture: 'e2e/live-movement-hooks.spec.ts#walk.formed: fires once when a group walk is created',
+    fixture: "e2e/windows/W01-goo-field.spec.ts#'walk.formed'",
     receives: 'group, walk, members, tier, purpose, destination', returns: 'nothing' },
   'walk.phase': { kind: 'notice', side: 'coordinator', part: 'movement (02)', answers: 'many', 
-    fixture: 'e2e/live-movement-hooks.spec.ts#walk.phase: fires on each phase change of the walk',
+    fixture: "e2e/windows/W01-goo-field.spec.ts#'walk.phase'",
     receives: 'group, walk, phase, from', returns: 'nothing' },
   'walk.member': { kind: 'notice', side: 'coordinator', part: 'movement (02)', answers: 'many', 
-    fixture: 'e2e/live-movement-hooks.spec.ts#walk.member: fires when a member completes or leaves the walk',
+    fixture: "e2e/windows/W09-party-walk.spec.ts#'walk.member'",
     receives: "group, walk, member, change ('completed', 'left' or 'rejoined'), code ('died' when the member died on the walk, 'silent' when the console knows it is gone)", returns: 'nothing' },
   'walk.ended': { kind: 'notice', side: 'coordinator', part: 'movement (02)', answers: 'many', 
-    fixture: 'e2e/live-movement-hooks.spec.ts#walk.ended: fires once with the end code',
+    fixture: "e2e/windows/W01-goo-field.spec.ts#'walk.ended'",
     receives: "group, walk, code (`arrived`, `released`, `replaced`, `cancelled`, a `walks.end` code or the T5 code of a failed walk), reason", returns: 'nothing' },
   // Movement's core requests and reads. Each answer is the module's own
   // function: the character's movement owner (movement/character/owner.ts) publishes its `step`,
@@ -74,36 +74,36 @@ export const HOOKS = {
   // (movement/coordinator/runtime.ts); the freshness rule answers in every realm (hooks/core.ts).
   // `walks.estimate` is built by the events owner's V1 and `movement.park` by the lifecycle owner's L-S2.
   'walks.request': { kind: 'request', side: 'coordinator', part: 'movement (02), the group walk', answers: 'one', core: true, addonMayAsk: false,
-    fixture: "e2e/live-movement-hooks.spec.ts#walks.request: starts the group's walk at the asker's tier, and a lower ask is refused",
+    fixture: "e2e/windows/W09-party-walk.spec.ts#'walks.request'",
     receives: 'a group and the walk it asks for: its purpose, destination, members, tier and label', returns: 'whether the walk started, was kept or was retargeted; false when T1 refuses it' },
   'movement.step': { kind: 'request', side: 'character', part: 'movement (02), the combat step (2.4)', answers: 'one', core: true, addonMayAsk: false,
-    fixture: 'e2e/live-movement-hooks.spec.ts#movement.step: one step through step safety at the asker\'s turn',
+    fixture: "e2e/windows/W09-party-walk.spec.ts#'movement.step'",
     receives: "the step's point, the mover that asks and its options (target, closes)", returns: 'sent, kept or refused with the reason, and the send' },
   'movement.acceptMagiport': { kind: 'request', side: 'character', part: 'movement (02), the crossings', answers: 'one', core: true, addonMayAsk: false,
     fixture: "scripts/tests/hook-registry.test.cjs#X3: the character's requests and reads are the movement owner's own functions",
     receives: 'the request it ranks as and the mage that offers', returns: "the game's answer, or a refusal" },
   'movement.live': { kind: 'request', side: 'character', part: 'movement (02)', answers: 'one', core: true, addonMayAsk: true,
-    fixture: 'e2e/live-movement-hooks.spec.ts#movement.live: names who holds movement',
+    fixture: "scripts/tests/hook-registry.test.cjs#X3: the character's requests and reads are the movement owner's own functions",
     receives: 'nothing', returns: 'kind, owner, tier, whether a journey runs and whether it is paused, or null' },
   // The lifecycle owner's park: the held reply and the drain ask movement to hold the
   // character where it stands, at the `lifecycle` row, until its drain or hold ends.
   'movement.park': { kind: 'request', side: 'character', part: 'movement (02)', answers: 'one', core: true, addonMayAsk: false,
-    fixture: 'e2e/live-lifecycle-hooks.spec.ts#movement.park: the drain parks the warrior where it stands',
+    fixture: 'e2e/lifecycle-hooks-rows.ts#movement.park: the drain parks the warrior where it stands',
     receives: 'the character', returns: 'nothing: a journey pauses and a character moving with no journey stands still' },
   'reports.fresh': { kind: 'request', side: 'both', part: 'movement (02), the report freshness rule (R4, MOV-222)', answers: 'one', core: true, addonMayAsk: true,
-    fixture: 'e2e/live-movement-hooks.spec.ts#reports.fresh: answers the one freshness rule for a reading',
+    fixture: "scripts/tests/hook-registry.test.cjs#X3: the character's requests and reads are the movement owner's own functions",
     receives: 'a stamp, the time and the reading', returns: 'whether the stamp is fresh' },
   'movement.climbing': { kind: 'request', side: 'character', part: 'movement (02), the one climber', answers: 'one', core: true, addonMayAsk: true,
-    fixture: "e2e/live-movement-hooks.spec.ts#movement.climbing: names the live climb's rung and try",
+    fixture: "scripts/tests/hook-registry.test.cjs#X3: the character's requests and reads are the movement owner's own functions",
     receives: 'nothing', returns: 'the climber, its activity, rung and try, or null' },
   'movement.reply': { kind: 'request', side: 'coordinator', part: 'movement (02), the heartbeat reply (12 table R)', answers: 'one', core: true, addonMayAsk: false,
     fixture: 'scripts/tests/hook-registry.test.cjs#X3 and the R5 correction: core:movement answers the walk request, the reply and the game data on the coordinator',
     receives: "the scope's state and the reply's ports", returns: "movement's fields of the status reply" },
   'movement.records': { kind: 'request', side: 'character', part: 'movement (02), the decision ring (7)', answers: 'one', core: true, addonMayAsk: false,
-    fixture: "e2e/live-movement-hooks.spec.ts#movement.records: answers the character's ring",
+    fixture: "scripts/tests/hook-registry.test.cjs#X3: the character's requests and reads are the movement owner's own functions",
     receives: 'nothing', returns: "the ring's records, oldest first" },
   'movement.incidents': { kind: 'request', side: 'character', part: 'movement (02), the decision ring (7)', answers: 'one', core: true, addonMayAsk: false,
-    fixture: "e2e/live-movement-hooks.spec.ts#movement.incidents: answers the character's stuck and caught-error records",
+    fixture: "scripts/tests/hook-registry.test.cjs#X3: the character's requests and reads are the movement owner's own functions",
     receives: 'nothing', returns: 'the incidents, oldest first' },
   // The game's monster table on the coordinator:
   // targeting's reflect lists read it here (reflect.ts). Null until the game data
@@ -117,16 +117,16 @@ export const HOOKS = {
   // (movement/coordinator/runtime.ts). The independent approach rules answer in every realm
   // (hooks/core.ts), as the freshness rule does.
   'movement.formationRecovery': { kind: 'request', side: 'coordinator', part: 'movement (02), the terrain recovery round', answers: 'one', core: true, addonMayAsk: false,
-    fixture: "e2e/live-movement-hooks.spec.ts#movement.formationRecovery: answers the group's terrain recovery round",
+    fixture: "scripts/tests/hook-registry.test.cjs#CC: the group record's movement decisions are the module's own functions",
     receives: "the group's last record, its members, the target, the group key, the time, whether pulls pause, the healer's range and the target's identity", returns: 'the recovery round, or nothing when none runs' },
   'movement.independentApproach': { kind: 'request', side: 'both', part: 'movement (02), the independent approach', answers: 'one', core: true, addonMayAsk: false,
-    fixture: 'e2e/live-movement-hooks.spec.ts#movement.independentApproach: answers whether every member approaches on its own',
+    fixture: "scripts/tests/hook-registry.test.cjs#CC: the group record's movement decisions are the module's own functions",
     receives: 'the members and the time', returns: 'whether every member is available, in one place and reports the capability' },
   'movement.independentReadiness': { kind: 'request', side: 'both', part: 'movement (02), the independent approach', answers: 'one', core: true, addonMayAsk: false,
-    fixture: "e2e/live-movement-hooks.spec.ts#movement.independentReadiness: answers each member's readiness report",
+    fixture: "scripts/tests/hook-registry.test.cjs#CC: the group record's movement decisions are the module's own functions",
     receives: 'the members', returns: "each member's last readiness report by name" },
   'movement.confirmIndependentApproach': { kind: 'request', side: 'both', part: 'movement (02), the independent approach', answers: 'one', core: true, addonMayAsk: false,
-    fixture: 'e2e/live-movement-hooks.spec.ts#movement.confirmIndependentApproach: issues and settles the confirmation round',
+    fixture: "scripts/tests/hook-registry.test.cjs#CC: the group record's movement decisions are the module's own functions",
     receives: "the group's last record, the members, the selection, the target id and the time", returns: 'the confirmation revision, round and whether every member confirmed' },
   // The decision hooks of CF11 and R5 that an add-on answers. `crossing.allows` refuses only; a
   // refused crossing climbs the request's round as any refused crossing does. `step.point` offers a
@@ -134,13 +134,13 @@ export const HOOKS = {
   // `route.avoid` (R5, corrected by "Movement check and close" CC3) names whole maps, the only avoid rule
   // the planner has; each answer can only take maps out of a route.
   'route.avoid': { kind: 'request', side: 'coordinator', part: 'movement (02), the planner', answers: 'many', addonMayAsk: false, bound: 'refusal only: it takes maps out of a route',
-    fixture: 'e2e/live-movement-hooks.spec.ts#route.avoid: the planner asks it for every route it plans',
+    fixture: "e2e/windows/W01-goo-field.spec.ts#'route.avoid'",
     receives: "the route's start and end points", returns: 'the maps the route must not cross, or nothing' },
   'crossing.allows': { kind: 'request', side: 'character', part: 'movement (02), the crossings', answers: 'many', addonMayAsk: false, bound: 'refusal only',
-    fixture: 'e2e/live-movement-hooks.spec.ts#crossing.allows: refuses a crossing in plain words, and the crossing ends refused',
+    fixture: "e2e/windows/W09-party-walk.spec.ts#'crossing.allows'",
     receives: "the character, the crossing and the request it ranks as", returns: 'a refusal in plain words, or nothing; it cannot allow' },
   'step.point': { kind: 'request', side: 'character', part: 'movement (02), the combat step (2.4)', answers: 'one', addonMayAsk: false, bound: 'a point step safety still judges',
-    fixture: "e2e/live-movement-hooks.spec.ts#step.point: offers this character's step point, which step safety judges",
+    fixture: "e2e/windows/W09-party-walk.spec.ts#'step.point'",
     receives: "the character, the mover, its point and target", returns: 'a point for the step, or nothing' },
   // The formation routine (hook-coverage-2 R4): the solver asks the entry a character picked in the
   // `formation` slot for its point. The solver's collision check, step safety, the formation tier
@@ -182,7 +182,7 @@ export const HOOKS = {
   // The notices of R5 and CF11, each fired at the change it tells (movement/character/owner.ts,
   // movement/coordinator/routes.ts for the saved ring).
   'journey.resumed': { kind: 'notice', side: 'character', part: 'movement (02)', answers: 'many', 
-    fixture: 'e2e/live-movement-hooks.spec.ts#journey.resumed: fires when the pause ends',
+    fixture: "e2e/windows/W06a-console-pause.spec.ts#'journey.resumed'",
     receives: 'character, requestId, by, reason', returns: 'nothing' },
   'request.waiting': { kind: 'notice', side: 'character', part: 'movement (02)', answers: 'many', 
     fixture: 'scripts/tests/hook-registry.test.cjs#R5: the owner tells a hold, a refused and a waiting request, a paused and resumed journey, and the click',
@@ -206,16 +206,16 @@ export const HOOKS = {
     fixture: 'scripts/tests/hook-registry.test.cjs#X7: records.saved tells each movement ring snapshot, and no task or call ring snapshot',
     receives: "ring ('movement'), character, record, trigger, by", returns: 'nothing' },
   'crossing.started': { kind: 'notice', side: 'character', part: 'movement (02)', answers: 'many', 
-    fixture: 'e2e/live-movement-hooks.spec.ts#crossing.started: fires when a crossing is sent',
+    fixture: "e2e/windows/W09-party-walk.spec.ts#'crossing.started'",
     receives: 'character, crossing, kind, owner', returns: 'nothing' },
   'crossing.ended': { kind: 'notice', side: 'character', part: 'movement (02)', answers: 'many', 
-    fixture: 'e2e/live-movement-hooks.spec.ts#crossing.ended: fires once when a crossing lands, is refused, interrupted or times out',
+    fixture: "e2e/windows/W09-party-walk.spec.ts#'crossing.ended'",
     receives: "character, crossing, kind, owner, code ('landed', 'refused', 'interrupted' or 'timed-out'), reason", returns: 'nothing' },
   'step.sent': { kind: 'notice', side: 'character', part: 'movement (02)', answers: 'many', 
-    fixture: 'e2e/live-movement-hooks.spec.ts#step.sent: fires when a combat step is sent, with its mover and point',
+    fixture: "e2e/windows/W01-goo-field.spec.ts#'step.sent'",
     receives: 'character, mover, point, target', returns: 'nothing' },
   'formation.moved': { kind: 'notice', side: 'character', part: 'movement (02)', answers: 'many', 
-    fixture: 'e2e/live-movement-hooks.spec.ts#formation.moved: fires when a formation step is sent',
+    fixture: "e2e/windows/W01-goo-field.spec.ts#'formation.moved'",
     receives: 'character, mover, point, target', returns: 'nothing' },
 } as const satisfies Record<string, HookRow>;
 

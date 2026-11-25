@@ -179,7 +179,7 @@ test('a plan whose new scroll piles would take a protected cell stops before any
   assert.deepEqual([route, purchases], [[], []]);
 });
 
-// The live row (live-manual-upgrade.spec.ts "withdrawn manual shield and inventory shield finish
+// The live row (live-manual-upgrade.spec.ts at 21fe30a2b "withdrawn manual shield and inventory shield finish
 // one mixed upgrade batch"): a withdraw command with upgradeTiers leaves a manual mark on a bank
 // copy (coordinator production.ts `putBankUpgrade`) beside a bag mark on another +0 Spiked Shield.
 // Both are queued before the job dispatches. The dispatcher builds the merchant's command, and the

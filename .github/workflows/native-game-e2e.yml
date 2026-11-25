@@ -9,7 +9,7 @@ on:
         default: ''
         type: string
       companion_no_graphics:
-        description: 'Diagnostic only: official no_graphics flag on native companion bots; use Cave entry grep'
+        description: 'Diagnostic only: official no_graphics flag on native companion bots; runs the W41a Cave window'
         required: false
         default: false
         type: boolean
@@ -48,14 +48,14 @@ jobs:
       - run: npx playwright install --with-deps chromium
       - name: Build and run native gameplay
         env:
-          E2E_GREP: ${{ inputs.companion_no_graphics && 'Cave entry closes' || inputs.grep }}
+          E2E_GREP: ${{ inputs.companion_no_graphics && 'W41a ' || inputs.grep }}
           E2E_COMPANION_NO_GRAPHICS: ${{ inputs.companion_no_graphics && '1' || '0' }}
         run: |
           if [ -n "$E2E_GREP" ]; then
             npm run test:e2e:live -- --workers=1 --grep "$E2E_GREP"
           elif [ '${{ matrix.shard }}' -le 3 ]; then
-            # Cave journey groups use dedicated runners; each test gets a fresh native visit.
-            cave_filters=('Cave entry closes' 'Cave shared-route pacing|Cave completes native rooms' 'Cave assembly regroups')
+            # The Cave windows (W41a-W41c, W42) use dedicated runners; each window gets a fresh native visit.
+            cave_filters=('W41a ' 'W41b |W41c ' 'W42 ')
             npm run test:e2e:live -- --workers=1 --grep "${cave_filters[${{ matrix.shard }}-1]}"
           else
             # Shard the remaining suite independently so every test runs exactly once.

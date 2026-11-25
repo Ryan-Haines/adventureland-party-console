@@ -137,9 +137,9 @@ async function refresh(force = false): Promise<void> {
     let activation: {id: string; manifest: GameManifest;maintenance?:LoaderMaintenance|null;serverNow?:number} | null = null;
     // While the host reports no record, refresh asks for activation.json every
     // `loaderRecordRecheckMs` instead of every tick, and refreshControl asks at
-    // once when the host reports one. The record stays the contract, so a record
-    // the control reply does not name (live-console-explicit-activation.spec.ts
-    // serves one) is adopted within 10 s.
+    // once when the host reports one. The record stays the contract, so the loader
+    // adopts a record the control reply does not name within 10 s. W48's code deploy
+    // round (e2e/deploy-session-rows.ts `codeDeployPlay`) serves such a record.
     if (lastSource !== null && hostActivation === null && Date.now() - missingRecordAt < picks.loaderRecordRecheckMs) return;
     try { activation = JSON.parse(await source("activation.json")); missingRecordAt = 0; }
     catch (error) { if (lastSource !== null) { missingRecordAt = Date.now(); return; } }

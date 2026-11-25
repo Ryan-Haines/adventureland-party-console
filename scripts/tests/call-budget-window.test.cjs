@@ -77,7 +77,7 @@ test('an own entry stays one clock step past the window and the round trip, the 
   assert.equal(test1.atStep,test1.booked,'on a 1 ms step it counts to one millisecond past the round trip');
   assert.equal(test1.after,0,'and leaves after it');
 });
-// The live coat batch (e2e/live-economy.spec.ts 'upgrade purchase batch excludes an existing
+// The live coat batch (e2e/live-economy.spec.ts at 21fe30a2b 'upgrade purchase batch excludes an existing
 // target-level coat'): the merchant walked on ChronAL's 250 ms step, then stood at the NPC with no
 // player packet for over a window, and its buy reply came two steps after the send.
 test('a window with no player packets keeps the last clock step measured in the margin',()=>{
@@ -354,8 +354,8 @@ test('a waiting survival call holds the job and background bands',()=>{
 
 // Each change the budget records sends its notice, once, with its fields: a hold, its
 // release, a wait's close, a read's rise, an unmatched admission and a `limitdc`. A planted core
-// listener on the realm's registry, which no run loads; the live hooks table runs the same six on
-// the game (e2e/live-calls-hooks.spec.ts).
+// listener on the realm's registry, which no run loads; W05 runs the same six on the game
+// (e2e/windows/W05-call-pressure.spec.ts).
 test('the budget sends one notice at each change it records',async()=>{
   const {partyHooks}=require('../../runtime/hooks/index.ts');
   const heard=[],hooks=partyHooks(),events=['calls.held','calls.released','calls.waited','calls.raised','calls.unmatched','calls.limitdc'];

@@ -8,7 +8,7 @@ export const HOOKS = {
   // A target mode entry's own settings, kept in the scope's add-on store: the player's change,
   // or whether the entry can start now (`action: 'available'`).
   'target.settings': { kind: 'request', side: 'coordinator', part: 'settings (11), a target mode add-on', answers: 'slot', addonMayAsk: false,
-    fixture: "e2e/live-tasks-hooks.spec.ts#L: the entry's settings route writes its scope store",
+    fixture: "e2e/tasks-hooks-rows.ts#L: the entry's settings route writes its scope store",
     receives: "the scope's add-on store, the scope and the player's change", returns: 'the reply, or an error in plain words' },
   // The settings owner's hooks. The coordinator's settings install answers the two requests with
   // the one writer; a character's install refuses every write

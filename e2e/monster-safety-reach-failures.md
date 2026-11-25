@@ -4,7 +4,7 @@ Written before the change (#121; found by Icelocked on Spooky Town booboos in #3
 `formationMonsterSafety` (characters/shared.js) reserves a no-go radius around each
 monster for the formation solver. A monster that outranges the character keeps its full
 reach (`range + 8`) unless it has no target at all, even while it is attacking a
-teammate. Live journey: `e2e/live-monster-safety-reach.spec.ts`.
+teammate. Live journey: W22's C18 step (`e2e/windows/W22-main-terrain-fights.spec.ts`).
 
 1. **Fenced out.** Two long-range monsters side by side attack the warrior; the mage
    must stand within its range of the selected one and 428 from the other, finds no

@@ -9,7 +9,7 @@ import { doorOnly, readsOf, type DecisionRow, type PlainKind } from './row.ts';
 import type { ActionRow, AddonContext, DispatchContext, HookRow, MerchantJobAsk, MerchantJobView, MerchantKindAsk, MerchantRoutineAnswer, MerchantRoutineView,
   MerchantStepAnswer, MerchantStepView, ReadRow, Registration, SlotRow } from '../registry.ts';
 
-const SPEC = 'e2e/live-merchant-hooks.spec.ts', UNIT = 'scripts/tests/hook-registry.test.cjs';
+const SPEC = 'e2e/gathering-session-rows.ts', UNIT = 'scripts/tests/hook-registry.test.cjs';
 
 export const HOOKS = {
   // A4 part 1: an add-on's job kinds and its one job of them per dispatch pass. The job owner clamps

@@ -9,19 +9,19 @@ export const HOOKS = {
   // Moved from the tasks owner's rows with `event.presence`. Its fixture is the tasks owner's live table row, which
   // runs the same setup.
   'member.presence': { side: 'coordinator', kind: 'notice', part: 'events (06)', answers: 'many', 
-    fixture: "e2e/live-tasks-hooks.spec.ts#L: the event takes the group: one started, one suspended",
+    fixture: "e2e/tasks-hooks-rows.ts#L: the event takes the group: one started, one suspended",
     receives: 'member, presence, by', returns: 'nothing' },
   // The published coordinator reads: each reads K3 or K2 and changes nothing, so an
   // add-on may ask them.
   'event.presence': { side: 'coordinator', kind: 'request', part: 'events (06)', answers: 'one', core: true, addonMayAsk: true,
-    fixture: 'e2e/live-events-hooks.spec.ts#L: the add-on reads presence while attending',
+    fixture: 'e2e/events-hooks-rows.ts#L: the add-on reads presence while attending',
     receives: 'a member name', returns: "the member's event, occurrence, realm, phase (walking, attending, returning) and since; or nothing" },
   // The character's published read: core:events answers it on each character.
   'event.targets': { side: 'character', kind: 'request', part: 'events (06)', answers: 'one', core: true, addonMayAsk: true,
-    fixture: 'e2e/live-events-hooks.spec.ts#L: the add-on reads the event targets while attending',
+    fixture: 'e2e/events-hooks-rows.ts#L: the add-on reads the event targets while attending',
     receives: 'nothing', returns: "the current event's monster types and the area event of the map the character stands on" },
   'event.schedule': { side: 'coordinator', kind: 'request', part: 'events (06)', answers: 'one', core: true, addonMayAsk: true,
-    fixture: 'e2e/live-events-hooks.spec.ts#L: the add-on reads the schedule when due',
+    fixture: 'e2e/events-hooks-rows.ts#L: the add-on reads the schedule when due',
     receives: "an occurrence id (a group's event, `occurrenceId`)",
     returns: 'the spawn, the planned walk and its lead, the phase (scheduled, due, live) and the short window; or nothing' },
   // EVT-011's fact for the hunting owner's Hunt: the member's character reports `huntEventPending`.
@@ -35,38 +35,38 @@ export const HOOKS = {
   // K2's phases. The spawn time and R6 fix `due` and `missed`, so no add-on answers
   // them (EV-S7, reason 6).
   'event.scheduled': { side: 'coordinator', kind: 'notice', part: 'events (06)', answers: 'many', 
-    fixture: 'e2e/live-events-hooks.spec.ts#L: the Mr. Green spawn is scheduled',
+    fixture: 'e2e/events-hooks-rows.ts#L: the Mr. Green spawn is scheduled',
     receives: 'event, occurrence, realm, spawnAt, by', returns: 'nothing' },
   'event.due': { side: 'coordinator', kind: 'notice', part: 'events (06)', answers: 'many', 
-    fixture: 'e2e/live-events-hooks.spec.ts#L: Mr. Green becomes due at the walk estimate',
+    fixture: 'e2e/events-hooks-rows.ts#L: Mr. Green becomes due at the walk estimate',
     receives: 'occurrence, event, group, leadMs, by', returns: 'nothing' },
   'event.started': { side: 'coordinator', kind: 'notice', part: 'events (06)', answers: 'many', 
-    fixture: 'e2e/live-events-hooks.spec.ts#L: Goobrawl goes live',
+    fixture: 'e2e/events-hooks-rows.ts#L: Goobrawl goes live',
     receives: 'occurrence, event, by', returns: 'nothing' },
   'event.ended': { side: 'coordinator', kind: 'notice', part: 'events (06)', answers: 'many', 
-    fixture: 'e2e/live-events-hooks.spec.ts#L: Goobrawl ends',
+    fixture: 'e2e/events-hooks-rows.ts#L: Goobrawl ends',
     receives: 'occurrence, event, reason (ended, missed), by', returns: 'nothing' },
   // K3's states, K4's admission and K6's return (E6 part 2, EV-S7 part 2).
   'event.admitted': { side: 'coordinator', kind: 'notice', part: 'events (06)', answers: 'many', 
-    fixture: "e2e/live-events-hooks.spec.ts#L: the warrior is admitted to Goobrawl",
+    fixture: "e2e/events-hooks-rows.ts#L: the warrior is admitted to Goobrawl",
     receives: 'member, event, occurrence, checkpoint, by', returns: 'nothing' },
   'event.joined': { side: 'coordinator', kind: 'notice', part: 'events (06)', answers: 'many', 
-    fixture: "e2e/live-events-hooks.spec.ts#L: the warrior joins Goobrawl",
+    fixture: "e2e/events-hooks-rows.ts#L: the warrior joins Goobrawl",
     receives: 'member, event, occurrence, by', returns: 'nothing' },
   'event.refused': { side: 'coordinator', kind: 'notice', part: 'events (06)', answers: 'many', 
-    fixture: "e2e/live-events-hooks.spec.ts#L: an add-on refuses the priest's admission",
+    fixture: "e2e/events-hooks-rows.ts#L: an add-on refuses the priest's admission",
     receives: 'member, event, occurrence, the join reply or the refusing hook, by', returns: 'nothing' },
   'event.left': { side: 'coordinator', kind: 'notice', part: 'events (06)', answers: 'many', 
-    fixture: "e2e/live-events-hooks.spec.ts#L: a manual move off the map leaves",
+    fixture: "e2e/events-hooks-rows.ts#L: a manual move off the map leaves",
     receives: 'member, event, occurrence, the destination of the command, by', returns: 'nothing' },
   'event.limit': { side: 'coordinator', kind: 'notice', part: 'events (06)', answers: 'many', 
     fixture: "scripts/tests/coordinator-event-observation.test.cjs#U: a death limit ends attendance",
     receives: 'member, event, occurrence, limit (death limit, time limit), by', returns: 'nothing' },
   'event.returning': { side: 'coordinator', kind: 'notice', part: 'events (06)', answers: 'many', 
-    fixture: "e2e/live-events-hooks.spec.ts#L: the Goobrawl return starts",
+    fixture: "e2e/events-hooks-rows.ts#L: the Goobrawl return starts",
     receives: 'members, event, occurrence, the K6 row, by', returns: 'nothing' },
   'event.returned': { side: 'coordinator', kind: 'notice', part: 'events (06)', answers: 'many', 
-    fixture: "e2e/live-events-hooks.spec.ts#L: the return completes into farming",
+    fixture: "e2e/events-hooks-rows.ts#L: the return completes into farming",
     receives: 'members, event, occurrence, by', returns: 'nothing' },
   // The anniversary's phases, the A/B strategy and the Cipher plan (EV-S7 part 2). The server picks
   // the round's featured players by account hash, A/B testing needs two server teams and the Cipher
@@ -83,14 +83,14 @@ export const HOOKS = {
   // The add-on's admission refusal. Refusal only: it may refuse a member K4 admits,
   // never admit one K4 refuses. An add-on answers it; it never asks it.
   'event.attend': { side: 'coordinator', kind: 'request', part: 'events (06)', answers: 'many', addonMayAsk: false, bound: 'refusal only',
-    fixture: "e2e/live-events-hooks.spec.ts#L: an add-on refuses the priest's admission",
+    fixture: "e2e/events-hooks-rows.ts#L: an add-on refuses the priest's admission",
     receives: "the member, its event and occurrence, and K4's answer", returns: '`refuse` with a reason, or nothing' },
   // An add-on's event kind: a K1 row for a new event name, read in each realm at load and
   // on every add-on switch. Its attendance ranks `event-attendance` through 01's event source, so it
   // names no tier. An add-on answers it; it never asks it.
   'event.kind': { side: 'both', kind: 'request', part: 'events (06)', answers: 'many', addonMayAsk: false,
     bound: 'refusal only for a core name; an add-on kind ranks event-attendance through 01, never a new tier',
-    fixture: 'e2e/live-events-hooks.spec.ts#L: an add-on event kind is attended and returned from',
+    fixture: 'e2e/events-hooks-rows.ts#L: an add-on event kind is attended and returned from',
     receives: 'nothing', returns: 'a K1 row for a new event name: name, label, kind (join or walk), map, targets, point, exit rungs' },
 } as const satisfies Record<string, HookRow>;
 

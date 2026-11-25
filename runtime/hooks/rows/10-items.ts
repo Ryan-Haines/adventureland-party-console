@@ -22,7 +22,7 @@ import type { DecisionRow, PlainKind } from './row.ts';
 import type { ActionRow, BankLayoutView, DispatchContext, HookRow, ReadRow, ItemActionAnswer, ItemActionAsk, ItemSourceAsk, ItemClaimAsk, ItemClaimView, DispatchRegistration, SlotRow } from '../registry.ts';
 import { doorOnly, rowsFor } from './row.ts';
 
-const SPEC = 'e2e/live-items-hooks.spec.ts', UNIT = 'scripts/tests/hook-registry.test.cjs';
+const SPEC = 'e2e/windows/W03-merchant-visits.spec.ts', UNIT = 'scripts/tests/hook-registry.test.cjs';
 const PART = 'items (10)';
 const { notice, read } = rowsFor(PART, '');
 
@@ -30,16 +30,16 @@ export const HOOKS = {
   // Part 1: the decision hooks.
   'items.claim': { side: 'coordinator', kind: 'request', part: 'items (10), I1 F4', answers: 'many', addonMayAsk: false,
     bound: 'after every core claim; refused at load when it cannot fit its place',
-    fixture: `${SPEC}#items.claim: an add-on claim of 2 stacks of hpot1 keeps them through a bank visit`,
+    fixture: `${SPEC}#items.claim: two stacks of hpot1 claimed through the collection below`,
     receives: 'the item view: bag, bank, the place', returns: '{item, quantity, place, reason}' },
   'items.action': { side: 'coordinator', kind: 'request', part: 'items (10), I1 F6', answers: 'many', addonMayAsk: false,
     bound: "only copies with no player mark or claim, so a copy another fate holds stays held; an action naming one of F5's core actions (CF-S10); " +
       "over a core rule's action only when its order places it before that action (P11)",
-    fixture: `${SPEC}#items.action: an add-on action takes an unclaimed copy; a claimed copy is not offered`,
+    fixture: `${SPEC}#'items.action'`,
     receives: "the copy, its owner and the core rule's action when one holds it", returns: "{action, order?: {before | after: a core action}} or nothing" },
   'items.source': { side: 'coordinator', kind: 'request', part: 'items (10), I5 M2', answers: 'many', addonMayAsk: false,
     bound: 'after the core sources; the gold reserve and the PVP refusal bind it',
-    fixture: `${SPEC}#items.source: an add-on source's listing is bought after the core sources`,
+    fixture: `${SPEC}#'items.source'`,
     receives: 'the bid', returns: 'listings {key, realm, price, quantity}' },
   'items.bankLayout': { side: 'coordinator', kind: 'request', part: 'items (10), I3 T7', answers: 'one', addonMayAsk: false,
     bound: 'refusal only of a slot outside the floor',
@@ -48,20 +48,20 @@ export const HOOKS = {
 
   // Part 2: one notice at each change, with its subject and `by` (the player, a core rule's name or
   // `addon:<name>`). coordinator/records.ts sends them.
-  'items.fateChanged': notice(`${SPEC}#items.fateChanged: the exchange reward's fate is the merchant's restock claim`, 'subject (the owner), slot, fate, by', 'coordinator'),
-  'items.claimShort': notice(`${SPEC}#items.claimShort: a claim larger than the bag holds names its shortfall`, 'subject, item, short, by', 'coordinator'),
-  'items.banked': notice(`${SPEC}#items.banked, .withdrawn: a bank visit banks the unclaimed rest`, 'subject, item, quantity, by', 'coordinator'),
-  'items.withdrawn': notice(`${SPEC}#items.banked, .withdrawn: a bank visit banks the unclaimed rest`, 'subject, item, quantity, by', 'coordinator'),
-  'items.bought': notice(`${SPEC}#items.bought, .sold: a stand purchase and an NPC sale`, 'subject, item, quantity, source, by', 'coordinator'),
-  'items.sold': notice(`${SPEC}#items.bought, .sold: a stand purchase and an NPC sale`, 'subject, item, quantity, source, by', 'coordinator'),
-  'items.listed': notice(`${SPEC}#items.listed, .unlisted: an offer replaced after its slot empties`, 'subject, item, kind (sale or offer), by', 'coordinator'),
-  'items.unlisted': notice(`${SPEC}#items.listed, .unlisted: an offer replaced after its slot empties`, 'subject, item, kind, by', 'coordinator'),
+  'items.fateChanged': notice(`${SPEC}#'items.fateChanged'`, 'subject (the owner), slot, fate, by', 'coordinator'),
+  'items.claimShort': notice(`${SPEC}#'items.claimShort'`, 'subject, item, short, by', 'coordinator'),
+  'items.banked': notice(`${SPEC}#'items.banked'`, 'subject, item, quantity, by', 'coordinator'),
+  'items.withdrawn': notice(`${SPEC}#'items.banked'`, 'subject, item, quantity, by', 'coordinator'),
+  'items.bought': notice(`${SPEC}#'items.sold'`, 'subject, item, quantity, source, by', 'coordinator'),
+  'items.sold': notice(`${SPEC}#'items.sold'`, 'subject, item, quantity, source, by', 'coordinator'),
+  'items.listed': notice(`${SPEC}#'items.listed'`, 'subject, item, kind (sale or offer), by', 'coordinator'),
+  'items.unlisted': notice(`${SPEC}#'items.unlisted'`, 'subject, item, kind, by', 'coordinator'),
   'items.produced': notice(`${UNIT}#items.produced: an upgrade result is reported once`, 'subject, item, kind, result, by', 'coordinator'),
   'items.exchanged': notice(`${UNIT}#items.exchanged: each reward once across checkpoints`, 'subject, item, by', 'coordinator'),
   'items.dismantled': notice(`scripts/tests/deconstruction.test.cjs#items.dismantled: each result once`, 'subject, item, by', 'coordinator'),
-  'items.mailed': notice(`${SPEC}#items.mailed: a mail sent with postage`, 'subject, action (sent, collected or deleted), by', 'coordinator'),
+  'items.mailed': notice(`${SPEC}#'items.mailed'`, 'subject, action (sent, collected or deleted), by', 'coordinator'),
   'items.storage': notice(`scripts/tests/bankboi-recovery.test.cjs#items.storage: a transaction's start and end`, 'subject (the BankBoi), phase (started or ended), by', 'coordinator'),
-  'items.bankChanged': notice(`${SPEC}#items.bankChanged: the snapshot changes once per changed report`, 'subject (the bank), by', 'coordinator'),
+  'items.bankChanged': notice(`${SPEC}#'items.bankChanged'`, 'subject (the bank), by', 'coordinator'),
   'items.orderPaused': notice(`scripts/tests/native-stand.test.cjs#a buy order short of gold is paused once and placed again when gold arrives`, 'subject (the merchant), item, by', 'coordinator'),
   'items.claimRefused': notice(`${UNIT}#items.claimRefused: a claim that cannot fit its place is refused at load`, 'subject (the add-on), item, place, by', 'coordinator'),
   'items.sortLease': notice(`${UNIT}#items.sortLease: a sort lease taken, retried and settled`, 'subject, phase (taken, retry or settled), code on a retry, by', 'coordinator'),
@@ -70,14 +70,14 @@ export const HOOKS = {
   'items.intent': notice(`${UNIT}#items.intent: an intent written and ended once each`, 'subject, slot, phase (written or ended), by', 'coordinator'),
 
   // Part 3: the published reads, `addonMayAsk` by X-C8.
-  'items.stock': read(`${SPEC}#items.stock: the stock read leaves out claimed copies`, 'character, item', 'the copies it may use, claims kept (C50)', true, 'coordinator'),
+  'items.stock': read(`${SPEC}#'items.stock'`, 'character, item', 'the copies it may use, claims kept (C50)', true, 'coordinator'),
   'items.claimPending': read(`${UNIT}#items.claimPending: a stored copy an all claim names is fetched`, 'character, claimer', "the stored copies 10 still fetches for the claimer's claims at the character (G01)", true, 'coordinator'),
-  'items.needs': read(`${SPEC}#items.needs: a job's needs name gold and withdrawals`, 'the job', '{gold, withdrawals, slots, postage, blockedBy?} (C59)', true, 'coordinator'),
-  'items.fate': read(`${SPEC}#items.fate: the fate read names its row and by`, 'character, slot or mark', "the copy's fate, its I1 row and by", true, 'coordinator'),
-  'items.freeSlots': read(`${SPEC}#items.freeSlots: the lucky slot's hold is counted`, 'character', "free bag cells past the lucky slot's hold and the protected free slots", true, 'coordinator'),
+  'items.needs': read(`${SPEC}#'items.needs'`, 'the job', '{gold, withdrawals, slots, postage, blockedBy?} (C59)', true, 'coordinator'),
+  'items.fate': read(`${SPEC}#'items.fate'`, 'character, slot or mark', "the copy's fate, its I1 row and by", true, 'coordinator'),
+  'items.freeSlots': read(`${SPEC}#'items.freeSlots'`, 'character', "free bag cells past the lucky slot's hold and the protected free slots", true, 'coordinator'),
   'items.luckySlot': read(`${UNIT}#items.luckySlot: lock, resume, verified, tracker`, 'character', 'the lucky slot (P8), or null', true, 'coordinator'),
   'items.fetch': read(`${UNIT}#items.fetch: a missing item withdrawn or not found`, 'character, item', 'withdrawn or not found (C83)', false, 'character'),
-  'items.bank': read(`${SPEC}#items.bank: the snapshot read`, 'nothing', 'the bank snapshot', true, 'coordinator'),
+  'items.bank': read(`${SPEC}#'items.bank'`, 'nothing', 'the bank snapshot', true, 'coordinator'),
   'items.storagePending': read(`${UNIT}#items.storagePending: a pending BankBoi transfer is named`, 'character', 'whether storage work waits for it', true, 'coordinator'),
   'items.productionPending': read(`${UNIT}#items.productionPending: a pending intent is named`, 'character', 'whether production work waits for it', true, 'coordinator'),
   'items.bag': read('scripts/tests/items-bag.test.cjs#each fact follows the holder', 'character', "the bag holder's facts (3.4)", true, 'character'),

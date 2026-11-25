@@ -296,7 +296,7 @@ export function installEventExit(ports: EventExitPorts) {
   // Whether a Town command's exit runs, and the return cycle the last reply named.
   const exiting = () => pending && !!running;
   const returning = () => typeof cycle === 'string' && !!cycle;
-  // What the live E2E rows read of the exit (e2e/live-event-runtime-recovery.spec.ts): whether a
+  // What the live E2E rows read of the exit (e2e/event-recovery-rows.ts): whether a
   // reply named a cycle, that cycle, and the running exit.
   const report = () => ({ selected: cycle !== undefined, cycleId: cycle ?? null, exit: running && { ...running } });
   return { observe, accepts, supersede, convoyReturn, saveReturnPhase, run, leaveEventMap, pending: () => pending, exiting, returning, report,

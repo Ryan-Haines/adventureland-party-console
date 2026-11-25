@@ -69,9 +69,9 @@ test('legacy missing-items1 hydration errors are retryable',()=>{
  assert.deepEqual([party.bankbois.B.code,party.bankbois.C.code],['interrupted',undefined]);
  assert.equal(routing.servicePlan(party).candidate.name,'B');
 });
-// The live reserve drain row (e2e/live-bankboi-offerings.spec.ts 'BankBoi drains all seven reserve
-// cells after a persisted movement timeout') saves a worker whose movement plan request timed out.
-// It saves the worker with no bag report (items []), which has room for the staged stacks.
+// The live reserve drain row (e2e/live-bankboi-offerings.spec.ts at 21fe30a2b 'BankBoi drains all seven
+// reserve cells after a persisted movement timeout') saves a worker whose movement plan request timed
+// out. It saves the worker with no bag report (items []), which has room for the staged stacks.
 test('a saved movement plan timeout is a retryable worker error',()=>{
  const {party}=fixture();const {initialBankState}=require('../../runtime/items/saved-fields.ts');
  for(const items of [bag(),[]]){

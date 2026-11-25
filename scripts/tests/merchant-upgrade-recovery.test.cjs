@@ -29,10 +29,10 @@ test('displaced manual upgrade selects unfinished stock without treating finishe
  run=improveRun(bag());await run.improve({...gone,passId:undefined});assert.deepEqual(run.calls,[]);
  run=improveRun(bag());await run.improve({...gone,auto:false,requestId:undefined});assert.deepEqual(run.calls,[]);
 });
-// The live automatic offering row (e2e/live-bankboi-offerings.spec.ts 'BankBoi-only offering supplies
-// required automatic native upgrade'): the pass's first copy went poof, and the next mark's offering
-// demand read every mark of the job, the destroyed one too. v1.5 blocks a gone copy only at its own
-// turn (aac30d45 shared.js:6286), so the run goes on to the next copy.
+// The live automatic offering row (e2e/live-bankboi-offerings.spec.ts at 21fe30a2b 'BankBoi-only offering
+// supplies required automatic native upgrade'): the pass's first copy went poof, and the next mark's
+// offering demand read every mark of the job, the destroyed one too. v1.5 blocks a gone copy only at its
+// own turn (aac30d45 shared.js:6286), so the run goes on to the next copy.
 test('an automatic pass whose copy went poof this run goes on to the next mark under an offering rule',async()=>{
  const items=Array(12).fill(null),calls=[];
  items[0]={name:'scroll0',q:50};items[1]={name:'offeringp',q:2};items[3]={name:'ololipop',level:8};items[5]={name:'ololipop',level:8};

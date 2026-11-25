@@ -9,8 +9,8 @@ const text=n=>typeof n==='string'?n:(n.children||[]).map(text).join('');
 
 // The Interface settings "Apps" screen (the status owner's table K) over a planted console: the
 // screen issues a key and shows it once, saves a setting lock through the settings owner's
-// settings route and revokes the key. e2e/live-status-hooks.spec.ts drives the same screen against
-// the coordinator.
+// settings route and revokes the key. W09 (e2e/windows/W09-party-walk.spec.ts) drives the same
+// screen against the coordinator.
 test('the Apps screen shows a key once, locks a setting through the settings route and revokes', async () => {
   // The config read runs only on a shown page (query-cache.tsx useVisible).
   const old=global.fetch,oldDocument=global.document,posts=[],key='ab'.repeat(32);

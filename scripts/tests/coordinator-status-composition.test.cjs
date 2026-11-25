@@ -55,9 +55,8 @@ test('status ownership accepts newly managed workers and owned characters but re
 });
 
 // Issuing a key under a revoked name drops that name's revoked records, so the key screen lists
-// one record per name. A separate test: the E2E step "L: a key is issued, used once and revoked"
-// (e2e/live-status-hooks.spec.ts) needs the live stack, and no other unit setup builds the app
-// key routes.
+// one record per name. A separate test: W09's app key steps (e2e/windows/W09-party-walk.spec.ts)
+// need the live stack, and no other unit setup builds the app key routes.
 test('issuing a key under a revoked name drops the name\'s revoked records',()=>{
  const {createApps}=require('../../runtime/status/coordinator/apps.ts');
  const state={appKeys:[]},routes={};let now=10;

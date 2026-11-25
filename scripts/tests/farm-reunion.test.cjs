@@ -159,7 +159,7 @@ scenarioTable('the reunion tick reaches the nearest survivor by Blink, a shared 
 
 // returns.ts `dispatch` sends `event-resume-travel` to a returning member whose saved spot is not
 // the leader's, and the return ends (`event.returned`) once that member stands there. Observed live
-// on the fixture add-on's Dreams return (live-events-hooks.spec.ts): the leader's manual move had
+// on the fixture add-on's Dreams return (live-events-hooks.spec.ts at 21fe30a2b): the leader's manual move had
 // saved its spot where Dreams stood, the priest's command threw "Waiting for event exit to release
 // movement" on every delivery, and the return never ended.
 test("the event return's own resume command walks its member to the saved spot", async () => {

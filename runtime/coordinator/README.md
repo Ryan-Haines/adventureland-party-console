@@ -1,6 +1,10 @@
 Some tests that the Validate lines below name are gone. For a movement change,
 e2e/movement-owner-failures.md "Step 11 test cut" names the check of each failure mode.
 
+The `live-*.spec.ts` files the Validate lines name are replaced by the windows in e2e/windows/, and
+commit 21fe30a2b holds the old files. A file whose tests one window now plays names that window
+beside it; e2e/coverage/catalog.tsv and ledger.tsv map every other old test to its window or unit row.
+
 The v1.5.0 notes below keep their original wording and module names. The owner modules now
 hold their behaviour: event convoy and catch-up in runtime/movement/ and
 runtime/events/, cleanouts and gathering in runtime/merchant-jobs/, bank sort and stack
@@ -98,7 +102,7 @@ same-map edges rejected by can_move, preserving the request's movement footprint
 and instance. Valid edges and map transitions remain intact. Retain collision
 sources across automatic worker recreation. Unresolved edges and unavailable
 native validation retain the existing bounded client repair as a backstop.
-Validate live-planner-corner.spec.ts plus transporter, Phoenix and supersession
+Validate live-planner-corner.spec.ts (W10f) plus transporter, Phoenix and supersession
 journeys; the corner E2E checks planned edges against native server collision and
 requires actual shared party arrival without repair. See e2e/planner-corner-failures.md.
 
@@ -278,7 +282,7 @@ Farming handoff requires actual native leader attack range in both walking
 implementations. Admission and fresh encounter retention obey the selected farm
 boundary; genuine party attackers still use travel defense. Validate native
 UHills relocation and both fighters' attack receipts in
-`live-farming-handoff.spec.ts`. Publish character assets and restart together.
+`live-farming-handoff.spec.ts` (W21). Publish character assets and restart together.
 
 Event recovery completion retires only matching-cycle return commands. Each
 profile also retires historical orphan exit/continuation commands for its active
@@ -402,7 +406,7 @@ BankBoi exists, including an offline worker. Without BankBois, native sorting,
 deposits, stack homes and the dashboard use the full pane. Adding the first
 worker adopts existing transfer-row contents; removing the last worker clears
 only transfer-row cargo intent. Older heartbeat/protection payloads retain the
-conservative reservation. Validate `live-bank-staging.spec.ts` and retained
+conservative reservation. Validate `live-bank-staging.spec.ts` (W54) and retained
 bank/storage regressions; see `docs/testing-bank-staging.md`. Activation needs
 the supported full restart for character, coordinator and dashboard changes.
 
@@ -424,7 +428,7 @@ coordinator assets together through the supported full restart.
 The game starts the fishing/mining reuse cooldown only on a successful channel
 (10% fishing, 20% mining); a miss costs MP only. The merchant recasts after a
 miss and records the game's own cooldown (`next_skill`) after a success (#105).
-Validate `live-gathering-cooldown.spec.ts` (failure inventory
+Validate `live-gathering-cooldown.spec.ts` (W58) (failure inventory
 `e2e/gathering-cooldown-failures.md`); activate through the full restart.
 
 Native splash packets from a visible monster fighting an identified outsider
@@ -636,7 +640,7 @@ BankBoi storage commands bypass the designated merchant's production receipt
 gate. BankBois cannot use the production endpoint; applying that gate to their
 merchant class leaves storage marked processing without starting native banking.
 Native stack filling still runs during unload, preserving stack caps and reserved
-stock. Validate `live-bankboi.spec.ts` and activate through the full restart.
+stock. Validate `live-bankboi.spec.ts` (W54) and activate through the full restart.
 
 BankBoi movement-plan network failures and timeouts retain automatic retry
 eligibility after the persisted cooldown, including workers already saved in
@@ -665,7 +669,7 @@ Combat event ownership is checked before Hunt quest preparation and automatic
 Daisy returns, including initial Hunt activation and resume. Existing protected
 turn-ins retain priority. Respawn reentry retries temporary travel permission
 holds and unavailable permission replies until admission or actual cancellation.
-Validate `live-franky-party.spec.ts`: native boss combat, completed initial quests,
+Validate `live-franky-party.spec.ts` (W24): native boss combat, completed initial quests,
 Hunt activation, native lethal damage, lost admission responses, respawn reentry,
 and voluntary event evacuation. These coordinator and character changes require
 the supported ordinary full restart; building alone does not activate both.
@@ -747,7 +751,7 @@ A fresh installation designates its first owned, connected merchant when that
 character belongs to a headless slot or the native group. Identification precedes
 catalog/market/job ingestion, persists once, excludes bankboi workers, and never
 replaces an existing assignment. `merchant/config` remains the explicit override.
-Validate `live-merchant-config.spec.ts` plus merchant dialog console journeys.
+Validate `live-merchant-config.spec.ts` (W09) plus merchant dialog console journeys.
 Coordinator/dashboard changes can use the supported coordinator-only restart;
 a full restart also publishes the current character assets.
 
@@ -2267,7 +2271,7 @@ stay intact. When account connection capacity is full, one managed headless
 participant disconnects and is verified reconnected afterward; full Steam-only
 capacity fails explicitly. Partial success and mixed homes remain visible.
 
-Validate `live-home-realm.spec.ts`: native homes for all active classes, the
+Validate `live-home-realm.spec.ts` (W49): native homes for all active classes, the
 account-wide confirmation, and an offline merchant's actual headless login,
 home persistence, logout, and unchanged original slots. The opt-in liveHeadless
 fixture downloads native assets only from the disposable upstream web server.
@@ -2279,7 +2283,7 @@ to the character home when account homes differ, then the configured setup realm
 if home data is absent. A stale worker.realm or transient merchant event realm
 cannot override this login policy. Running workers and explicit realm-switch or
 home-change visitors retain their owned destination. Validate the native stale
-configuration login/restart journey in `live-home-connect.spec.ts`; activate using
+configuration login/restart journey in `live-home-connect.spec.ts` (W49); activate using
 the supported coordinator-only restart.
 
 
@@ -2331,7 +2335,7 @@ routine is enabled, independently of automatic compound. Auto merchant remains
 exclusive: it only hands stock to the merchant. One-time Exchange persists a
 separate manual exchange pickup and a blocked exchange job; only its matching
 full kept-item handoff receipt releases the merchant exchange, including after
-restart. Validate `live-exchange-collection.spec.ts`; see
+restart. Validate `live-exchange-collection.spec.ts` (W57); see
 `docs/testing-party-exchange.md`. Coordinator/dashboard-only activation requires
 the explicitly requested supported CoordinatorOnly restart.
 
@@ -2352,7 +2356,7 @@ physical arrival and reward checks. Build and stage; activate only by explicit l
 
 Merchant bank manual compound marks bind three unlocked native bank sources, including different packs, before admission. The ordinary improvement command withdraws those sources and reports separate native withdrawal receipts; a failed later stage retains confirmed withdrawals for retry. Auto-compound uses the shared bank rules. Stat-scroll marks fence delivery payloads for the exact item regardless of priorities; native completion advances its retained delivery fingerprint. Replacement fishing and mining tools have separate default-off merchant settings; opted-in missing tools use the ordinary durable crafting order and material reservations. Validate the bank triplet, stat-bank/delivery, native gathering miss/hit and tool-setting journeys before staging a complete console artifact.
 
-Mailbox automation settings persist independently. Native attachment collection remains merchant-owned; auto-delete waits for account mail taken=true and no matching active collection job. Confirmed send completions produce local, durable outbox records; deleting a record cannot recall native mail. Opening the mailbox acknowledges incoming message IDs for its new-mail indicator. Validate mailbox-enhancements.case.ts and live-mailbox.spec.ts, retaining native inventory and mailbox receipts. Coordinator/dashboard changes require an explicitly requested supported coordinator-only activation; building alone does not activate them.
+Mailbox automation settings persist independently. Native attachment collection remains merchant-owned; auto-delete waits for account mail taken=true and no matching active collection job. Confirmed send completions produce local, durable outbox records; deleting a record cannot recall native mail. Opening the mailbox acknowledges incoming message IDs for its new-mail indicator. Validate mailbox-enhancements.case.ts and live-mailbox.spec.ts (W51), retaining native inventory and mailbox receipts. Coordinator/dashboard changes require an explicitly requested supported coordinator-only activation; building alone does not activate them.
 
 Mailbox automation failures are isolated by message and action, with a thirty-second
 retry delay. One game API rejection cannot starve later eligible messages or turn

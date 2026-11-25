@@ -74,8 +74,8 @@ export function createRetire(ports: RetirePorts) {
   let fought: boolean | null = false;
   // One read of the fight fact: a fight that started since the last read clears every mark. The
   // notice reads it too, so a fight that ends and starts again between two passes still counts as a
-  // start when a notice came in the gap (e2e/live-targeting-hooks.spec.ts "targeting.cleared": the
-  // notice went off the farm, and the party stood at the farm again before the next pass).
+  // start when a notice came in the gap (e2e/live-targeting-hooks.spec.ts "targeting.cleared" at
+  // 21fe30a2b: the notice went off the farm, and the party stood at the farm again before the next pass).
   function read(): void {
     const now = ports.fighting();
     if (now && fought === false) { ports.marks.clear(); ports.record({ kind: 'marks-cleared', why: 'a fight started' }); }

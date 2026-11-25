@@ -34,7 +34,7 @@ test('dungeon panel exposes actual objectives and explicit priest recovery contr
   try {
     const html = renderToStaticMarkup(React.createElement(QueryClientProvider, { client }, React.createElement(DungeonPanel,{model:{state:{merchantCatalog:null}}})));
     assert.match(html, /Stairs down.*locked/);
-    // Encounter choices now open in a client portal, exercised by live-cave.spec.ts.
+    // Encounter choices now open in a client portal, which the Cave windows exercise (e2e/cave-rows.ts).
     assert.match(html, /paused for Nera/);
     assert.match(html, /Call Nera/);
     const view = client.getQueryData(['party', 'daily-dungeons']);

@@ -164,10 +164,10 @@ scenarioTable("sight recovery retraces breadcrumbs and explores checked detours 
  for(let i=0;i<50;i++){now+=200;r.tick('A',{x:100,y:0},null,[]);}
  assert.ok(reasons.some(s=>s.includes('detour')));assert.ok(moves.every(p=>p.y>=0));}],
  // The bounded search's end sends one targeting.unreachable for its target, and a search for
- // another target sends its own. Isolated: in a live run neither fighter of the default table
- // ran the search when the grouped lock left both clients' view (the warrior kept its independent
- // approach, the priest waited for the party's observation), so no live row reaches the search's
- // end.
+ // another target sends its own. Isolated: in a live run neither fighter of the old default table (at
+ // 21fe30a2b) ran the search when the grouped lock left both clients' view (the warrior kept its
+ // independent approach, the priest waited for the party's observation), so no live row reaches the
+ // search's end.
  ['the bounded search ends with one targeting.unreachable per search', createSightRecovery=>{
  let now=0;const self={x:0,y:0,speed:50},told=[];
  const r=createSightRecovery({now:()=>now,self:()=>self,clear:()=>false,move:()=>{},report:()=>{},unreachable:id=>told.push(id),budget:()=>({ms:8000,steps:6}),clock:{roundTrip:()=>250,reportInterval:()=>1000}});

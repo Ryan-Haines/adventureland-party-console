@@ -35,7 +35,7 @@ test('rejected CODE restarts only when the runner explicitly requires recovery',
  f.answer({status:'failed',error:'lost runner',restartRequired:true});await f.code.reload('W',f.block);assert.deepEqual(f.stopped,['CODE reload recovery: lost runner']);
 });
 // A native member reloads its CODE in its own frame, with no worker reply (code.ts `nativeReloaded`).
-// The live hooks table's CODE reload (e2e/live-lifecycle-hooks.spec.ts "lifecycle.reloaded") runs on
+// W48's hooks table's CODE reload (e2e/lifecycle-hooks-rows.ts "lifecycle.reloaded") runs on
 // native members right after a coordinator restart.
 function nativeFixture(now){
  const notices=[],f=fixture(),clock={now};

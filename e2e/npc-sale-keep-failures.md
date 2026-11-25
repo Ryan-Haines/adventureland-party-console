@@ -13,7 +13,8 @@
 Written before the change (#116, filed from the user's account: "Keep X amount of items in
 bank, auto-sell rest", e.g. Pouch of Poof). An automatic NPC-sale rule sells every
 matching copy; the user holds 56 stacks of 100 Pouches of Poof and wants to keep a
-configurable amount for crafting Pouchers. Live journey: `e2e/live-npc-sale-keep.spec.ts`.
+configurable amount for crafting Pouchers. Live journey: W51's M50 and M51 round
+(`e2e/bank-day-session-rows.ts`).
 
 1. **Not configurable.** The dashboard rule dialog has no keep amount, so the rule sells
    everything.

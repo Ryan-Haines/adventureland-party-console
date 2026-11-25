@@ -202,7 +202,7 @@ test('bank NPC sale stock counts BankBoi bags and is marked during a job; stands
 });
 
 // The bank NPC marking stops when each marked stack has a free bag cell past the lucky hold and the
-// protected free slots; the live row e2e/live-bank-npc-sales.spec.ts "caps ten stacks" plants this bag.
+// protected free slots; W51's A11 round (e2e/bank-day-session-rows.ts) plants this bag.
 test('bank NPC sale marking stops at the bag cells past the protected free slots',()=>{
  const helmet={name:'helmet',level:0},helmetKey=commerceRuleKey(helmet);
  const marked=empty=>{

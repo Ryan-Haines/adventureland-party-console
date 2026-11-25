@@ -1,4 +1,4 @@
-// The hunts and farming hooks' unit rows: the rows the live table (e2e/live-hunting-hooks.spec.ts)
+// The hunts and farming hooks' unit rows: the rows W60 (e2e/windows/W60-addon-hunt.spec.ts)
 // cannot reach, each with its reason, plus. A live rare and the Phoenix patrol cannot be summoned on
 // demand, and the counts need a planted death or escape notice. Written for the end run, not run at
 // the build.
@@ -36,6 +36,30 @@ test('U: a planted too-hard escape counts on the target; the planted second coun
   // A blacklist edit names the group that made it.
   require('../../runtime/hunting/coordinator/hunt.ts').editHuntBlacklist(state, 'add', 'goo', 400, 'solo:R');
   assert.deepEqual(heard.filter(h => h.hook === 'hunt.blacklisted').map(h => [h.payload.group, h.payload.target]), [['party:L', 'bee'], ['solo:R', 'goo']]);
+});
+
+// farm.spot and farm.relocated: the live hooks table's relocation step heard no relocation and
+// passed on a count of at least 0 (test-windows DESIGN.md 4.3 H54), so the rows plant the answer
+// and the pending move.
+test("U: the add-on's farm spot answer refuses and prefers among the alternatives, and the move tells farm.relocated", () => {
+  const { dispatch } = require('../../runtime/hooks/rows/07-hunting.ts');
+  // The registry's `answers` drops an add-on that answers nothing (runtime/hooks/registry.ts).
+  const spot = (...said) => dispatch({ answers: (hook, f) => said.map((a, i) => ({ addon: 'fixture' + i, answer: f({ name: 'fixture' + i, hooks: { [hook]: () => a } }) }))
+    .filter(a => a.answer !== undefined), settings: () => ({}) }).spot({ group: 'party', focus: ['goo'], active: { id: 'a' }, alternatives: [{ id: 'b' }, { id: 'c' }] });
+  assert.deepEqual(spot({ refuse: ['b'] }, { prefer: 'c' }), { refuse: ['b'], prefer: 'c' });
+  assert.deepEqual(spot({ refuse: ['c'] }, { prefer: 'c' }), { refuse: ['c'], prefer: undefined }, 'a refused area is never preferred');
+  assert.equal(spot(undefined), undefined);
+  const heard = listen('hunting-relocation-fixture');
+  const { createFarm } = require('../../runtime/hunting/coordinator/farm.ts');
+  const area = { id: 'a', map: 'main', x: 0, y: 0 }, next = { id: 'b', map: 'main', x: 20, y: 30 };
+  const state = { leader: 'P', targetMode: 'farming', monsterHunt: null, monsterFocus: ['goo'], monsterChoices: [{ id: 'goo', locations: [area, next] }],
+    location: area, statuses: { P: { map: 'main', x: 0, y: 0, seenAt: 100000 } }, farmAreaState: { recoveryVersion: 2, active: area,
+      pending: { destination: next, revisions: { P: 7 }, at: 0, reason: 'Relocating after Other fought monsters in this zone', cause: 'farming-conflict' } } };
+  require('./helpers/travel-observations.cjs').observeTravel(state.statuses);
+  createFarm(state, { P: {} }, { now: () => 101000, rareOwns: () => false, members: () => ['P'], intent: () => ({ revision: 7 }), huntOwns: () => false,
+    farmingLive: () => false, group: () => 'party:P', cancelConvoy() {}, authorize() {}, startConvoy() {}, persist() {},
+    hunt: { relocate() {}, promote() {}, skipMission() {} } }).tick('P');
+  assert.deepEqual(heard.filter(h => h.hook === 'farm.relocated').map(h => [h.payload.group, h.payload.to.id, h.payload.cause]), [['party:P', 'b', 'contested']]);
 });
 
 test("U: the add-on's order is the patrol's next region", () => {

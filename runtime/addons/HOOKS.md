@@ -9,42 +9,42 @@ fails while this file differs from the code. The add-on guide is [README.md](REA
 
 | Hook | Who answers | Add-on may ask | Bound | Receives | Returns | Fixture |
 |---|---|---|---|---|---|
-| `target.mode` | slot | no |  | the scope's farming view and its ports | the state each character of the scope reads, or nothing | e2e/live-tasks-hooks.spec.ts#L: the Achievements-like entry farms its target, and lets go once on a Hunt switch |
-| `combat.mode` | slot | no |  | the group's members and their reports | grouped (one nominated target) or scatter (each fighter its own) | e2e/live-tasks-hooks.spec.ts#L: an add-on combat mode reaches the members on the next reply |
-| `task.request` | many | no | P7: the group kinds name only kinds the composition builds (party, solo, merchant), or the answer is dropped and recorded; the core rows keep their own kinds | the group, its kind, its members, its live task and the tick | one request of kind addon:<name> at tier addon-task (with its interrupted, windDown, visit and reunion, and the group kinds it runs in), or nothing | e2e/live-tasks-hooks.spec.ts#L: the add-on's task takes the farming group, and ranks below the event |
-| `task.alternative` | many | no |  | group, taskId, code | its task's next goal, or nothing for the ladder's regroup | e2e/live-tasks-hooks.spec.ts#L: the add-on's task fails once and walks to its named alternative |
-| `task.safePoint` | many | no |  | group, taskId | the point {map, x, y} its task restarts from, or nothing | e2e/live-tasks-hooks.spec.ts#L: the add-on's task reaches the safe-point rung at its own point |
-| `group.questions` | many | no | P6: preempt is asked only for a core task ranked from hunt-mission (62) to event-attendance (72), never for the player's commands or a task at town (85) or above; a refused core task waits | question (merchant-visit, event-attendance, rare, preempt), group, kind, on rare the monster type as rare, on preempt the incoming core kind and its tier | false to refuse, or nothing; it never allows what the table refuses | e2e/live-tasks-hooks.spec.ts#L: a merchant visit to a member under the add-on's task is refused by its answer |
-| `group.hold` | many | no |  | group, members, live | {target, reason} for its group or one of its members, or nothing to end its hold | e2e/live-tasks-hooks.spec.ts#L: the add-on holds its group, and the hold ends with its task |
-| `member.apart` | many | no |  | group, member, taskId | {wait: {map, x, y}} or {farm: true}, or nothing for the member's own setting | e2e/live-tasks-hooks.spec.ts#L: a member left out of the add-on's walk waits at the point it names |
+| `target.mode` | slot | no |  | the scope's farming view and its ports | the state each character of the scope reads, or nothing | e2e/tasks-hooks-rows.ts#L: the Achievements-like entry farms its target, and lets go once on a Hunt switch |
+| `combat.mode` | slot | no |  | the group's members and their reports | grouped (one nominated target) or scatter (each fighter its own) | e2e/tasks-hooks-rows.ts#L: an add-on combat mode reaches the members on the next reply |
+| `task.request` | many | no | P7: the group kinds name only kinds the composition builds (party, solo, merchant), or the answer is dropped and recorded; the core rows keep their own kinds | the group, its kind, its members, its live task and the tick | one request of kind addon:<name> at tier addon-task (with its interrupted, windDown, visit and reunion, and the group kinds it runs in), or nothing | e2e/tasks-hooks-rows.ts#L: the add-on's task takes the farming group, and ranks below the event |
+| `task.alternative` | many | no |  | group, taskId, code | its task's next goal, or nothing for the ladder's regroup | e2e/tasks-hooks-rows.ts#L: the add-on's task fails once and walks to its named alternative |
+| `task.safePoint` | many | no |  | group, taskId | the point {map, x, y} its task restarts from, or nothing | e2e/tasks-hooks-rows.ts#L: the add-on's task reaches the safe-point rung at its own point |
+| `group.questions` | many | no | P6: preempt is asked only for a core task ranked from hunt-mission (62) to event-attendance (72), never for the player's commands or a task at town (85) or above; a refused core task waits | question (merchant-visit, event-attendance, rare, preempt), group, kind, on rare the monster type as rare, on preempt the incoming core kind and its tier | false to refuse, or nothing; it never allows what the table refuses | e2e/tasks-hooks-rows.ts#L: a merchant visit to a member under the add-on's task is refused by its answer |
+| `group.hold` | many | no |  | group, members, live | {target, reason} for its group or one of its members, or nothing to end its hold | e2e/tasks-hooks-rows.ts#L: the add-on holds its group, and the hold ends with its task |
+| `member.apart` | many | no |  | group, member, taskId | {wait: {map, x, y}} or {farm: true}, or nothing for the member's own setting | e2e/tasks-hooks-rows.ts#L: a member left out of the add-on's walk waits at the point it names |
 
 ### Events (read-only)
 
 | Event | Payload | Fixture |
 |---|---|---|
-| `task.started` | group, taskId, kind, owner, rank, members, resumed, by | e2e/live-tasks-hooks.spec.ts#L: the event takes the group: one started, one suspended |
-| `task.suspended` | group, taskId, kind, owner, by | e2e/live-tasks-hooks.spec.ts#L: the event takes the group: one started, one suspended |
-| `task.resumed` | group, taskId, kind, owner, by | e2e/live-tasks-hooks.spec.ts#L: the event ends and farming resumes |
-| `task.ended` | group, taskId, kind, owner, code, next, by | e2e/live-tasks-hooks.spec.ts#L: the event ends and farming resumes |
-| `task.waiting` | group, taskId, by | e2e/live-tasks-hooks.spec.ts#L: the add-on's task waits behind the event |
+| `task.started` | group, taskId, kind, owner, rank, members, resumed, by | e2e/tasks-hooks-rows.ts#L: the event takes the group: one started, one suspended |
+| `task.suspended` | group, taskId, kind, owner, by | e2e/tasks-hooks-rows.ts#L: the event takes the group: one started, one suspended |
+| `task.resumed` | group, taskId, kind, owner, by | e2e/tasks-hooks-rows.ts#L: the event ends and farming resumes |
+| `task.ended` | group, taskId, kind, owner, code, next, by | e2e/tasks-hooks-rows.ts#L: the event ends and farming resumes |
+| `task.waiting` | group, taskId, by | e2e/tasks-hooks-rows.ts#L: the add-on's task waits behind the event |
 | `task.refused` | group, kind, row, by | scripts/tests/hook-registry.test.cjs#U: a rare against a live Hunt is refused |
-| `task.phase` | group, taskId, phase, label, by | e2e/live-tasks-hooks.spec.ts#L: the event task's walk phase changes |
-| `task.ladder` | group, taskId, rung, by | e2e/live-tasks-hooks.spec.ts#L: the add-on's task fails once and walks to its named alternative |
+| `task.phase` | group, taskId, phase, label, by | e2e/tasks-hooks-rows.ts#L: the event task's walk phase changes |
+| `task.ladder` | group, taskId, rung, by | e2e/tasks-hooks-rows.ts#L: the add-on's task fails once and walks to its named alternative |
 | `task.invariant` | group, invariant, detail, by | scripts/tests/hook-registry.test.cjs#U: a planted live task with no deadline, walk or step |
-| `task.due` | group, due, by | e2e/live-tasks-hooks.spec.ts#L: the event becomes due during a Hunt hand-in |
-| `group.changed` | group, members, leader, by | e2e/live-tasks-hooks.spec.ts#L: a Follow change moves the priest |
-| `group.held` | group, member, hold, by | e2e/live-tasks-hooks.spec.ts#L: Manual on the priest, then off |
-| `group.released` | group, member, hold, by | e2e/live-tasks-hooks.spec.ts#L: Manual on the priest, then off |
-| `member.assigned` | group, member, assignment, by | e2e/live-tasks-hooks.spec.ts#L: a Follow change moves the priest |
-| `status.changed` | group, status, by | e2e/live-tasks-hooks.spec.ts#L: Manual on the priest, then off |
-| `slot.changed` | group, slot, entry, by | e2e/live-tasks-hooks.spec.ts#L: the Achievements-like entry farms its target, and lets go once on a Hunt switch |
+| `task.due` | group, due, by | e2e/tasks-hooks-rows.ts#L: the event becomes due during a Hunt hand-in |
+| `group.changed` | group, members, leader, by | e2e/tasks-hooks-rows.ts#L: a Follow change moves the priest |
+| `group.held` | group, member, hold, by | e2e/tasks-hooks-rows.ts#L: Manual on the priest, then off |
+| `group.released` | group, member, hold, by | e2e/tasks-hooks-rows.ts#L: Manual on the priest, then off |
+| `member.assigned` | group, member, assignment, by | e2e/tasks-hooks-rows.ts#L: a Follow change moves the priest |
+| `status.changed` | group, status, by | e2e/tasks-hooks-rows.ts#L: Manual on the priest, then off |
+| `slot.changed` | group, slot, entry, by | e2e/tasks-hooks-rows.ts#L: the Achievements-like entry farms its target, and lets go once on a Hunt switch |
 
 ### Dashboard slots
 
 | Slot | Data | Takes a section | Bound | Fixture |
 |---|---|---|---|---|
-| `target-mode` | {entry, label, reads: settings names, returnsTo, scoped: hook names}, riding on the target.mode registration's slot entry | yes | an entry's ports write only the settings it reads, when it lists them; leave writes its returnsTo (Farming when unset); its scoped hooks are asked only for a character whose scope selected it; the target inside the entry's focus is still core's pick, the class role (S9, characters/targeting/rules.ts), since the entry names what to fight and core picks which one | e2e/live-tasks-hooks.spec.ts#L: the Achievements-like entry farms its target, and lets go once on a Hunt switch |
-| `combat-mode` | {entry, label} on the combat.mode registration | no |  | e2e/live-tasks-hooks.spec.ts#L: an add-on combat mode reaches the members on the next reply |
+| `target-mode` | {entry, label, reads: settings names, returnsTo, scoped: hook names}, riding on the target.mode registration's slot entry | yes | an entry's ports write only the settings it reads, when it lists them; leave writes its returnsTo (Farming when unset); its scoped hooks are asked only for a character whose scope selected it; the target inside the entry's focus is still core's pick, the class role (S9, characters/targeting/rules.ts), since the entry names what to fight and core picks which one | e2e/tasks-hooks-rows.ts#L: the Achievements-like entry farms its target, and lets go once on a Hunt switch |
+| `combat-mode` | {entry, label} on the combat.mode registration | no |  | e2e/tasks-hooks-rows.ts#L: an add-on combat mode reaches the members on the next reply |
 
 ## Owner 02 (runtime/hooks/rows/02-movement.ts)
 
@@ -52,31 +52,31 @@ fails while this file differs from the code. The add-on guide is [README.md](REA
 
 | Hook | Who answers | Add-on may ask | Bound | Receives | Returns | Fixture |
 |---|---|---|---|---|---|
-| `movement.request` | many | no | tier: its registration's tier, at most manual | the character's view on each role runner movement tick | hold, a step to a point, a walk to a point on any map, or nothing | e2e/live-movement-hooks.spec.ts#movement.request: holds, steps or walks the character at its add-on tier |
-| `group.anchor` | one | no | a member of the group only | the group's members and their reports | the member the formation centres on, or nothing | e2e/live-movement-hooks.spec.ts#group.anchor: the group record asks it with its members in a fight |
-| `step.safety` | many | no | refusal only | the character's view and the step's end point | a refusal in plain words, or nothing | e2e/live-movement-hooks.spec.ts#step.safety: refuses a step that ends inside its zone |
-| `movement.followIfFar` | core only | no |  | character | a promise of whether the follow took the tick | e2e/live-movement-hooks.spec.ts#movement.followIfFar: a member inside the distance does not walk |
-| `walks.end` | core only | no |  | a group, an end code and optionally the one member that leaves | whether a walk ended | e2e/live-movement-hooks.spec.ts#walks.end: ends the group's walk with the asker's code |
-| `walks.estimate` | core only | yes |  | a group, a destination and the reporting member | the planned time of the group's walk there, else of the member's own walk, or nothing with no route | e2e/live-events-hooks.spec.ts#L: Mr. Green becomes due at the walk estimate |
+| `movement.request` | many | no | tier: its registration's tier, at most manual | the character's view on each role runner movement tick | hold, a step to a point, a walk to a point on any map, or nothing | e2e/windows/W09-party-walk.spec.ts#An add-on's hold is a combat hold: the movement tick stops the character's own step |
+| `group.anchor` | one | no | a member of the group only | the group's members and their reports | the member the formation centres on, or nothing | e2e/windows/W01-goo-field.spec.ts#'group.anchor' |
+| `step.safety` | many | no | refusal only | the character's view and the step's end point | a refusal in plain words, or nothing | e2e/windows/W09-party-walk.spec.ts#'step.safety' |
+| `movement.followIfFar` | core only | no |  | character | a promise of whether the follow took the tick | e2e/windows/W01-goo-field.spec.ts#'movement.followIfFar' |
+| `walks.end` | core only | no |  | a group, an end code and optionally the one member that leaves | whether a walk ended | e2e/windows/W09-party-walk.spec.ts#'walks.end' |
+| `walks.estimate` | core only | yes |  | a group, a destination and the reporting member | the planned time of the group's walk there, else of the member's own walk, or nothing with no route | e2e/events-hooks-rows.ts#L: Mr. Green becomes due at the walk estimate |
 | `member.holder` | core only | no |  | group, member | the holds the answerer has on the member: owner, reason, coming, endsOn | scripts/tests/convoy-coordinator.test.cjs#a dead member leaves the walk and the party goes on; its revival changes nothing in the walk |
-| `walks.request` | core only | no |  | a group and the walk it asks for: its purpose, destination, members, tier and label | whether the walk started, was kept or was retargeted; false when T1 refuses it | e2e/live-movement-hooks.spec.ts#walks.request: starts the group's walk at the asker's tier, and a lower ask is refused |
-| `movement.step` | core only | no |  | the step's point, the mover that asks and its options (target, closes) | sent, kept or refused with the reason, and the send | e2e/live-movement-hooks.spec.ts#movement.step: one step through step safety at the asker's turn |
+| `walks.request` | core only | no |  | a group and the walk it asks for: its purpose, destination, members, tier and label | whether the walk started, was kept or was retargeted; false when T1 refuses it | e2e/windows/W09-party-walk.spec.ts#'walks.request' |
+| `movement.step` | core only | no |  | the step's point, the mover that asks and its options (target, closes) | sent, kept or refused with the reason, and the send | e2e/windows/W09-party-walk.spec.ts#'movement.step' |
 | `movement.acceptMagiport` | core only | no |  | the request it ranks as and the mage that offers | the game's answer, or a refusal | scripts/tests/hook-registry.test.cjs#X3: the character's requests and reads are the movement owner's own functions |
-| `movement.live` | core only | yes |  | nothing | kind, owner, tier, whether a journey runs and whether it is paused, or null | e2e/live-movement-hooks.spec.ts#movement.live: names who holds movement |
-| `movement.park` | core only | no |  | the character | nothing: a journey pauses and a character moving with no journey stands still | e2e/live-lifecycle-hooks.spec.ts#movement.park: the drain parks the warrior where it stands |
-| `reports.fresh` | core only | yes |  | a stamp, the time and the reading | whether the stamp is fresh | e2e/live-movement-hooks.spec.ts#reports.fresh: answers the one freshness rule for a reading |
-| `movement.climbing` | core only | yes |  | nothing | the climber, its activity, rung and try, or null | e2e/live-movement-hooks.spec.ts#movement.climbing: names the live climb's rung and try |
+| `movement.live` | core only | yes |  | nothing | kind, owner, tier, whether a journey runs and whether it is paused, or null | scripts/tests/hook-registry.test.cjs#X3: the character's requests and reads are the movement owner's own functions |
+| `movement.park` | core only | no |  | the character | nothing: a journey pauses and a character moving with no journey stands still | e2e/lifecycle-hooks-rows.ts#movement.park: the drain parks the warrior where it stands |
+| `reports.fresh` | core only | yes |  | a stamp, the time and the reading | whether the stamp is fresh | scripts/tests/hook-registry.test.cjs#X3: the character's requests and reads are the movement owner's own functions |
+| `movement.climbing` | core only | yes |  | nothing | the climber, its activity, rung and try, or null | scripts/tests/hook-registry.test.cjs#X3: the character's requests and reads are the movement owner's own functions |
 | `movement.reply` | core only | no |  | the scope's state and the reply's ports | movement's fields of the status reply | scripts/tests/hook-registry.test.cjs#X3 and the R5 correction: core:movement answers the walk request, the reply and the game data on the coordinator |
-| `movement.records` | core only | no |  | nothing | the ring's records, oldest first | e2e/live-movement-hooks.spec.ts#movement.records: answers the character's ring |
-| `movement.incidents` | core only | no |  | nothing | the incidents, oldest first | e2e/live-movement-hooks.spec.ts#movement.incidents: answers the character's stuck and caught-error records |
+| `movement.records` | core only | no |  | nothing | the ring's records, oldest first | scripts/tests/hook-registry.test.cjs#X3: the character's requests and reads are the movement owner's own functions |
+| `movement.incidents` | core only | no |  | nothing | the incidents, oldest first | scripts/tests/hook-registry.test.cjs#X3: the character's requests and reads are the movement owner's own functions |
 | `movement.gameMonsters` | core only | no |  | nothing | the game's monster table, or null before it loads | scripts/tests/monster-attack-policy.test.cjs#movement.gameMonsters: the reflect choices read the coordinator's game data |
-| `movement.formationRecovery` | core only | no |  | the group's last record, its members, the target, the group key, the time, whether pulls pause, the healer's range and the target's identity | the recovery round, or nothing when none runs | e2e/live-movement-hooks.spec.ts#movement.formationRecovery: answers the group's terrain recovery round |
-| `movement.independentApproach` | core only | no |  | the members and the time | whether every member is available, in one place and reports the capability | e2e/live-movement-hooks.spec.ts#movement.independentApproach: answers whether every member approaches on its own |
-| `movement.independentReadiness` | core only | no |  | the members | each member's last readiness report by name | e2e/live-movement-hooks.spec.ts#movement.independentReadiness: answers each member's readiness report |
-| `movement.confirmIndependentApproach` | core only | no |  | the group's last record, the members, the selection, the target id and the time | the confirmation revision, round and whether every member confirmed | e2e/live-movement-hooks.spec.ts#movement.confirmIndependentApproach: issues and settles the confirmation round |
-| `route.avoid` | many | no | refusal only: it takes maps out of a route | the route's start and end points | the maps the route must not cross, or nothing | e2e/live-movement-hooks.spec.ts#route.avoid: the planner asks it for every route it plans |
-| `crossing.allows` | many | no | refusal only | the character, the crossing and the request it ranks as | a refusal in plain words, or nothing; it cannot allow | e2e/live-movement-hooks.spec.ts#crossing.allows: refuses a crossing in plain words, and the crossing ends refused |
-| `step.point` | one | no | a point step safety still judges | the character, the mover, its point and target | a point for the step, or nothing | e2e/live-movement-hooks.spec.ts#step.point: offers this character's step point, which step safety judges |
+| `movement.formationRecovery` | core only | no |  | the group's last record, its members, the target, the group key, the time, whether pulls pause, the healer's range and the target's identity | the recovery round, or nothing when none runs | scripts/tests/hook-registry.test.cjs#CC: the group record's movement decisions are the module's own functions |
+| `movement.independentApproach` | core only | no |  | the members and the time | whether every member is available, in one place and reports the capability | scripts/tests/hook-registry.test.cjs#CC: the group record's movement decisions are the module's own functions |
+| `movement.independentReadiness` | core only | no |  | the members | each member's last readiness report by name | scripts/tests/hook-registry.test.cjs#CC: the group record's movement decisions are the module's own functions |
+| `movement.confirmIndependentApproach` | core only | no |  | the group's last record, the members, the selection, the target id and the time | the confirmation revision, round and whether every member confirmed | scripts/tests/hook-registry.test.cjs#CC: the group record's movement decisions are the module's own functions |
+| `route.avoid` | many | no | refusal only: it takes maps out of a route | the route's start and end points | the maps the route must not cross, or nothing | e2e/windows/W01-goo-field.spec.ts#'route.avoid' |
+| `crossing.allows` | many | no | refusal only | the character, the crossing and the request it ranks as | a refusal in plain words, or nothing; it cannot allow | e2e/windows/W09-party-walk.spec.ts#'crossing.allows' |
+| `step.point` | one | no | a point step safety still judges | the character, the mover, its point and target | a point for the step, or nothing | e2e/windows/W09-party-walk.spec.ts#'step.point' |
 | `formation.routine` | slot | no | only for a character whose formation pick is the add-on's entry and whose class the entry lists; a point the solver's collision check refuses runs the solver's best; a hold ends with the formation's own hold rules | the character and its class, the formation's target, healer and desired range, the members' positions, the solver's candidate points with their danger, coverage and range scores, and the combat mode | a point, a hold, or nothing for the solver's best | scripts/tests/hook-registry.test.cjs#R4: formation.routine answers only for the characters that picked its entry and whose class it lists |
 | `walk.request` | many | no | its own task's walk, at the task's tier; handsCombat lets that walk hand combat over to farming on the way, the defence pause stays core, and it sets no other walk flag | the group, its live add-on task and the task's walk | a destination (with a label, members and handsCombat), 'end', or nothing | scripts/tests/hook-registry.test.cjs#R5: an add-on names its own task's group walk, holds its departure and names its safe point |
 | `walk.departs` | many | no | its own task's walk; T4's progress tests end a hold | the group, its walk, phase and members | true to hold the departure, or nothing | scripts/tests/hook-registry.test.cjs#R5: an add-on names its own task's group walk, holds its departure and names its safe point |
@@ -88,14 +88,14 @@ fails while this file differs from the code. The add-on guide is [README.md](REA
 
 | Event | Payload | Fixture |
 |---|---|---|
-| `journey.started` | character, requestId, kind, owner, destination, status | e2e/live-movement-hooks.spec.ts#journey.started: fires when a request is granted, kept, retargeted or resumed |
-| `journey.paused` | character, requestId, by, reason, state | e2e/live-movement-hooks.spec.ts#journey.paused: fires when a pause source, a click or a combat step pauses the journey |
-| `journey.ended` | character, requestId, kind, owner, code, by | e2e/live-movement-hooks.spec.ts#journey.ended: fires once with its end code |
-| `walk.formed` | group, walk, members, tier, purpose, destination | e2e/live-movement-hooks.spec.ts#walk.formed: fires once when a group walk is created |
-| `walk.phase` | group, walk, phase, from | e2e/live-movement-hooks.spec.ts#walk.phase: fires on each phase change of the walk |
-| `walk.member` | group, walk, member, change ('completed', 'left' or 'rejoined'), code ('died' when the member died on the walk, 'silent' when the console knows it is gone) | e2e/live-movement-hooks.spec.ts#walk.member: fires when a member completes or leaves the walk |
-| `walk.ended` | group, walk, code (`arrived`, `released`, `replaced`, `cancelled`, a `walks.end` code or the T5 code of a failed walk), reason | e2e/live-movement-hooks.spec.ts#walk.ended: fires once with the end code |
-| `journey.resumed` | character, requestId, by, reason | e2e/live-movement-hooks.spec.ts#journey.resumed: fires when the pause ends |
+| `journey.started` | character, requestId, kind, owner, destination, status | e2e/windows/W01-goo-field.spec.ts#'journey.started' |
+| `journey.paused` | character, requestId, by, reason, state | e2e/windows/W06a-console-pause.spec.ts#'journey.paused' |
+| `journey.ended` | character, requestId, kind, owner, code, by | e2e/windows/W01-goo-field.spec.ts#'journey.ended' |
+| `walk.formed` | group, walk, members, tier, purpose, destination | e2e/windows/W01-goo-field.spec.ts#'walk.formed' |
+| `walk.phase` | group, walk, phase, from | e2e/windows/W01-goo-field.spec.ts#'walk.phase' |
+| `walk.member` | group, walk, member, change ('completed', 'left' or 'rejoined'), code ('died' when the member died on the walk, 'silent' when the console knows it is gone) | e2e/windows/W09-party-walk.spec.ts#'walk.member' |
+| `walk.ended` | group, walk, code (`arrived`, `released`, `replaced`, `cancelled`, a `walks.end` code or the T5 code of a failed walk), reason | e2e/windows/W01-goo-field.spec.ts#'walk.ended' |
+| `journey.resumed` | character, requestId, by, reason | e2e/windows/W06a-console-pause.spec.ts#'journey.resumed' |
 | `request.waiting` | character, kind, owner, tier, cause, by | scripts/tests/hook-registry.test.cjs#R5: the owner tells a hold, a refused and a waiting request, a paused and resumed journey, and the click |
 | `request.refused` | character, kind, owner, stop, rule, by | scripts/tests/hook-registry.test.cjs#R5: the owner tells a hold, a refused and a waiting request, a paused and resumed journey, and the click |
 | `ladder.climbed` | the character, or the group and walk; owner, rung, trying, step | scripts/tests/hook-registry.test.cjs#R5: ladder.rung adds rungs to its add-on's own requests only, and ladder.climbed tells each rung |
@@ -103,10 +103,10 @@ fails while this file differs from the code. The add-on guide is [README.md](REA
 | `hold.ended` | character, kind, owner, code, by | scripts/tests/hook-registry.test.cjs#R5: the owner tells a hold, a refused and a waiting request, a paused and resumed journey, and the click |
 | `click.taken` | character, state ('taken' or 'returned'), destination or code | scripts/tests/hook-registry.test.cjs#R5: the owner tells a hold, a refused and a waiting request, a paused and resumed journey, and the click |
 | `records.saved` | ring ('movement'), character, record, trigger, by | scripts/tests/hook-registry.test.cjs#X7: records.saved tells each movement ring snapshot, and no task or call ring snapshot |
-| `crossing.started` | character, crossing, kind, owner | e2e/live-movement-hooks.spec.ts#crossing.started: fires when a crossing is sent |
-| `crossing.ended` | character, crossing, kind, owner, code ('landed', 'refused', 'interrupted' or 'timed-out'), reason | e2e/live-movement-hooks.spec.ts#crossing.ended: fires once when a crossing lands, is refused, interrupted or times out |
-| `step.sent` | character, mover, point, target | e2e/live-movement-hooks.spec.ts#step.sent: fires when a combat step is sent, with its mover and point |
-| `formation.moved` | character, mover, point, target | e2e/live-movement-hooks.spec.ts#formation.moved: fires when a formation step is sent |
+| `crossing.started` | character, crossing, kind, owner | e2e/windows/W09-party-walk.spec.ts#'crossing.started' |
+| `crossing.ended` | character, crossing, kind, owner, code ('landed', 'refused', 'interrupted' or 'timed-out'), reason | e2e/windows/W09-party-walk.spec.ts#'crossing.ended' |
+| `step.sent` | character, mover, point, target | e2e/windows/W01-goo-field.spec.ts#'step.sent' |
+| `formation.moved` | character, mover, point, target | e2e/windows/W01-goo-field.spec.ts#'formation.moved' |
 
 ### Dashboard slots
 
@@ -120,30 +120,30 @@ fails while this file differs from the code. The add-on guide is [README.md](REA
 
 | Hook | Who answers | Add-on may ask | Bound | Receives | Returns | Fixture |
 |---|---|---|---|---|---|
-| `skills.request` | many | no | rank: its requester's rank, at most task for an add-on | the character's turns view on each pass: the character and its target | a spend request at a rank, or nothing | e2e/live-turns-hooks.spec.ts#skills.request: the add-on asks Charge at task when its target is out of range |
+| `skills.request` | many | no | rank: its requester's rank, at most task for an add-on | the character's turns view on each pass: the character and its target | a spend request at a rank, or nothing | e2e/windows/W04-low-vitals.spec.ts#skills.request: the add-on asks Charge at task when its target is out of range |
 | `turns.routine` | one | no | rank at most task; each ask passes the executor's refusal (Combat off, the unlock, 04's target rules, skills.refuses, the server-refused hold, the MP rule), then the family's rank, its cooldown, the call band and the lost-reply margin; an entry that lists the character's class lifts H9 and H10 for it; an answer that throws or breaks the shape runs the built-in routine | the picked entry, the character's class, the pass's turns view and each skill's readiness | a list of spend asks {skill, targets, argument, rank, category, reason, belowReserve?}, or an empty list to spend nothing this pass | scripts/tests/hook-registry.test.cjs#P13: the warrior on the fixture routine casts its Charge then attacks; the priest beside it heals on the built-in |
-| `skills.refuses` | many | no | refusal only, below survival | the request: skill, family, rank, category and targets | a refusal in plain words, or nothing; it cannot allow | e2e/live-turns-hooks.spec.ts#skills.refuses: the add-on refuses the warrior's damage casts while it holds a pull |
-| `skills.ready` | core only | yes |  | a skill and the member it would go to | whether its family is ready, a spend in flight with its target, its cost, the reserve and the lost-reply margin | e2e/live-turns-hooks.spec.ts#skills.ready: the add-on reads the potion family's readiness and cost |
-| `skills.incoming` | core only | yes |  | a target and the attacker | the attacker's damage in flight on the target | e2e/live-turns-hooks.spec.ts#skills.incoming: the add-on reads the priest's own damage in flight on its target |
-| `skills.allows` | core only | yes |  | a rank, the passing flag, and `occupied` to read only the occupied rows | nothing when allowed, or T1's row and its source | e2e/live-turns-hooks.spec.ts#skills.allows: on Manual with Combat off the add-on reads the H4 row |
+| `skills.refuses` | many | no | refusal only, below survival | the request: skill, family, rank, category and targets | a refusal in plain words, or nothing; it cannot allow | e2e/windows/W04-low-vitals.spec.ts#skills.refuses: the add-on refuses the warrior's damage casts while it holds a pull |
+| `skills.ready` | core only | yes |  | a skill and the member it would go to | whether its family is ready, a spend in flight with its target, its cost, the reserve and the lost-reply margin | e2e/windows/W04-low-vitals.spec.ts#skills.ready: the add-on reads the potion family's readiness and cost |
+| `skills.incoming` | core only | yes |  | a target and the attacker | the attacker's damage in flight on the target | e2e/windows/W04-low-vitals.spec.ts#skills.incoming: the add-on reads the priest's own damage in flight on its target |
+| `skills.allows` | core only | yes |  | a rank, the passing flag, and `occupied` to read only the occupied rows | nothing when allowed, or T1's row and its source | e2e/windows/W04-low-vitals.spec.ts#skills.allows: on Manual with Combat off the add-on reads the H4 row |
 | `skills.pullSafe` | core only | yes |  | a character and a target | true, or the danger it names | scripts/tests/hook-registry.test.cjs#skills.pullSafe: the pull check answers as the skill runtime's pullSafe did |
 | `skills.report` | core only | yes |  | nothing | the ranking's damage per MP and each speed support cast's ready time, target and MP | scripts/tests/class-skills.test.cjs#TRN-Q-DPS ranking: a coming Energize: the ally's report of an Energize set on the character lets Mana Burst go |
-| `skills.records` | core only | no |  | nothing | the turns ring's records, oldest first | e2e/live-status-hooks.spec.ts#table G: each leased ring posts after the report |
+| `skills.records` | core only | no |  | nothing | the turns ring's records, oldest first | e2e/windows/W09-party-walk.spec.ts#answer the turns and targeting rings |
 
 ### Events (read-only)
 
 | Event | Payload | Fixture |
 |---|---|---|
-| `skills.sent` | character, skill, family, targets, rank, edge, by; the basic attack's context | e2e/live-turns-hooks.spec.ts#skills.sent: every accepted attack of the window has one sent notice |
-| `skills.settled` | character, skill, family, outcome ('accepted', 'rejected', 'lost' or 'stale'), reason, ms, roundTrip, by; the basic attack's context, sentAt and reply | e2e/live-turns-hooks.spec.ts#skills.settled: the dropped reply settles lost after its cooldown and the margin |
-| `skills.dropped` | character, skill, family, rank, reason, by; on each change of reason per requester and family; the attack source's skip names its selection | e2e/live-turns-hooks.spec.ts#skills.dropped: at the plant the priest's attack is dropped, outranked by the heal |
-| `skills.waiting` | character, family, skill, since, by | e2e/live-turns-hooks.spec.ts#skills.waiting: an attack waits on the planted call figure, then goes |
-| `skills.readied` | character, family, by 'core:turns' | e2e/live-turns-hooks.spec.ts#skills.readied: the potion family readies after its 2000 ms |
+| `skills.sent` | character, skill, family, targets, rank, edge, by; the basic attack's context | e2e/windows/W04-low-vitals.spec.ts#skills.sent: every accepted attack of the window has one sent notice |
+| `skills.settled` | character, skill, family, outcome ('accepted', 'rejected', 'lost' or 'stale'), reason, ms, roundTrip, by; the basic attack's context, sentAt and reply | e2e/windows/W04-low-vitals.spec.ts#skills.settled: the dropped reply settles lost after its cooldown and the margin |
+| `skills.dropped` | character, skill, family, rank, reason, by; on each change of reason per requester and family; the attack source's skip names its selection | e2e/windows/W04-low-vitals.spec.ts#skills.dropped: at the plant the priest's attack is dropped, outranked by the heal |
+| `skills.waiting` | character, family, skill, since, by | e2e/windows/W04-low-vitals.spec.ts#skills.waiting: an attack waits on the planted call figure, then goes |
+| `skills.readied` | character, family, by 'core:turns' | e2e/windows/W04-low-vitals.spec.ts#skills.readied: the potion family readies after its 2000 ms |
 | `skills.held` | character, row, source, by (the row's owner) | scripts/tests/turns-executor.test.cjs#skills.held: the A/B pending row holds and releases |
-| `skills.released` | character, row, source, by (the row's owner) | e2e/live-turns-hooks.spec.ts#skills.released: Manual's Combat off holds every family but the potion, then releases |
-| `skills.shot` | character, projectile, target, damage, by 'core:turns' | e2e/live-turns-hooks.spec.ts#skills.shot: each own hit the server records is shot and lands once |
-| `skills.landed` | character, projectile, target, damage, attacker, kill, miss, by 'core:turns' | e2e/live-turns-hooks.spec.ts#skills.landed: each own hit the server records lands once |
-| `skills.passed` | character, kind, by 'core:turns' | e2e/live-turns-hooks.spec.ts#skills.passed: the fixture add-on's listener runs once per role loop pass |
+| `skills.released` | character, row, source, by (the row's owner) | e2e/windows/W04-low-vitals.spec.ts#skills.released: Manual's Combat off holds every family but the potion, then releases |
+| `skills.shot` | character, projectile, target, damage, by 'core:turns' | e2e/windows/W04-low-vitals.spec.ts#skills.shot: each own hit the server records is shot and lands once |
+| `skills.landed` | character, projectile, target, damage, attacker, kill, miss, by 'core:turns' | e2e/windows/W04-low-vitals.spec.ts#skills.landed: each own hit the server records lands once |
+| `skills.passed` | character, kind, by 'core:turns' | e2e/windows/W04-low-vitals.spec.ts#skills.passed: the fixture add-on's listener runs once per role loop pass |
 
 ### Dashboard slots
 
@@ -157,16 +157,16 @@ fails while this file differs from the code. The add-on guide is [README.md](REA
 
 | Hook | Who answers | Add-on may ask | Bound | Receives | Returns | Fixture |
 |---|---|---|---|---|---|
-| `targeting.candidates` | many | no | refusal only | the character's target candidates, the character, the entities in view, the party and the leader's nomination; on the grouped queue its planned pulls, the leader's report as the character and no entities | the candidates it allows, or nothing | e2e/live-targeting-hooks.spec.ts#targeting.candidates: the add-on narrows the goos to the ones it names, reading the view's party |
-| `targeting.prefers` | many | no | an order inside one M priority | the candidates of the top M priority, the character, the entities in view and the party; on the grouped queue each priority's planned pulls, the leader's report as the character and no entities | the candidates in the order it prefers, or nothing for distance | e2e/live-targeting-hooks.spec.ts#targeting.prefers: the add-on prefers the farther goo and the warrior takes it |
-| `targeting.aggroOwner` | one | no | a member of the party only | the party's leader and members | the member that owns Taunt, Absorb and Agitate, or nothing for the leader | e2e/live-targeting-hooks.spec.ts#targeting.aggroOwner: the add-on names the priest as aggro owner and the warrior's Taunt waits |
-| `targeting.refuses` | many | no | refusal only | a monster and the skill that would go to it | a refusal in plain words, or nothing; it cannot allow | e2e/live-targeting-hooks.spec.ts#targeting.refuses: the add-on refuses the warrior's attack on the planted goo |
+| `targeting.candidates` | many | no | refusal only | the character's target candidates, the character, the entities in view, the party and the leader's nomination; on the grouped queue its planned pulls, the leader's report as the character and no entities | the candidates it allows, or nothing | e2e/windows/W08b-unreachable-plant.spec.ts#targeting.candidates: the add-on narrows the goos to the ones it names, reading the view's party |
+| `targeting.prefers` | many | no | an order inside one M priority | the candidates of the top M priority, the character, the entities in view and the party; on the grouped queue each priority's planned pulls, the leader's report as the character and no entities | the candidates in the order it prefers, or nothing for distance | e2e/windows/W08b-unreachable-plant.spec.ts#targeting.prefers: the add-on prefers the farther goo and the warrior takes it |
+| `targeting.aggroOwner` | one | no | a member of the party only | the party's leader and members | the member that owns Taunt, Absorb and Agitate, or nothing for the leader | e2e/windows/W08b-unreachable-plant.spec.ts#targeting.aggroOwner: the add-on names the priest as aggro owner and the warrior's Taunt waits |
+| `targeting.refuses` | many | no | refusal only | a monster and the skill that would go to it | a refusal in plain words, or nothing; it cannot allow | e2e/windows/W08b-unreachable-plant.spec.ts#targeting.refuses: the add-on refuses the warrior's attack on the planted goo |
 | `targeting.rule` | many | no | admit only for A1, A9, A14, A17, A20 (an external claim) and the passing low HP share; a priority from 0 to 100 for P2, P3 and P5, never above a party attacker (A25 still admits); a passing attack still needs T1's passing column | the row, the monster (none for the passing column), the character and core's reason or priority | {admit: true} for an A row or the passing column, a priority for a P row, or nothing | scripts/tests/hook-registry.test.cjs#P4: the add-on lifts the Graveyard exclusion and raises tinyp; the drain row still refuses |
-| `targeting.target` | core only | yes |  | the character's turns view | the target, whether it is passing, and whether support casts may go on it, or nothing | e2e/live-targeting-hooks.spec.ts#targeting.target: the add-on reads the warrior's target, its due flag and the threat |
-| `targeting.allows` | core only | yes |  | a monster and the skill that would go to it | nothing when allowed, or the refusal in plain words | e2e/live-targeting-hooks.spec.ts#targeting.allows: the add-on asks whether the planted goo is allowed and reads the refusal |
-| `targeting.threat` | core only | yes |  | the character's view | whether a monster in view targets a party member, whether a party member's target is alive in view, and the policy the fact counts | e2e/live-targeting-hooks.spec.ts#targeting.target: the add-on reads the warrior's target, its due flag and the threat |
-| `targeting.records` | core only | no |  | nothing | the targeting ring's records, oldest first | e2e/live-status-hooks.spec.ts#table G: each leased ring posts after the report |
-| `targeting.passing` | core only | yes |  | a walk (its task's tier and, for a Hunt walk, its target) and the cause, passive or rare | whether a passing monster may interrupt the walk | e2e/live-targeting-hooks.spec.ts#targeting.passing: the add-on asks whether a passing goo may interrupt a farm walk |
+| `targeting.target` | core only | yes |  | the character's turns view | the target, whether it is passing, and whether support casts may go on it, or nothing | e2e/windows/W08b-unreachable-plant.spec.ts#targeting.target: the add-on reads the warrior's target, its due flag and the threat |
+| `targeting.allows` | core only | yes |  | a monster and the skill that would go to it | nothing when allowed, or the refusal in plain words | e2e/windows/W08b-unreachable-plant.spec.ts#targeting.allows: the add-on asks whether the planted goo is allowed and reads the refusal |
+| `targeting.threat` | core only | yes |  | the character's view | whether a monster in view targets a party member, whether a party member's target is alive in view, and the policy the fact counts | e2e/windows/W08b-unreachable-plant.spec.ts#targeting.target: the add-on reads the warrior's target, its due flag and the threat |
+| `targeting.records` | core only | no |  | nothing | the targeting ring's records, oldest first | e2e/windows/W09-party-walk.spec.ts#answer the turns and targeting rings |
+| `targeting.passing` | core only | yes |  | a walk (its task's tier and, for a Hunt walk, its target) and the cause, passive or rare | whether a passing monster may interrupt the walk | e2e/windows/W08b-unreachable-plant.spec.ts#targeting.passing: the add-on asks whether a passing goo may interrupt a farm walk |
 | `targeting.fight` | core only | yes |  | a group | the grouped fight's target start, fights and death tombstones with their monster type, or nothing | scripts/tests/combat-disengagement.test.cjs#targeting.fight: the read names the grouped fight's start, fights and typed deaths |
 | `targeting.partyAttacker` | core only | yes |  | nothing | the nearest monster attacking a party member, or null | scripts/tests/targeting-selection.test.cjs#targeting.partyAttacker: answers as getNearestPartyAttacker did |
 | `targeting.partyTarget` | core only | yes |  | nothing | the nearest party member's live target, or null | scripts/tests/targeting-selection.test.cjs#targeting.partyTarget: answers as getNearestPartyTarget did |
@@ -224,17 +224,17 @@ fails while this file differs from the code. The add-on guide is [README.md](REA
 
 | Event | Payload | Fixture |
 |---|---|---|
-| `targeting.changed` | character, from, to, by | e2e/live-turns-hooks.spec.ts#targeting.changed: a new target runs a pass before the next report |
-| `targeting.unreachable` | character, target, why | e2e/live-targeting-hooks.spec.ts#targeting.unreachable: movement's notice reaches the add-on |
-| `targeting.refused` | character, target, skill, row (the G check, with A's row when A refused), why; by the refusing add-on or 'core:targeting' | e2e/live-targeting-hooks.spec.ts#targeting.refused: the planted refusal sends one refused notice |
-| `targeting.skipped` | character, target, damage in flight, HP, why | e2e/live-targeting-hooks.spec.ts#targeting.skipped: the priest's covered goo is skipped once |
-| `targeting.retired` | character, target, why; by 'core:targeting' | e2e/live-targeting-hooks.spec.ts#targeting.retired: the walled goo is retired once |
-| `targeting.cleared` | character, why; the set-aside list cleared at a fight's start | e2e/live-targeting-hooks.spec.ts#targeting.cleared: the next fight's start clears the walled goo's mark |
-| `targeting.nominated` | group, target, revision; by the nominating member | e2e/live-targeting-hooks.spec.ts#targeting.nominated: each group nomination of the window has one notice |
-| `targeting.fightState` | group, target, from, to (planned, engaged, retired, lost or reset), reason | e2e/live-targeting-hooks.spec.ts#targeting.fightState: the killed goo's fight goes engaged then retired |
+| `targeting.changed` | character, from, to, by | e2e/windows/W04-low-vitals.spec.ts#targeting.changed: a new target runs a pass before the next report |
+| `targeting.unreachable` | character, target, why | e2e/windows/W08b-unreachable-plant.spec.ts#targeting.unreachable: movement's notice reaches the add-on |
+| `targeting.refused` | character, target, skill, row (the G check, with A's row when A refused), why; by the refusing add-on or 'core:targeting' | e2e/windows/W08b-unreachable-plant.spec.ts#targeting.refused: the planted refusal sends one refused notice |
+| `targeting.skipped` | character, target, damage in flight, HP, why | e2e/windows/W08b-unreachable-plant.spec.ts#targeting.skipped: the priest's covered goo is skipped once |
+| `targeting.retired` | character, target, why; by 'core:targeting' | e2e/windows/W08b-unreachable-plant.spec.ts#targeting.retired: the walled goo is retired once |
+| `targeting.cleared` | character, why; the set-aside list cleared at a fight's start | e2e/windows/W08b-unreachable-plant.spec.ts#targeting.cleared: the next fight's start clears the walled goo's mark |
+| `targeting.nominated` | group, target, revision; by the nominating member | e2e/windows/W08b-unreachable-plant.spec.ts#targeting.nominated: each group nomination of the window has one notice |
+| `targeting.fightState` | group, target, from, to (planned, engaged, retired, lost or reset), reason | e2e/windows/W08b-unreachable-plant.spec.ts#targeting.fightState: the killed goo's fight goes engaged then retired |
 | `targeting.granted` | group, predecessor, successor, reason | scripts/tests/successor-handoff.test.cjs#targeting.granted, targeting.revoked: the grant is issued, then revoked when the budget runs out |
 | `targeting.revoked` | group, predecessor, successor, reason | scripts/tests/successor-handoff.test.cjs#targeting.granted, targeting.revoked: the grant is issued, then revoked when the budget runs out |
-| `targeting.passed` | character, target or none, S's row | e2e/live-targeting-hooks.spec.ts#targeting.passed: each selection pass of the window sends one passed notice, with none while no goo is in view |
+| `targeting.passed` | character, target or none, S's row | e2e/windows/W08b-unreachable-plant.spec.ts#targeting.passed: each selection pass of the window sends one passed notice, with none while no goo is in view |
 
 ## Owner 05 (runtime/hooks/rows/05-survival.ts)
 
@@ -243,35 +243,35 @@ fails while this file differs from the code. The add-on guide is [README.md](REA
 | Hook | Who answers | Add-on may ask | Bound | Receives | Returns | Fixture |
 |---|---|---|---|---|---|
 | `survival.revival` | core only | no |  | the character | whether the revival acted or holds the priest | scripts/tests/role-loop-order.test.cjs#TC46: on the pass where the Cave revival holds the priest no attack and no class decision goes |
-| `survival.verdict` | core only | yes |  | a group, a walk with its members and attackers, a hold with its tank, attackers and supply, or a character | fight, finish or leave; for a hold, hold or step | e2e/live-survival-hooks.spec.ts#L: the add-on asks its own fight's verdict |
+| `survival.verdict` | core only | yes |  | a group, a walk with its members and attackers, a hold with its tank, attackers and supply, or a character | fight, finish or leave; for a hold, hold or step | e2e/survival-hooks-rows.ts#L: the add-on asks its own fight's verdict |
 | `survival.choice` | one | no | one of the offered options, else core's pick; a spend core picks is never skipped; ports is an order of core's own members; danger only raises, transfer only refuses, respawn only waits longer | the question (potion, regen, heal, stomp, scare, ports, landing, escapeSpend, danger, transfer, respawn, recovery, farmReturn or revival), the member, the options and core's pick | one of the options, or nothing for core's pick | scripts/tests/hook-registry.test.cjs#P2: the add-on picks the larger potion and the priest's heal target; an answer outside the options keeps core's |
 | `survival.refuses` | many | no | refusal only | the question (a group's recovery or a walk) with the survivors, the foes and the verdict | a reason, or nothing | scripts/tests/combat-disengagement.test.cjs#SV53: an add-on refusal turns a finish into an escape, and a leave stays a leave |
-| `survival.fighting` | core only | yes |  | a character | whether its party is in a fight | e2e/live-survival-hooks.spec.ts#L: the add-on asks its own fight's verdict |
-| `survival.escaping` | core only | yes |  | a character name | the escape that owns it: its id, its stage and the one command purpose it admits; or nothing | e2e/live-survival-hooks.spec.ts#L: the add-on reads the escape's stage |
-| `survival.recovery` | core only | yes |  | a group | the party death recovery's last computed phase, names, fight rule and finishing list; or nothing | e2e/live-survival-hooks.spec.ts#L: the add-on reads the recovery's phase |
+| `survival.fighting` | core only | yes |  | a character | whether its party is in a fight | e2e/survival-hooks-rows.ts#L: the add-on asks its own fight's verdict |
+| `survival.escaping` | core only | yes |  | a character name | the escape that owns it: its id, its stage and the one command purpose it admits; or nothing | e2e/survival-hooks-rows.ts#L: the add-on reads the escape's stage |
+| `survival.recovery` | core only | yes |  | a group | the party death recovery's last computed phase, names, fight rule and finishing list; or nothing | e2e/survival-hooks-rows.ts#L: the add-on reads the recovery's phase |
 | `survival.recoveryStep` | core only | no |  | a group | the party death recovery's view after one step on the current reports | scripts/tests/combat-disengagement.test.cjs#the grouped snapshot's step runs the recovery once on the current reports |
 | `survival.life` | core only | yes |  | a character name | the time of the member's last death the coordinator read, or 0 | scripts/tests/combat-disengagement.test.cjs#SV59: the life changes once per death |
 | `survival.low` | core only | yes |  | a character name | whether the member reads below its "HP potion below" line | scripts/tests/combat-disengagement.test.cjs#confirmed completion escapes then resumes only after everyone safely returns above the HP potion line |
 | `survival.healthy` | core only | yes |  | a share of max HP | whether every party member in view stands at or above it | scripts/tests/survival-needs.test.cjs#priest Curse waits while a member is below the share |
 | `survival.mpPotion` | core only | yes |  | the character's MP after a cast | the MP the bag's MP potion gives when the potion table drinks MP at that MP and the potion cooldown is ready, else 0 | scripts/tests/survival-needs.test.cjs#the MP potion the ranking counts follows the potion table |
-| `survival.respawn` | core only | no |  | who asks (by) | sent, not-now, or refused with the reason (the console Pause) | e2e/live-survival-hooks.spec.ts#L: the dead member's respawn is sent and accepted |
+| `survival.respawn` | core only | no |  | who asks (by) | sent, not-now, or refused with the reason (the console Pause) | e2e/survival-hooks-rows.ts#L: the dead member's respawn is sent and accepted |
 
 ### Events (read-only)
 
 | Event | Payload | Fixture |
 |---|---|---|
-| `survival.died` | name, at, cause, map, x, y, event, by 'core:survival' | e2e/live-survival-hooks.spec.ts#L: the death is noticed once |
-| `survival.escaped` | names, at, cause (bad luck or too hard), mtypes, repeat, deaths, model, trend, by | e2e/live-survival-hooks.spec.ts#L: the escape's cause is noticed |
-| `survival.recoveryStarted` | group, id, names, deaths, home, by 'core:survival' | e2e/live-survival-hooks.spec.ts#L: the recovery starts on the death |
-| `survival.recoveryPhase` | group, id, from, to, reason, resetsFight, names, by | e2e/live-survival-hooks.spec.ts#L: the recovery goes finishing to escaping |
-| `survival.recovered` | group, id, code (complete, cancelled or arrived-at-farm), by | e2e/live-survival-hooks.spec.ts#L: the recovery ends complete |
-| `survival.escapeStarted` | group, id, leader, participants, walk, home, resetsFight, by | e2e/live-survival-hooks.spec.ts#L: the escape starts |
-| `survival.escapeStage` | group, id, from, to, member, reason, by | e2e/live-survival-hooks.spec.ts#L: the escape goes recovering to recovery-convoy to home |
-| `survival.escapeEnded` | group, id, the stage at the end (home, complete, failed-hold or released), by (player for a release) | e2e/live-survival-hooks.spec.ts#L: the player's release ends the escape |
-| `survival.escapeMember` | character, id, stage, change (joined, stage or left), landed, ported, blinkFailed, portFailed, by 'core:survival' | e2e/live-survival-hooks.spec.ts#L: each member joins and leaves the escape |
-| `survival.judged` | key, verdict, model, restart, foeRate, toKill, by 'core:survival' | e2e/live-survival-hooks.spec.ts#L: the verdict's first judgement is noticed |
-| `survival.respawning` | character, by (the asker), outcome (sent, not-now, refused, accepted, or cant_respawn with ms) | e2e/live-survival-hooks.spec.ts#L: the dead member's respawn is sent and accepted |
-| `survival.memberRecovery` | character, stage, phase, trying, label (the card words while it runs, or null), by 'core:survival' | e2e/live-survival-hooks.spec.ts#L: the respawned member's recovery completes |
+| `survival.died` | name, at, cause, map, x, y, event, by 'core:survival' | e2e/survival-hooks-rows.ts#L: the death is noticed once |
+| `survival.escaped` | names, at, cause (bad luck or too hard), mtypes, repeat, deaths, model, trend, by | e2e/survival-hooks-rows.ts#L: the escape's cause is noticed |
+| `survival.recoveryStarted` | group, id, names, deaths, home, by 'core:survival' | e2e/survival-hooks-rows.ts#L: the recovery starts on the death |
+| `survival.recoveryPhase` | group, id, from, to, reason, resetsFight, names, by | e2e/survival-hooks-rows.ts#L: the recovery goes finishing to escaping |
+| `survival.recovered` | group, id, code (complete, cancelled or arrived-at-farm), by | e2e/survival-hooks-rows.ts#L: the recovery ends complete |
+| `survival.escapeStarted` | group, id, leader, participants, walk, home, resetsFight, by | e2e/survival-hooks-rows.ts#L: the escape starts |
+| `survival.escapeStage` | group, id, from, to, member, reason, by | e2e/survival-hooks-rows.ts#L: the escape goes recovering to recovery-convoy to home |
+| `survival.escapeEnded` | group, id, the stage at the end (home, complete, failed-hold or released), by (player for a release) | e2e/survival-hooks-rows.ts#L: the player's release ends the escape |
+| `survival.escapeMember` | character, id, stage, change (joined, stage or left), landed, ported, blinkFailed, portFailed, by 'core:survival' | e2e/survival-hooks-rows.ts#L: each member joins and leaves the escape |
+| `survival.judged` | key, verdict, model, restart, foeRate, toKill, by 'core:survival' | e2e/survival-hooks-rows.ts#L: the verdict's first judgement is noticed |
+| `survival.respawning` | character, by (the asker), outcome (sent, not-now, refused, accepted, or cant_respawn with ms) | e2e/survival-hooks-rows.ts#L: the dead member's respawn is sent and accepted |
+| `survival.memberRecovery` | character, stage, phase, trying, label (the card words while it runs, or null), by 'core:survival' | e2e/survival-hooks-rows.ts#L: the respawned member's recovery completes |
 | `survival.reviving` | character, target, phase, reason, by 'core:survival/cave-revival' | scripts/tests/cave-priest-recovery.test.cjs#the revival's phase change is noticed |
 
 ## Owner 06 (runtime/hooks/rows/06-events.ts)
@@ -280,30 +280,30 @@ fails while this file differs from the code. The add-on guide is [README.md](REA
 
 | Hook | Who answers | Add-on may ask | Bound | Receives | Returns | Fixture |
 |---|---|---|---|---|---|
-| `event.presence` | core only | yes |  | a member name | the member's event, occurrence, realm, phase (walking, attending, returning) and since; or nothing | e2e/live-events-hooks.spec.ts#L: the add-on reads presence while attending |
-| `event.targets` | core only | yes |  | nothing | the current event's monster types and the area event of the map the character stands on | e2e/live-events-hooks.spec.ts#L: the add-on reads the event targets while attending |
-| `event.schedule` | core only | yes |  | an occurrence id (a group's event, `occurrenceId`) | the spawn, the planned walk and its lead, the phase (scheduled, due, live) and the short window; or nothing | e2e/live-events-hooks.spec.ts#L: the add-on reads the schedule when due |
+| `event.presence` | core only | yes |  | a member name | the member's event, occurrence, realm, phase (walking, attending, returning) and since; or nothing | e2e/events-hooks-rows.ts#L: the add-on reads presence while attending |
+| `event.targets` | core only | yes |  | nothing | the current event's monster types and the area event of the map the character stands on | e2e/events-hooks-rows.ts#L: the add-on reads the event targets while attending |
+| `event.schedule` | core only | yes |  | an occurrence id (a group's event, `occurrenceId`) | the spawn, the planned walk and its lead, the phase (scheduled, due, live) and the short window; or nothing | e2e/events-hooks-rows.ts#L: the add-on reads the schedule when due |
 | `event.pending` | core only | yes |  | a member name | true while the member's latest report says its Hunt waits on an event | scripts/tests/coordinator-hunt-control.test.cjs#events-pending waits for one report per online participant after the hand-in, then releases |
 | `event.cycle` | core only | yes |  | nothing | true while the anniversary cycle is staged and its return has not completed, been superseded or handed to combat | scripts/tests/coordinator-anniversary-control.test.cjs#event.cycle: a rare waits through the anniversary's staging and its return |
-| `event.attend` | many | no | refusal only | the member, its event and occurrence, and K4's answer | `refuse` with a reason, or nothing | e2e/live-events-hooks.spec.ts#L: an add-on refuses the priest's admission |
-| `event.kind` | many | no | refusal only for a core name; an add-on kind ranks event-attendance through 01, never a new tier | nothing | a K1 row for a new event name: name, label, kind (join or walk), map, targets, point, exit rungs | e2e/live-events-hooks.spec.ts#L: an add-on event kind is attended and returned from |
+| `event.attend` | many | no | refusal only | the member, its event and occurrence, and K4's answer | `refuse` with a reason, or nothing | e2e/events-hooks-rows.ts#L: an add-on refuses the priest's admission |
+| `event.kind` | many | no | refusal only for a core name; an add-on kind ranks event-attendance through 01, never a new tier | nothing | a K1 row for a new event name: name, label, kind (join or walk), map, targets, point, exit rungs | e2e/events-hooks-rows.ts#L: an add-on event kind is attended and returned from |
 
 ### Events (read-only)
 
 | Event | Payload | Fixture |
 |---|---|---|
-| `member.presence` | member, presence, by | e2e/live-tasks-hooks.spec.ts#L: the event takes the group: one started, one suspended |
-| `event.scheduled` | event, occurrence, realm, spawnAt, by | e2e/live-events-hooks.spec.ts#L: the Mr. Green spawn is scheduled |
-| `event.due` | occurrence, event, group, leadMs, by | e2e/live-events-hooks.spec.ts#L: Mr. Green becomes due at the walk estimate |
-| `event.started` | occurrence, event, by | e2e/live-events-hooks.spec.ts#L: Goobrawl goes live |
-| `event.ended` | occurrence, event, reason (ended, missed), by | e2e/live-events-hooks.spec.ts#L: Goobrawl ends |
-| `event.admitted` | member, event, occurrence, checkpoint, by | e2e/live-events-hooks.spec.ts#L: the warrior is admitted to Goobrawl |
-| `event.joined` | member, event, occurrence, by | e2e/live-events-hooks.spec.ts#L: the warrior joins Goobrawl |
-| `event.refused` | member, event, occurrence, the join reply or the refusing hook, by | e2e/live-events-hooks.spec.ts#L: an add-on refuses the priest's admission |
-| `event.left` | member, event, occurrence, the destination of the command, by | e2e/live-events-hooks.spec.ts#L: a manual move off the map leaves |
+| `member.presence` | member, presence, by | e2e/tasks-hooks-rows.ts#L: the event takes the group: one started, one suspended |
+| `event.scheduled` | event, occurrence, realm, spawnAt, by | e2e/events-hooks-rows.ts#L: the Mr. Green spawn is scheduled |
+| `event.due` | occurrence, event, group, leadMs, by | e2e/events-hooks-rows.ts#L: Mr. Green becomes due at the walk estimate |
+| `event.started` | occurrence, event, by | e2e/events-hooks-rows.ts#L: Goobrawl goes live |
+| `event.ended` | occurrence, event, reason (ended, missed), by | e2e/events-hooks-rows.ts#L: Goobrawl ends |
+| `event.admitted` | member, event, occurrence, checkpoint, by | e2e/events-hooks-rows.ts#L: the warrior is admitted to Goobrawl |
+| `event.joined` | member, event, occurrence, by | e2e/events-hooks-rows.ts#L: the warrior joins Goobrawl |
+| `event.refused` | member, event, occurrence, the join reply or the refusing hook, by | e2e/events-hooks-rows.ts#L: an add-on refuses the priest's admission |
+| `event.left` | member, event, occurrence, the destination of the command, by | e2e/events-hooks-rows.ts#L: a manual move off the map leaves |
 | `event.limit` | member, event, occurrence, limit (death limit, time limit), by | scripts/tests/coordinator-event-observation.test.cjs#U: a death limit ends attendance |
-| `event.returning` | members, event, occurrence, the K6 row, by | e2e/live-events-hooks.spec.ts#L: the Goobrawl return starts |
-| `event.returned` | members, event, occurrence, by | e2e/live-events-hooks.spec.ts#L: the return completes into farming |
+| `event.returning` | members, event, occurrence, the K6 row, by | e2e/events-hooks-rows.ts#L: the Goobrawl return starts |
+| `event.returned` | members, event, occurrence, by | e2e/events-hooks-rows.ts#L: the return completes into farming |
 | `anniversary.phase` | round, member, phase (staging, visiting, kissed, returning, aborted), by | scripts/tests/anniversary-kiss.test.cjs#U: the anniversary phases are announced |
 | `abtesting.strategy` | the strategy and its teams, by | scripts/tests/coordinator-abtesting-update.test.cjs#U: a strategy change is announced |
 | `cipher.plan` | round, mode (gathering, brewing, finished), ingredient, monster, reason, by | scripts/tests/october-runtime.test.cjs#U: the owner's Cipher plan is announced |
@@ -320,31 +320,31 @@ fails while this file differs from the code. The add-on guide is [README.md](REA
 
 | Hook | Who answers | Add-on may ask | Bound | Receives | Returns | Fixture |
 |---|---|---|---|---|---|
-| `hunt.quest` | many | no | refusal only | group, owner, quest (id, count, ms), candidates | `false` to refuse, or nothing | e2e/live-hunting-hooks.spec.ts#L: the add-on refuses the planted quest, and the cycle backs up |
-| `farm.spot` | many | no | refusal, or a rank among the alternatives H4 already allows; it cannot add an area | group, focus, active, alternatives | `{refuse: [ids]}` or `{prefer: id}`, or nothing | e2e/live-hunting-hooks.spec.ts#L: the add-on keeps the relocation to its own spawn |
+| `hunt.quest` | many | no | refusal only | group, owner, quest (id, count, ms), candidates | `false` to refuse, or nothing | e2e/windows/W60-addon-hunt.spec.ts#The add-on refuses the planted quest, and the cycle backs up |
+| `farm.spot` | many | no | refusal, or a rank among the alternatives H4 already allows; it cannot add an area | group, focus, active, alternatives | `{refuse: [ids]}` or `{prefer: id}`, or nothing | scripts/tests/hunting-hooks.test.cjs#U: the add-on's farm spot answer refuses and prefers among the alternatives, and the move tells farm.relocated |
 | `rare.search` | one | no | the order of the game's Phoenix regions; it cannot add a region | group, regions, current | an order of the same regions, or nothing | scripts/tests/hunting-hooks.test.cjs#U: the add-on's order is the patrol's next region |
 | `cave.destination` | one | no | one of the offered points; it cannot pick the exit, a locked or done point, or another floor, and a paused run asks nothing | group, run, floor, points (the unlocked stairs down and the required rooms not done), previous | one offered point id, or nothing for the stairs, then the room under way, then the nearest | scripts/tests/daily-dungeons.test.cjs#HN: the add-on's room order is the next exploration target |
 | `cave.rejoin` | many | no | refusal only; it cannot rejoin a member the game or the entry check refuses, or drop a member the visit lists; P10: its false to drop keeps an offline member only while a vote pauses the run, and the first unpaused report drops it | question (rejoin, drop), group, member, run, clock (paused, expires), task (kind, owner) or null | `false` to leave the member out on rejoin or keep it listed on drop, or nothing | scripts/tests/daily-dungeons.test.cjs#HN24: an add-on refuses the rejoin and the member stays on its own task |
-| `farming.focus` | core only | yes |  | a group (coordinator) or nothing (character) | focus types, priorities, radius, the area and contains(point), the Hunt target, the party type, the combat mode answer, the rare state with its rejections, blocksPulls, the farm spot label (H8), loot pending, the Hunt walk defense and control | e2e/live-hunting-hooks.spec.ts#L: the add-on reads the focus, the area and the Hunt target |
-| `cave.state` | core only | yes |  | a member, or nothing for the party | per member inside or not; per party the phase, the run, its end and rewards; caveFloors(name) | e2e/live-cave.spec.ts#C: `cave.state` answers each member inside and owned, and the visit active |
-| `passive.rule` | core only | yes |  | a monster type | the effective rule with its default, and whether the monster has a core priority | e2e/live-hunting-hooks.spec.ts#L: the add-on reads the goo's passive rule and the Fairy's priority |
-| `hunt.view` | core only | yes |  | a group | the cycle stage, mission, target, owner and counts, or nothing | e2e/live-hunting-hooks.spec.ts#L: the cycle goes to Daisy, takes the quest and travels |
+| `farming.focus` | core only | yes |  | a group (coordinator) or nothing (character) | focus types, priorities, radius, the area and contains(point), the Hunt target, the party type, the combat mode answer, the rare state with its rejections, blocksPulls, the farm spot label (H8), loot pending, the Hunt walk defense and control | e2e/windows/W60-addon-hunt.spec.ts#The add-on reads the focus, the area and the Hunt target |
+| `cave.state` | core only | yes |  | a member, or nothing for the party | per member inside or not; per party the phase, the run, its end and rewards; caveFloors(name) | e2e/cave-rows.ts#C: `cave.state` answers each member inside and owned, and the visit active |
+| `passive.rule` | core only | yes |  | a monster type | the effective rule with its default, and whether the monster has a core priority | e2e/windows/W60-addon-hunt.spec.ts#The add-on reads the goo's passive rule and the Fairy's priority |
+| `hunt.view` | core only | yes |  | a group | the cycle stage, mission, target, owner and counts, or nothing | e2e/windows/W60-addon-hunt.spec.ts#The cycle goes to Daisy, takes the quest and travels |
 
 ### Events (read-only)
 
 | Event | Payload | Fixture |
 |---|---|---|
-| `hunt.stage` | group, cycle, from, to, by | e2e/live-hunting-hooks.spec.ts#L: the cycle goes to Daisy, takes the quest and travels |
-| `hunt.questChanged` | group, owner, quest, change (taken, turnedIn), by | e2e/live-hunting-hooks.spec.ts#L: the planted quest is turned in |
+| `hunt.stage` | group, cycle, from, to, by | e2e/windows/W60-addon-hunt.spec.ts#The cycle goes to Daisy, takes the quest and travels |
+| `hunt.questChanged` | group, owner, quest, change (taken, turnedIn), by | e2e/windows/W60-addon-hunt.spec.ts#The planted quest is turned in |
 | `hunt.counted` | group, target, kind (death, escape, expiration), count, threshold, by | scripts/tests/hunting-hooks.test.cjs#U: a planted too-hard escape counts on the target |
 | `hunt.blacklisted` | group, target, reason, by | scripts/tests/hunting-hooks.test.cjs#the planted second count blacklists the target |
-| `farming.focusChanged` | focus, member or party, by | e2e/live-hunting-hooks.spec.ts#L: the add-on reads the focus change |
-| `farm.relocated` | group, from, to, cause (contested, focus, failed), by | e2e/live-hunting-hooks.spec.ts#L: the add-on keeps the relocation to its own spawn |
-| `farming.mode` | group, mode (grouped, scatter), by | e2e/live-hunting-hooks.spec.ts#L: Auto scatters on a learned goo |
-| `scatter.learned` | group, type, by | e2e/live-hunting-hooks.spec.ts#L: Auto scatters on a learned goo |
+| `farming.focusChanged` | focus, member or party, by | e2e/windows/W60-addon-hunt.spec.ts#the focus change, the learned type and the mode answer |
+| `farm.relocated` | group, from, to, cause (contested, focus, failed), by | scripts/tests/hunting-hooks.test.cjs#U: the add-on's farm spot answer refuses and prefers among the alternatives, and the move tells farm.relocated |
+| `farming.mode` | group, mode (grouped, scatter), by | e2e/windows/W60-addon-hunt.spec.ts#Auto scatters on a learned goo |
+| `scatter.learned` | group, type, by | e2e/windows/W60-addon-hunt.spec.ts#Auto scatters on a learned goo |
 | `rare.encounter` | group, target, change (started, ended), code, by | scripts/tests/hunting-hooks.test.cjs#U: a planted Fairy sighting starts and ends an encounter |
 | `rare.patrol` | group, region, change (leg, region-done, paused), by | scripts/tests/hunting-hooks.test.cjs#U: the patrol finishes a planted region |
-| `cave.phase` | party, visit, from, to, by | e2e/live-cave.spec.ts#C: `cave.phase` tells each phase change once, the entry by the player |
+| `cave.phase` | party, visit, from, to, by | e2e/cave-rows.ts#C: `cave.phase` tells each phase change once, the entry by the player |
 | `cave.member` | visit, member, change (dropped, rejoined, refused), by | scripts/tests/daily-dungeons.test.cjs#HN24: an add-on refuses the rejoin and the member stays on its own task |
 
 ### Dashboard slots
@@ -360,33 +360,33 @@ fails while this file differs from the code. The add-on guide is [README.md](REA
 
 | Hook | Who answers | Add-on may ask | Bound | Receives | Returns | Fixture |
 |---|---|---|---|---|---|
-| `merchant.jobKind` | many | no | priority 1 to 74, and one core J5 command type | the add-on's settings | its kinds: name, command type, realm (home, here or listing) and priority | e2e/live-merchant-hooks.spec.ts#merchant.jobKind: the fixture's kind at priority 90 runs at 74, with a ring entry |
-| `merchant.job` | many | no | one job of the add-on's own kinds per pass, ranked by J2 | the merchant, its current job and the queue | one job: its kind, target and listing realm, or nothing | e2e/live-merchant-hooks.spec.ts#merchant.job: the fixture's job is queued and runs; its PVP and blacklisted listings are refused |
+| `merchant.jobKind` | many | no | priority 1 to 74, and one core J5 command type | the add-on's settings | its kinds: name, command type, realm (home, here or listing) and priority | e2e/gathering-session-rows.ts#merchant.jobKind: the fixture's kind at priority 90 runs at 74, with a ring entry |
+| `merchant.job` | many | no | one job of the add-on's own kinds per pass, ranked by J2 | the merchant, its current job and the queue | one job: its kind, target and listing realm, or nothing | e2e/gathering-session-rows.ts#merchant.job: the fixture's job is queued and runs; its PVP and blacklisted listings are refused |
 | `merchant.step` | many | no | only the add-on whose job runs; offered actions in the job band; gold.donate, gold.send, item.send and mail.send only for a kind that declares spends and the player switched on; a send step names any recipient | the job (id, kind, target, the add-on's fields) and the outcomes of the steps it ran | {steps}, {end: done or failed}, or nothing for done | scripts/tests/hook-registry.test.cjs#C2: an addon-steps job carries its fields and steps whole; a donate-then-buy chain runs with consent and a send to any recipient runs |
 | `merchant.routine` | slot | no | only for the merchant whose merchant routine pick is the add-on's entry, and never while the player's manual job is ready; run names a queued job J2 row 1 passes, else the built-in pick runs; queue takes merchant.jobKind's bound; an answer that throws or breaks the shape runs the built-in pick | the merchant, its current job, and each queued job with its J2 readiness and priority | {run: a queued job's id}, {queue: one job of its own kinds}, {idle: true}, or nothing for the built-in pick | scripts/tests/hook-registry.test.cjs#P14: the fixture routine runs its restock before the queued upgrade; a manual visit still goes first |
-| `jobs.current` | core only | yes |  | nothing | the current job's id, reason, target and phase, or null | e2e/live-merchant-hooks.spec.ts#jobs.current: names the fixture's job while it runs |
+| `jobs.current` | core only | yes |  | nothing | the current job's id, reason, target and phase, or null | e2e/gathering-session-rows.ts#jobs.current: names the fixture's job while it runs |
 | `jobs.ready` | core only | yes |  | the merchant | J2's ready jobs in the pick's order, each with its priority and the realm it runs on (E08-10b) | scripts/tests/hook-registry.test.cjs#MJ23: with no add-on registered, the merchant hooks change no answer |
-| `merchant.kind` | core only | yes |  | a reason | the kind's J5 record | e2e/live-merchant-hooks.spec.ts#merchant.kind: answers a core kind and the fixture's clamped kind |
+| `merchant.kind` | core only | yes |  | a reason | the kind's J5 record | e2e/gathering-session-rows.ts#merchant.kind: answers a core kind and the fixture's clamped kind |
 
 ### Events (read-only)
 
 | Event | Payload | Fixture |
 |---|---|---|
-| `merchant.job.queued` | subject (the merchant), owner (job:<id>), kind, by | e2e/live-merchant-hooks.spec.ts#merchant.job.queued, .started, .ended: one each for the fixture's job |
-| `merchant.job.started` | subject, owner, kind, by | e2e/live-merchant-hooks.spec.ts#merchant.job.queued, .started, .ended: one each for the fixture's job |
-| `merchant.job.paused` | subject, owner, by (who paused it) | e2e/live-merchant-hooks.spec.ts#merchant.job.paused, .resumed: force stand pauses the fixture's job, which resumes after it |
-| `merchant.job.resumed` | subject, owner, kind, by | e2e/live-merchant-hooks.spec.ts#merchant.job.paused, .resumed: force stand pauses the fixture's job, which resumes after it |
-| `merchant.job.ended` | subject, owner, code (the J4 ending), by | e2e/live-merchant-hooks.spec.ts#merchant.job.queued, .started, .ended: one each for the fixture's job |
+| `merchant.job.queued` | subject (the merchant), owner (job:<id>), kind, by | e2e/gathering-session-rows.ts#merchant.job.queued, .started, .ended: one each for the fixture's job |
+| `merchant.job.started` | subject, owner, kind, by | e2e/gathering-session-rows.ts#merchant.job.queued, .started, .ended: one each for the fixture's job |
+| `merchant.job.paused` | subject, owner, by (who paused it) | e2e/gathering-session-rows.ts#merchant.job.paused, .resumed: force stand pauses the fixture's job, which resumes after it |
+| `merchant.job.resumed` | subject, owner, kind, by | e2e/gathering-session-rows.ts#merchant.job.paused, .resumed: force stand pauses the fixture's job, which resumes after it |
+| `merchant.job.ended` | subject, owner, code (the J4 ending), by | e2e/gathering-session-rows.ts#merchant.job.queued, .started, .ended: one each for the fixture's job |
 | `merchant.job.blocked` | subject (the target), kind, code (the error), by | scripts/tests/hook-registry.test.cjs#MJ22: a resource block and its release send one notice each |
 | `merchant.job.unblocked` | subject, kind, code (the part of the signature that changed), by | scripts/tests/hook-registry.test.cjs#MJ22: a resource block and its release send one notice each |
 | `merchant.slot.written` | subject, owner (the writer), decision (slot-written or slot-cleared), by | scripts/tests/hook-registry.test.cjs#MJ22: each slot write, hold and refusal sends one notice with its writer |
 | `merchant.slot.held` | subject, owner, code (the held command), by | scripts/tests/hook-registry.test.cjs#MJ22: each slot write, hold and refusal sends one notice with its writer |
 | `merchant.slot.refused` | subject, owner, code, by | scripts/tests/hook-registry.test.cjs#MJ22: each slot write, hold and refusal sends one notice with its writer |
-| `merchant.holder.changed` | character, from, to, command, by | e2e/live-merchant-hooks.spec.ts#merchant.holder.changed: the runner's holder goes to the fixture's job and back to none |
-| `merchant.stand.opened` | character, by (the holder) | e2e/live-merchant-hooks.spec.ts#merchant.stand.opened, .closed: the stand return opens the stand and the fixture's job closes it |
-| `merchant.stand.closed` | character, by (the holder that took the stand) | e2e/live-merchant-hooks.spec.ts#merchant.stand.opened, .closed: the stand return opens the stand and the fixture's job closes it |
-| `merchant.gathering.phase` | character, mode, phase, by | e2e/live-merchant-hooks.spec.ts#merchant.gathering.phase, .cast: one fishing attempt walks, casts and reports its catch or miss |
-| `merchant.gathering.cast` | character, mode, outcome (catch or miss), by | e2e/live-merchant-hooks.spec.ts#merchant.gathering.phase, .cast: one fishing attempt walks, casts and reports its catch or miss |
+| `merchant.holder.changed` | character, from, to, command, by | e2e/gathering-session-rows.ts#merchant.holder.changed: the runner's holder goes to the fixture's job and back to none |
+| `merchant.stand.opened` | character, by (the holder) | e2e/gathering-session-rows.ts#merchant.stand.opened, .closed: the stand return opens the stand and the fixture's job closes it |
+| `merchant.stand.closed` | character, by (the holder that took the stand) | e2e/gathering-session-rows.ts#merchant.stand.opened, .closed: the stand return opens the stand and the fixture's job closes it |
+| `merchant.gathering.phase` | character, mode, phase, by | e2e/gathering-session-rows.ts#merchant.gathering.phase, .cast: one fishing attempt walks, casts and reports its catch or miss |
+| `merchant.gathering.cast` | character, mode, outcome (catch or miss), by | e2e/gathering-session-rows.ts#merchant.gathering.phase, .cast: one fishing attempt walks, casts and reports its catch or miss |
 | `merchant.gathering.noTool` | subject (the merchant), kind (the mode), code (set or cleared), by | scripts/tests/coordinator-settings.test.cjs#gathering toggles preserve other modes, clear no-tool status, and reject stale merchant reports |
 
 ### Dashboard slots
@@ -403,7 +403,7 @@ fails while this file differs from the code. The add-on guide is [README.md](REA
 | Hook | Who answers | Add-on may ask | Bound | Receives | Returns | Fixture |
 |---|---|---|---|---|---|
 | `calls.band` | core only | no |  | the band (survival, job or background), the socket method and its data | send or not-now | scripts/tests/hook-registry.test.cjs#calls.band has one core answer and no add-on answer |
-| `calls.margin` | core only | yes |  | nothing | the margin in ms | e2e/live-calls-hooks.spec.ts#calls.margin: the add-on reads the margin while the figure holds |
+| `calls.margin` | core only | yes |  | nothing | the margin in ms | e2e/windows/W05-call-pressure.spec.ts#calls.margin: the add-on reads the margin while the figure holds |
 | `calls.window` | core only | yes |  | nothing | the window in ms | scripts/tests/hook-registry.test.cjs#calls.band has one core answer and no add-on answer |
 | `retry.policy` | many | no | a wait no shorter than core's and no shorter than calls.window; a failure core gives up on stays given up, and an answer may give up sooner or count a retry core does not count, never later; with several answers the longest wait and the earliest give-up win | owner, subject, failure, attempt and core's own {wait, giveUp, counts} | {wait?, giveUp?, counts?} or nothing | scripts/tests/merchant-rendezvous-retry.test.cjs#P5: the add-on waits 30 s before a retry, a shorter wait keeps core's, and it gives a job up on its second failure |
 | `realm.reconnect` | core only | no |  | a character | sent, or not-now while the merchant's own move is in flight | scripts/tests/realm-owner.test.cjs#MJ91: a reconnect logs in once on the realm the character reports and adds no want |
@@ -415,12 +415,12 @@ fails while this file differs from the code. The add-on guide is [README.md](REA
 
 | Event | Payload | Fixture |
 |---|---|---|
-| `calls.held` | character, method, cost, used, margin, source, by | e2e/live-calls-hooks.spec.ts#calls.held: an untagged players emit under the planted figure is held |
-| `calls.released` | character, method, cost, waitedMs, margin, sentMargin, by | e2e/live-calls-hooks.spec.ts#calls.released: the held players emit goes once the figure leaves |
-| `calls.waited` | character, band, method, cost, waitedMs, by | e2e/live-calls-hooks.spec.ts#calls.waited: a job question waits on the planted figure, then goes |
-| `calls.raised` | character, method, waitedMs, by | e2e/live-calls-hooks.spec.ts#calls.raised: a background read waits one window and goes in the job band |
-| `calls.unmatched` | character, method, band, by | e2e/live-calls-hooks.spec.ts#calls.unmatched: a question with no call after it is unmatched |
-| `calls.limitdc` | character, total, limit, by | e2e/live-calls-hooks.spec.ts#calls.limitdc: the planted overflow writes the limitdc snapshot |
+| `calls.held` | character, method, cost, used, margin, source, by | e2e/windows/W05-call-pressure.spec.ts#calls.held: an untagged players emit under the planted figure is held |
+| `calls.released` | character, method, cost, waitedMs, margin, sentMargin, by | e2e/windows/W05-call-pressure.spec.ts#calls.released: the held players emit goes once the figure leaves |
+| `calls.waited` | character, band, method, cost, waitedMs, by | e2e/windows/W05-call-pressure.spec.ts#calls.waited: a job question waits on the planted figure, then goes |
+| `calls.raised` | character, method, waitedMs, by | e2e/windows/W05-call-pressure.spec.ts#calls.raised: a background read waits one window and goes in the job band |
+| `calls.unmatched` | character, method, band, by | e2e/windows/W05-call-pressure.spec.ts#calls.unmatched: a question with no call after it is unmatched |
+| `calls.limitdc` | character, total, limit, by | e2e/windows/W05-call-pressure.spec.ts#calls.limitdc: the planted overflow writes the limitdc snapshot |
 | `realm.move.started` | subject (the merchant), owner (the want), code (the realm), by | scripts/tests/realm-owner.test.cjs#A4: the realm owner's notices: a move starts, fails one window, is retried and arrives; a refused and a granted want |
 | `realm.move.arrived` | subject, owner, code (the realm), by | scripts/tests/realm-owner.test.cjs#A4: the realm owner's notices: a move starts, fails one window, is retried and arrives; a refused and a granted want |
 | `realm.move.failed` | subject, owner, code (the ladder rung), by | scripts/tests/realm-owner.test.cjs#A4: the realm owner's notices: a move starts, fails one window, is retried and arrives; a refused and a granted want |
@@ -437,18 +437,18 @@ fails while this file differs from the code. The add-on guide is [README.md](REA
 
 | Hook | Who answers | Add-on may ask | Bound | Receives | Returns | Fixture |
 |---|---|---|---|---|---|
-| `items.claim` | many | no | after every core claim; refused at load when it cannot fit its place | the item view: bag, bank, the place | {item, quantity, place, reason} | e2e/live-items-hooks.spec.ts#items.claim: an add-on claim of 2 stacks of hpot1 keeps them through a bank visit |
-| `items.action` | many | no | only copies with no player mark or claim, so a copy another fate holds stays held; an action naming one of F5's core actions (CF-S10); over a core rule's action only when its order places it before that action (P11) | the copy, its owner and the core rule's action when one holds it | {action, order?: {before \| after: a core action}} or nothing | e2e/live-items-hooks.spec.ts#items.action: an add-on action takes an unclaimed copy; a claimed copy is not offered |
-| `items.source` | many | no | after the core sources; the gold reserve and the PVP refusal bind it | the bid | listings {key, realm, price, quantity} | e2e/live-items-hooks.spec.ts#items.source: an add-on source's listing is bought after the core sources |
+| `items.claim` | many | no | after every core claim; refused at load when it cannot fit its place | the item view: bag, bank, the place | {item, quantity, place, reason} | e2e/windows/W03-merchant-visits.spec.ts#items.claim: two stacks of hpot1 claimed through the collection below |
+| `items.action` | many | no | only copies with no player mark or claim, so a copy another fate holds stays held; an action naming one of F5's core actions (CF-S10); over a core rule's action only when its order places it before that action (P11) | the copy, its owner and the core rule's action when one holds it | {action, order?: {before \| after: a core action}} or nothing | e2e/windows/W03-merchant-visits.spec.ts#'items.action' |
+| `items.source` | many | no | after the core sources; the gold reserve and the PVP refusal bind it | the bid | listings {key, realm, price, quantity} | e2e/windows/W03-merchant-visits.spec.ts#'items.source' |
 | `items.bankLayout` | one | no | refusal only of a slot outside the floor | the floor's items | the slot order | scripts/tests/hook-registry.test.cjs#items.bankLayout: an add-on layout orders a floor; an out-of-floor slot is refused |
-| `items.stock` | core only | yes |  | character, item | the copies it may use, claims kept (C50) | e2e/live-items-hooks.spec.ts#items.stock: the stock read leaves out claimed copies |
+| `items.stock` | core only | yes |  | character, item | the copies it may use, claims kept (C50) | e2e/windows/W03-merchant-visits.spec.ts#'items.stock' |
 | `items.claimPending` | core only | yes |  | character, claimer | the stored copies 10 still fetches for the claimer's claims at the character (G01) | scripts/tests/hook-registry.test.cjs#items.claimPending: a stored copy an all claim names is fetched |
-| `items.needs` | core only | yes |  | the job | {gold, withdrawals, slots, postage, blockedBy?} (C59) | e2e/live-items-hooks.spec.ts#items.needs: a job's needs name gold and withdrawals |
-| `items.fate` | core only | yes |  | character, slot or mark | the copy's fate, its I1 row and by | e2e/live-items-hooks.spec.ts#items.fate: the fate read names its row and by |
-| `items.freeSlots` | core only | yes |  | character | free bag cells past the lucky slot's hold and the protected free slots | e2e/live-items-hooks.spec.ts#items.freeSlots: the lucky slot's hold is counted |
+| `items.needs` | core only | yes |  | the job | {gold, withdrawals, slots, postage, blockedBy?} (C59) | e2e/windows/W03-merchant-visits.spec.ts#'items.needs' |
+| `items.fate` | core only | yes |  | character, slot or mark | the copy's fate, its I1 row and by | e2e/windows/W03-merchant-visits.spec.ts#'items.fate' |
+| `items.freeSlots` | core only | yes |  | character | free bag cells past the lucky slot's hold and the protected free slots | e2e/windows/W03-merchant-visits.spec.ts#'items.freeSlots' |
 | `items.luckySlot` | core only | yes |  | character | the lucky slot (P8), or null | scripts/tests/hook-registry.test.cjs#items.luckySlot: lock, resume, verified, tracker |
 | `items.fetch` | core only | no |  | character, item | withdrawn or not found (C83) | scripts/tests/hook-registry.test.cjs#items.fetch: a missing item withdrawn or not found |
-| `items.bank` | core only | yes |  | nothing | the bank snapshot | e2e/live-items-hooks.spec.ts#items.bank: the snapshot read |
+| `items.bank` | core only | yes |  | nothing | the bank snapshot | e2e/windows/W03-merchant-visits.spec.ts#'items.bank' |
 | `items.storagePending` | core only | yes |  | character | whether storage work waits for it | scripts/tests/hook-registry.test.cjs#items.storagePending: a pending BankBoi transfer is named |
 | `items.productionPending` | core only | yes |  | character | whether production work waits for it | scripts/tests/hook-registry.test.cjs#items.productionPending: a pending intent is named |
 | `items.bag` | core only | yes |  | character | the bag holder's facts (3.4) | scripts/tests/items-bag.test.cjs#each fact follows the holder |
@@ -458,20 +458,20 @@ fails while this file differs from the code. The add-on guide is [README.md](REA
 
 | Event | Payload | Fixture |
 |---|---|---|
-| `items.fateChanged` | subject (the owner), slot, fate, by | e2e/live-items-hooks.spec.ts#items.fateChanged: the exchange reward's fate is the merchant's restock claim |
-| `items.claimShort` | subject, item, short, by | e2e/live-items-hooks.spec.ts#items.claimShort: a claim larger than the bag holds names its shortfall |
-| `items.banked` | subject, item, quantity, by | e2e/live-items-hooks.spec.ts#items.banked, .withdrawn: a bank visit banks the unclaimed rest |
-| `items.withdrawn` | subject, item, quantity, by | e2e/live-items-hooks.spec.ts#items.banked, .withdrawn: a bank visit banks the unclaimed rest |
-| `items.bought` | subject, item, quantity, source, by | e2e/live-items-hooks.spec.ts#items.bought, .sold: a stand purchase and an NPC sale |
-| `items.sold` | subject, item, quantity, source, by | e2e/live-items-hooks.spec.ts#items.bought, .sold: a stand purchase and an NPC sale |
-| `items.listed` | subject, item, kind (sale or offer), by | e2e/live-items-hooks.spec.ts#items.listed, .unlisted: an offer replaced after its slot empties |
-| `items.unlisted` | subject, item, kind, by | e2e/live-items-hooks.spec.ts#items.listed, .unlisted: an offer replaced after its slot empties |
+| `items.fateChanged` | subject (the owner), slot, fate, by | e2e/windows/W03-merchant-visits.spec.ts#'items.fateChanged' |
+| `items.claimShort` | subject, item, short, by | e2e/windows/W03-merchant-visits.spec.ts#'items.claimShort' |
+| `items.banked` | subject, item, quantity, by | e2e/windows/W03-merchant-visits.spec.ts#'items.banked' |
+| `items.withdrawn` | subject, item, quantity, by | e2e/windows/W03-merchant-visits.spec.ts#'items.banked' |
+| `items.bought` | subject, item, quantity, source, by | e2e/windows/W03-merchant-visits.spec.ts#'items.sold' |
+| `items.sold` | subject, item, quantity, source, by | e2e/windows/W03-merchant-visits.spec.ts#'items.sold' |
+| `items.listed` | subject, item, kind (sale or offer), by | e2e/windows/W03-merchant-visits.spec.ts#'items.listed' |
+| `items.unlisted` | subject, item, kind, by | e2e/windows/W03-merchant-visits.spec.ts#'items.unlisted' |
 | `items.produced` | subject, item, kind, result, by | scripts/tests/hook-registry.test.cjs#items.produced: an upgrade result is reported once |
 | `items.exchanged` | subject, item, by | scripts/tests/hook-registry.test.cjs#items.exchanged: each reward once across checkpoints |
 | `items.dismantled` | subject, item, by | scripts/tests/deconstruction.test.cjs#items.dismantled: each result once |
-| `items.mailed` | subject, action (sent, collected or deleted), by | e2e/live-items-hooks.spec.ts#items.mailed: a mail sent with postage |
+| `items.mailed` | subject, action (sent, collected or deleted), by | e2e/windows/W03-merchant-visits.spec.ts#'items.mailed' |
 | `items.storage` | subject (the BankBoi), phase (started or ended), by | scripts/tests/bankboi-recovery.test.cjs#items.storage: a transaction's start and end |
-| `items.bankChanged` | subject (the bank), by | e2e/live-items-hooks.spec.ts#items.bankChanged: the snapshot changes once per changed report |
+| `items.bankChanged` | subject (the bank), by | e2e/windows/W03-merchant-visits.spec.ts#'items.bankChanged' |
 | `items.orderPaused` | subject (the merchant), item, by | scripts/tests/native-stand.test.cjs#a buy order short of gold is paused once and placed again when gold arrives |
 | `items.claimRefused` | subject (the add-on), item, place, by | scripts/tests/hook-registry.test.cjs#items.claimRefused: a claim that cannot fit its place is refused at load |
 | `items.sortLease` | subject, phase (taken, retry or settled), code on a retry, by | scripts/tests/hook-registry.test.cjs#items.sortLease: a sort lease taken, retried and settled |
@@ -491,7 +491,7 @@ fails while this file differs from the code. The add-on guide is [README.md](REA
 
 | Hook | Who answers | Add-on may ask | Bound | Receives | Returns | Fixture |
 |---|---|---|---|---|---|
-| `target.settings` | slot | no |  | the scope's add-on store, the scope and the player's change | the reply, or an error in plain words | e2e/live-tasks-hooks.spec.ts#L: the entry's settings route writes its scope store |
+| `target.settings` | slot | no |  | the scope's add-on store, the scope and the player's change | the reply, or an error in plain words | e2e/tasks-hooks-rows.ts#L: the entry's settings route writes its scope store |
 | `settings.write` | core only | no |  | a batch of changes, its source and an optional basis | ok with the changed fields, or the refused field and why | e2e/live-settings-hooks.spec.ts#L: the add-on writes its own setting, then a core one as console:<name> |
 | `settings.read` | core only | yes |  | a field, with a character for a per-character or scoped field | the value | e2e/live-settings-hooks.spec.ts#L: the add-on reads its own setting and a core one |
 | `settings.declared` | core only | no |  | nothing | each declared field with its owner, a fresh copy of its default, its range, its scope and whether it is hidden | scripts/tests/hook-registry.test.cjs#X1: the start reads every declared default in one pass |
@@ -513,35 +513,35 @@ fails while this file differs from the code. The add-on guide is [README.md](REA
 
 | Hook | Who answers | Add-on may ask | Bound | Receives | Returns | Fixture |
 |---|---|---|---|---|---|
-| `status.report` | many | no | data only: fields under the add-on's own name in the report; it decides nothing | the character's view on each report | the fields to report, or nothing | e2e/live-status-hooks.spec.ts#L: the add-on's report field reaches the card |
-| `status.line` | many | no | data only: one line under the add-on's own name, below table L's line, never in place of it | {character, line} | {label} or nothing | e2e/live-status-hooks.spec.ts#L: the add-on's line shows under the card line with its name |
+| `status.report` | many | no | data only: fields under the add-on's own name in the report; it decides nothing | the character's view on each report | the fields to report, or nothing | e2e/windows/W09-party-walk.spec.ts#addonReports?.['status-hooks-fixture']?.[REPORT_FIELD] |
+| `status.line` | many | no | data only: one line under the add-on's own name, below table L's line, never in place of it | {character, line} | {label} or nothing | e2e/windows/W09-party-walk.spec.ts#{ op: 'line', line: STATUS_LINE } |
 | `addon.command` | many | no | only the named, enabled add-on answers; it writes only its own store for the character's farming scope, which the route saves; an answer that throws or breaks the {ok, reply} shape replies 500 and is recorded | {owner, character, store, now, body} | {ok: true, reply} or {ok: false, status, error} | scripts/tests/hook-registry.test.cjs#addon.command: the named add-on answers its own command and writes its own scope store |
-| `status.cardLine` | core only | yes |  | character | table L's answer with its group, or null | e2e/live-status-hooks.spec.ts#L: the add-on reads the card line |
-| `status.lastReport` | core only | yes |  | character | the last stored report and its seenAt, or null | e2e/live-status-hooks.spec.ts#L: the add-on reads its character's report |
-| `status.connected` | core only | yes |  | character | the one connection state | e2e/live-status-hooks.spec.ts#L: the stopped character reads not connected |
+| `status.cardLine` | core only | yes |  | character | table L's answer with its group, or null | e2e/windows/W01-goo-field.spec.ts#'status.cardLine' |
+| `status.lastReport` | core only | yes |  | character | the last stored report and its seenAt, or null | e2e/windows/W01-goo-field.spec.ts#'status.lastReport' |
+| `status.connected` | core only | yes |  | character | the one connection state | e2e/windows/W01-goo-field.spec.ts#'status.connected' |
 
 ### Events (read-only)
 
 | Event | Payload | Fixture |
 |---|---|---|
-| `status.lineChanged` | character, line, task, phase; by the table L row (L1 to L9) | e2e/live-status-hooks.spec.ts#L: the add-on task's line arrives as status.lineChanged |
-| `status.received` | character, seq, seenAt; by 'core:status' | e2e/live-status-hooks.spec.ts#L: each report sends status.received |
-| `status.replied` | character, the sections sent; by 'core:status' | e2e/live-status-hooks.spec.ts#L: each reply names its sections |
-| `dashboard.command` | route, character or group, the body less secrets; by 'user' or 'app:<name>' | e2e/live-status-hooks.spec.ts#L: a dashboard command arrives as dashboard.command by user |
-| `dashboard.opened` | the stream's client count; by 'core:status' | e2e/live-status-hooks.spec.ts#L: the dashboard opens and closes |
-| `dashboard.closed` | the stream's client count; by 'core:status' | e2e/live-status-hooks.spec.ts#L: the dashboard opens and closes |
-| `diagnostics.leased` | character, the rings named; by 'user' | e2e/live-status-hooks.spec.ts#L: the diagnostics view leases the rings, then releases them |
-| `diagnostics.released` | character, the rings ended; by 'user' | e2e/live-status-hooks.spec.ts#L: the diagnostics view leases the rings, then releases them |
-| `app.keyIssued` | key name, scopes, tier; by 'user' | e2e/live-status-hooks.spec.ts#L: a key is issued, used once and revoked |
-| `app.keyRevoked` | key name, scopes, tier; by 'user' | e2e/live-status-hooks.spec.ts#L: a key is issued, used once and revoked |
-| `app.used` | key name, scopes, tier; by 'app:<name>' | e2e/live-status-hooks.spec.ts#L: a key is issued, used once and revoked |
+| `status.lineChanged` | character, line, task, phase; by the table L row (L1 to L9) | e2e/windows/W09-party-walk.spec.ts#'status.lineChanged' |
+| `status.received` | character, seq, seenAt; by 'core:status' | e2e/windows/W01-goo-field.spec.ts#'status.received' |
+| `status.replied` | character, the sections sent; by 'core:status' | e2e/windows/W01-goo-field.spec.ts#'status.replied' |
+| `dashboard.command` | route, character or group, the body less secrets; by 'user' or 'app:<name>' | e2e/windows/W09-party-walk.spec.ts#'dashboard.command' |
+| `dashboard.opened` | the stream's client count; by 'core:status' | e2e/windows/W09-party-walk.spec.ts#'dashboard.opened' |
+| `dashboard.closed` | the stream's client count; by 'core:status' | e2e/windows/W09-party-walk.spec.ts#'dashboard.closed' |
+| `diagnostics.leased` | character, the rings named; by 'user' | e2e/windows/W09-party-walk.spec.ts#'diagnostics.leased' |
+| `diagnostics.released` | character, the rings ended; by 'user' | e2e/windows/W09-party-walk.spec.ts#'diagnostics.released' |
+| `app.keyIssued` | key name, scopes, tier; by 'user' | e2e/windows/W09-party-walk.spec.ts#'app.keyIssued' |
+| `app.keyRevoked` | key name, scopes, tier; by 'user' | e2e/windows/W09-party-walk.spec.ts#'app.keyRevoked' |
+| `app.used` | key name, scopes, tier; by 'app:<name>' | e2e/windows/W09-party-walk.spec.ts#'app.used' |
 
 ### Dashboard slots
 
 | Slot | Data | Takes a section | Bound | Fixture |
 |---|---|---|---|---|
-| `card-line` | {character, label} from status.line answers | no |  | e2e/live-status-hooks.spec.ts#L: the add-on's line shows under the card line with its name |
-| `diagnostics-ring` | {ring, label, records} for an add-on's own ring, posted through table G's lease | yes |  | e2e/live-status-hooks.spec.ts#L: the add-on's ring shows as a tab of the diagnostics view |
+| `card-line` | {character, label} from status.line answers | no |  | e2e/windows/W09-party-walk.spec.ts#{ op: 'line', line: STATUS_LINE } |
+| `diagnostics-ring` | {ring, label, records} for an add-on's own ring, posted through table G's lease | yes |  | e2e/windows/W09-party-walk.spec.ts#The `diagnostics-ring` slot: the add-on list names the ring with its label |
 | `top-bar` | {part: views, actions or status, state (PartyState), settings} | yes | adds one piece per add-on per part after the core ones: a button after Logs or Bank, an indicator after the hand count; Settings, the core buttons and the gold stay as they are, in their order | scripts/tests/dashboard-addon-slots.test.cjs#top-bar: the add-on's button follows Bank, its view follows Logs and its status follows the hand count |
 | `card-section` | {part: one of the card's ten parts, character, report: the character's addonReports[addon], members: the party's character names, send(body): the add-on's own addon.command, settings} | yes | adds one block per add-on per part after that part's core content; the core blocks, the Leader and Follow controls, the meters and the inventory stay as they are, in their order | scripts/tests/dashboard-addon-slots.test.cjs#card-section: the add-on's block shows after the mode rows of the Farming settings line, with its own report |
 | `dialog-section` | {part: one of the 25 dialogs, subject: the character, item, monster, status effect or event the dialog shows, settings} | yes | appends one section per add-on after the dialog's core content and above its footer; core content and footer buttons stay as they are, in their order; no confirmation dialog offers it | scripts/tests/dashboard-addon-slots.test.cjs#dialog-section: the add-on's section closes the status effect dialog, with the condition as its subject |
@@ -556,31 +556,31 @@ fails while this file differs from the code. The add-on guide is [README.md](REA
 
 | Hook | Who answers | Add-on may ask | Bound | Receives | Returns | Fixture |
 |---|---|---|---|---|---|
-| `lifecycle.ready` | many | no | refusal only: an answer can hold readiness, never grant it | the character and the deploy lease | {ready, reason}: ready false holds the drain with the reason | e2e/live-lifecycle-hooks.spec.ts#lifecycle.ready: the add-on holds the drain while its own work runs, and the deploy waits on its reason |
+| `lifecycle.ready` | many | no | refusal only: an answer can hold readiness, never grant it | the character and the deploy lease | {ready, reason}: ready false holds the drain with the reason | e2e/lifecycle-hooks-rows.ts#lifecycle.ready: the add-on holds the drain while its own work runs, and the deploy waits on its reason |
 | `roster.offline` | core only | no |  | a character name | a promise of whether two account answers in a row showed it offline before a handoff phase would expire | scripts/tests/coordinator-ownership.test.cjs#roster.offline, roster.assign: the BankBoi swap sees the old character offline, then starts the new one in its slot |
 | `roster.assign` | core only | no |  | a slot number from 1 and a character name | nothing; the slot starts the character | scripts/tests/coordinator-ownership.test.cjs#roster.offline, roster.assign: the BankBoi swap sees the old character offline, then starts the new one in its slot |
-| `lifecycle.state` | core only | yes |  | nothing | {paused, pausedAt, drain, shutdown} | e2e/live-lifecycle-hooks.spec.ts#lifecycle.state: the add-on reads paused true while paused |
-| `lifecycle.drain` | core only | yes |  | nothing | on the character {targets, park} or null; on the coordinator {lease, participants} or null | e2e/live-lifecycle-hooks.spec.ts#lifecycle.drain: the add-on reads the drain's targets during the safe deploy |
+| `lifecycle.state` | core only | yes |  | nothing | {paused, pausedAt, drain, shutdown} | e2e/lifecycle-hooks-rows.ts#lifecycle.state: the add-on reads paused true while paused |
+| `lifecycle.drain` | core only | yes |  | nothing | on the character {targets, park} or null; on the coordinator {lease, participants} or null | e2e/lifecycle-hooks-rows.ts#lifecycle.drain: the add-on reads the drain's targets during the safe deploy |
 | `lifecycle.allows` | core only | yes |  | nothing | table D: whether the merchant, recovery, pulls or reply question may go | scripts/tests/lifecycle-rules.test.cjs#LF8 table D: each coordinator question is refused under the Pause and under its lease rows |
-| `lifecycle.boundary` | core only | no |  | nothing | a promise that settles once neither a drain nor table P1 holds the character (C69, K-B2) | e2e/live-lifecycle-hooks.spec.ts#lifecycle.boundary: a boundary opened during the deploy settles on drainEnded |
-| `lifecycle.held` | core only | yes |  | nothing | table P on the character: whether it is held or starting | e2e/live-lifecycle-hooks.spec.ts#lifecycle.held: the add-on reads held while paused |
+| `lifecycle.boundary` | core only | no |  | nothing | a promise that settles once neither a drain nor table P1 holds the character (C69, K-B2) | e2e/lifecycle-hooks-rows.ts#lifecycle.boundary: a boundary opened during the deploy settles on drainEnded |
+| `lifecycle.held` | core only | yes |  | nothing | table P on the character: whether it is held or starting | e2e/lifecycle-hooks-rows.ts#lifecycle.held: the add-on reads held while paused |
 
 ### Events (read-only)
 
 | Event | Payload | Fixture |
 |---|---|---|
-| `report.sent` | character, sequence (the run's report count), by 'core:lifecycle' | e2e/live-lifecycle-hooks.spec.ts#report.sent: each report sends report.sent |
-| `lifecycle.started` | the realm, the generation and the reason: start, reload or resume; by 'core:lifecycle' | e2e/live-lifecycle-hooks.spec.ts#lifecycle.started: the restart sends started with reason start |
-| `lifecycle.paused` | the Pause's id and the running names; by 'user' or 'shutdown' | e2e/live-lifecycle-hooks.spec.ts#lifecycle.paused: Pause sends paused by user |
-| `lifecycle.played` | by 'user', 'auto-resume' or 'shutdown-cancel', and the skipped names | e2e/live-lifecycle-hooks.spec.ts#lifecycle.played: Play sends played by user |
-| `lifecycle.drainStarted` | the lease id, mode and load mode; by 'host' | e2e/live-lifecycle-hooks.spec.ts#lifecycle.drainStarted: the safe deploy sends drainStarted |
-| `lifecycle.drainEnded` | the lease id; by 'host' | e2e/live-lifecycle-hooks.spec.ts#lifecycle.drainEnded: the safe deploy's release sends drainEnded |
-| `lifecycle.readiness` | the character, the lease id and the waiting reasons; by 'core:lifecycle' | e2e/live-lifecycle-hooks.spec.ts#lifecycle.readiness: the add-on's hold appears in waiting, then clears |
-| `lifecycle.shutdown` | the phase (deferred, draining, safe or cancelled) and the hold reason; by 'user' | e2e/live-lifecycle-hooks.spec.ts#lifecycle.shutdown: the clean shutdown sends draining then safe |
-| `lifecycle.reloaded` | the character, the script hash and the outcome: ready, busy or failed; by 'core:lifecycle' | e2e/live-lifecycle-hooks.spec.ts#lifecycle.reloaded: the CODE reload sends reloaded ready |
-| `lifecycle.holdChanged` | the character, whether it is held, and by: 01's hold (`user` or `pause`) or 'core:lifecycle' for the first reply | e2e/live-lifecycle-hooks.spec.ts#lifecycle.holdChanged: the paused warrior sends holdChanged held, then released at Play |
-| `worker.started` | the character and the pid; by 'core:lifecycle' | e2e/live-lifecycle-hooks.spec.ts#worker.started, worker.exited: the restart's workers send exited then started |
-| `worker.exited` | the character, the pid and the exit {at, code, signal, reason}; by 'core:lifecycle' | e2e/live-lifecycle-hooks.spec.ts#worker.started, worker.exited: the restart's workers send exited then started |
+| `report.sent` | character, sequence (the run's report count), by 'core:lifecycle' | e2e/lifecycle-hooks-rows.ts#report.sent: each report sends report.sent |
+| `lifecycle.started` | the realm, the generation and the reason: start, reload or resume; by 'core:lifecycle' | e2e/lifecycle-hooks-rows.ts#lifecycle.started: the restart sends started with reason start |
+| `lifecycle.paused` | the Pause's id and the running names; by 'user' or 'shutdown' | e2e/lifecycle-hooks-rows.ts#lifecycle.paused: Pause sends paused by user |
+| `lifecycle.played` | by 'user', 'auto-resume' or 'shutdown-cancel', and the skipped names | e2e/lifecycle-hooks-rows.ts#lifecycle.played: Play sends played by user |
+| `lifecycle.drainStarted` | the lease id, mode and load mode; by 'host' | e2e/lifecycle-hooks-rows.ts#lifecycle.drainStarted: the safe deploy sends drainStarted |
+| `lifecycle.drainEnded` | the lease id; by 'host' | e2e/lifecycle-hooks-rows.ts#lifecycle.drainEnded: the safe deploy's release sends drainEnded |
+| `lifecycle.readiness` | the character, the lease id and the waiting reasons; by 'core:lifecycle' | e2e/lifecycle-hooks-rows.ts#lifecycle.readiness: the add-on's hold appears in waiting, then clears |
+| `lifecycle.shutdown` | the phase (deferred, draining, safe or cancelled) and the hold reason; by 'user' | e2e/lifecycle-hooks-rows.ts#lifecycle.shutdown: the clean shutdown sends draining then safe |
+| `lifecycle.reloaded` | the character, the script hash and the outcome: ready, busy or failed; by 'core:lifecycle' | e2e/lifecycle-hooks-rows.ts#lifecycle.reloaded: the CODE reload sends reloaded ready |
+| `lifecycle.holdChanged` | the character, whether it is held, and by: 01's hold (`user` or `pause`) or 'core:lifecycle' for the first reply | e2e/lifecycle-hooks-rows.ts#lifecycle.holdChanged: the paused warrior sends holdChanged held, then released at Play |
+| `worker.started` | the character and the pid; by 'core:lifecycle' | e2e/lifecycle-hooks-rows.ts#worker.started, worker.exited: the restart's workers send exited then started |
+| `worker.exited` | the character, the pid and the exit {at, code, signal, reason}; by 'core:lifecycle' | e2e/lifecycle-hooks-rows.ts#worker.started, worker.exited: the restart's workers send exited then started |
 | `roster.changed` | the Steam members and headless slots; by the actor that committed the change: 'user', 'steam-handoff', 'steam' or 'recovery' | scripts/tests/coordinator-ownership.test.cjs#roster.changed: a Steam group change sends roster.changed with the members and the slots |
 
 ## Owner 14 (runtime/hooks/rows/14-addons.ts)

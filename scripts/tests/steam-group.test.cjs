@@ -214,8 +214,8 @@ test('cancel and changed realm observations cannot perform the stale choice',asy
 // Decision 2026-11-17 (decisions.md): while a party switch or its rollback owns its participants, a
 // Steam restore takes the switch's realm with no Switch/Stay prompt. The realm owner's door answers
 // which realm that is: the switch's target while it switches, the realm it left while it rolls back.
-// Observed in live-merchant-realm-recovery.spec.ts "sixty second timeout": the bridge's restore of
-// the missing Priest parked on the prompt during the rollback to US II.
+// Observed in live-merchant-realm-recovery.spec.ts "sixty second timeout" at 21fe30a2b: the bridge's
+// restore of the missing Priest parked on the prompt during the rollback to US II.
 test('a Steam restore during a party switch or its rollback takes the switch realm with no prompt',async()=>{
  const {realmOperationDestination}=require('../../runtime/merchant-realm/api.ts');
  for(const [phase,realm] of [['switching','SR_USI'],['rolling-back','SR_USII']]){

@@ -15,5 +15,6 @@
 - Native completion, inventory, persisted rules and public queue state are
   separate milestones. Poll exact fresh observations and retain native receipts.
 
-Repeat with `npm test -- --project=live live-bank-npc-sales.spec.ts
--g "bank sale scheduling" --workers=1` (ChronAL is the default backend).
+Repeat with `npm run test:e2e:live -- e2e/windows/W51-merchant-bank-day.spec.ts`
+(ChronAL is the default backend). W51 plays the bank sale scheduling rows of
+`live-bank-npc-sales.spec.ts` at 21fe30a2b.

@@ -1,7 +1,7 @@
 // The targeting hooks fixture add-on's heard list (e2e/fixtures/targeting-hooks-addon.ts), which
-// e2e/live-targeting-hooks.spec.ts reads at each step. A live run tells every pass's changed and
-// passed notices, several a second on the leader, so a rare notice such as targeting.retired must
-// outlast them until the step that reads it.
+// W08b (e2e/windows/W08b-unreachable-plant.spec.ts) reads at each step. A live run tells every pass's
+// changed and passed notices, several a second on the leader, so a rare notice such as targeting.retired
+// must outlast them until the step that reads it.
 const assert = require('node:assert/strict');
 const { scenarioTable } = require('./fixtures/scenarios.cjs');
 const { targetingHooks, CHARACTER_NOTICES, HEARD_PER_NOTICE } = require('../../e2e/fixtures/targeting-hooks-addon.ts');

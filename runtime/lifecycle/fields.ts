@@ -150,9 +150,9 @@ export const CHARACTER_PICKS = {
   lifecycleReportMs: 1_000,
   // The CODE loader's picks (character/loader.ts). The host answers its deployment reply and the
   // activation record on request and sends nothing to a CODE frame, so the loader asks each
-  // `loaderPollMs`; with no record named it asks for activation.json each `loaderRecordRecheckMs` (a
-  // record the reply does not name, as live-console-explicit-activation.spec.ts serves, is adopted
-  // within it). A source fetch and the deployment reply each end after their kept bound, since a
+  // `loaderPollMs`; with no record named it asks for activation.json each `loaderRecordRecheckMs`, so
+  // it adopts a record the reply does not name within that interval. e2e/deploy-session-rows.ts
+  // `codeDeployPlay` serves such a record. A source fetch and the deployment reply each end after their kept bound, since a
   // request the host never answers sends no fact; each firing tells the status owner's bound record.
   loaderPollMs: 2_000,
   loaderRecordRecheckMs: 10_000,
