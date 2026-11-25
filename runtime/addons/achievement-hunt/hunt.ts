@@ -346,8 +346,11 @@ export function createAchievementHunt(current: () => AchievementHuntView) {
     }
     const location = port().destination(choice.id);
     // The selection refuses a target it cannot start by returning null; a throw is a fault that
-    // reaches the hook registry's error path.
-    const started = location ? port().select(choice.id, location) : null;
+    // reaches the hook registry's error path. The current target's next step starts no walk: its
+    // select would suspend this task under a manual-tier trip to the ground the party fights on.
+    // A party away from that ground walks back through returnToTarget.
+    const sameGround = store().achievementTarget?.id === choice.id;
+    const started = !!location && (sameGround || !!port().select(choice.id, location));
     if (!started) {
       unroutable.set(choice.id, scope().monsterChoices);
       return say(`Skipping ${choice.id}: ${location ? "the party convoy could not be started" : "no known spawn location"}`);

@@ -119,6 +119,18 @@ row('items 10 and 14: the target order, its steps and what stops or skips a swit
   assert.match(f.state.achievementMessage, /Farming Bee: 0 \/ 10 kills \(step 1\)/);
 });
 
+row('items 10 and 14: the target order, its steps and what stops or skips a switch', 'the target\'s next step keeps the party on its ground with no walk', () => {
+  // The live table's goo row: a walk at each milestone suspended the add-on's task under a
+  // manual-tier trip to the spawn the party was already fighting on.
+  const f = huntFixture({ catalog, choices, hunt: { monsters: ['goo'], blacklistDeaths: true, deathThreshold: 2 } });
+  f.hunt.tick();
+  f.advance(5_000); f.kills('goo', 10); f.hunt.tick();
+  assert.deepEqual(f.selected, ['goo']);
+  assert.equal(f.state.achievementTarget.step, 1);
+  assert.deepEqual(f.state.monsterFocus, ['goo']);
+  assert.match(f.state.achievementMessage, /Farming Goo: 10 \/ 100 kills \(step 2\)/);
+});
+
 row('items 10 and 14: the target order, its steps and what stops or skips a switch', 'a monster that comes back at a lower step takes over from a higher-step target', () => {
   const f = fixture({ goo: 10, bee: 10 }, { achievementHunt: { monsters: ['bee', 'wolf'], blacklistDeaths: true, deathThreshold: 2 } });
   f.hunt.tick(); // wolf's step 1

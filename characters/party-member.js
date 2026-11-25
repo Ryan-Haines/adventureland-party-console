@@ -14120,7 +14120,8 @@ ${hook}`, was = errors.get(key3);
         return say2(names2.length ? `No target to farm: fighting ${names2.join(", ")} when seen` : "Nothing left to farm: every selected monster has finished its ladder or is skipped");
       }
       const location = port().destination(choice.id);
-      const started = location ? port().select(choice.id, location) : null;
+      const sameGround = store().achievementTarget?.id === choice.id;
+      const started = !!location && (sameGround || !!port().select(choice.id, location));
       if (!started) {
         unroutable.set(choice.id, scope2().monsterChoices);
         return say2(`Skipping ${choice.id}: ${location ? "the party convoy could not be started" : "no known spawn location"}`);
