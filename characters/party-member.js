@@ -47230,7 +47230,7 @@ ${hook}`, was = errors.get(key3);
     const reported = parent2.character && parent2.character.monster_stats;
     if (reported) speed += Number(reported.speed) || 0;
     else if (holdsTracktrix(character2)) speed += achievementStats(G2, progress).speed || 0;
-    return Math.max(5, speed + attributeStats.runSpeed(Number(character2.str) || 0, Number(character2.dex) || 0) + levelRunSpeed(Number(character2.level) || 0));
+    return Math.round(Math.max(5, speed + attributeStats.runSpeed(Number(character2.str) || 0, Number(character2.dex) || 0) + levelRunSpeed(Number(character2.level) || 0)));
   }
   function dollHtml(html, G2, parent2, imageUrls) {
     const blobs = html.match(/blob:[^'"\s]+/g) || [];

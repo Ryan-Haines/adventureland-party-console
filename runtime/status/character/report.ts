@@ -102,7 +102,9 @@ export function tracktrixBonuses(character: Game, parent: Game, G: Game, progres
 
 // The run speed from class, gear and stats before the stand, cruise and terrain, as the game's
 // calculate_player_stats computes it. `conditions` adds the conditions on the character; the walk's pace
-// reads it without them, so Hard Shell, a slow or a buff never sets a walk's pace.
+// reads it without them, so Hard Shell, a slow or a buff never sets a walk's pace. The game rounds
+// the speed last (js/progression/stats.js:733 at the game pin), so a walk paced on it matches each
+// member's reported `speed`.
 export function runSpeed(game: { character: Game; G: Game; parent: Game; itemProperties(item: Game): Game },
   progress: AchievementProgress, conditions: boolean): number | null {
   const { character, G, parent } = game, definition = G.classes[character.ctype];
@@ -126,8 +128,8 @@ export function runSpeed(game: { character: Game; G: Game; parent: Game; itemPro
   const reported = parent.character && parent.character.monster_stats;
   if (reported) speed += Number(reported.speed) || 0;
   else if (holdsTracktrix(character)) speed += achievementStats(G, progress).speed || 0;
-  return Math.max(5, speed + attributeStats.runSpeed(Number(character.str) || 0, Number(character.dex) || 0) +
-    levelRunSpeed(Number(character.level) || 0));
+  return Math.round(Math.max(5, speed + attributeStats.runSpeed(Number(character.str) || 0, Number(character.dex) || 0) +
+    levelRunSpeed(Number(character.level) || 0)));
 }
 
 // Steam's sprite() uses desktop.imageUrl(), whose blobs belong to the game window, so the dashboard's

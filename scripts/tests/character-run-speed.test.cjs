@@ -14,7 +14,8 @@ test('merchant speed includes equipment and exact set bonus; stand cannot hide a
    parent:{character:{}},G:{classes:{merchant:{speed:55}},items:{boots:{set:'wanderers'},hat:{set:'wanderers'}},sets:{wanderers:{2:{speed:2}}},conditions:{}},
    itemProperties:item=>({speed:item.name==='boots'?10:0,set:'wanderers'})};
  const report=gameReads(c),speed=()=>report.runSpeed(true);
- const before=speed();assert.ok(Math.abs(before-74.5875)<1e-9);
+ // calculate_player_stats rounds the speed last (js/progression/stats.js:733 at the game pin): 74.5875 runs at 75.
+ const before=speed();assert.equal(before,75);
  c.character.dex+=32;assert.ok(Math.abs(speed()-before-1)<1e-9);
  c.character.stand=false;c.character.speed=75;assert.ok(Math.abs(speed()-before-1)<1e-9);
  c.character.dex=256;const capped=speed();c.character.dex=288;assert.equal(speed(),capped);
