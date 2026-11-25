@@ -730,7 +730,7 @@ export async function huntTake(_args: Readonly<Record<string, unknown>>, ask: Do
   if (held) return refused("the core Hunt holds this member's group");
   const root = globalThis as HuntRoot;
   if (!root.__partyHooks || !root.interact) throw Error('The hunting owner is not installed on this character');
-  if (root.__partyHooks.calls.band({ band, method: 'interact' }) !== 'send') return refused('call budget refused the ' + band + ' band');
+  if (root.__partyHooks.calls.band({ band, method: 'monsterhunt' }) !== 'send') return refused('call budget refused the ' + band + ' band');
   return { outcome: 'sent', reply: await root.interact('monsterhunt') };
 }
 // The rest of the hunting owner's PLAIN reads (rows/07-hunting.ts `PLAIN`), so each is a door export an add-on reads.

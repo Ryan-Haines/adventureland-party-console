@@ -566,12 +566,15 @@ export function installEventAnniversary(ports: EventAnniversaryPorts) {
       if (!merchant() && ports.attend.active()) pollSoon();
     }
   }
+  // close_stand() emits `merchant` with `close: 1` (js/functions.js:3850 `close_merchant` at the game
+  // pin), so the question names that call and the budget matches it.
+  const standClose = () => marginCall('merchant', () => ports.game.closeStand(), 'Stand close', { close: 1 });
   // The stand closes on the game's reply; the kiss waits for the character's `stand` to clear at the
   // game's resends after it, within the round.
   async function closeStand(event: AnniversaryRound, current: () => void) {
     s.stage = 'closing stand before anniversary kiss';
     ports.log('Closing merchant stand before anniversary travel', '#ff69b4');
-    await marginCall('close_stand', () => ports.game.closeStand(), 'Stand close');
+    await standClose();
     while (ports.character().stand) { await nextUpdate(ports.epoch(event.expires), 'player'); current(); }
     current();
   }
@@ -759,7 +762,7 @@ export function installEventAnniversary(ports: EventAnniversaryPorts) {
     const current = () => ports.current() && !ports.character().rip && !ports.merchant.holder() && !ports.merchant.gathering() && !ports.merchant.forceStand();
     const listed = () => (s.plan!.handoffTargets || []).find(entry => entry.name === target.name && entry.slice === target.slice);
     try {
-      if (ports.character().stand) await marginCall('close_stand', () => ports.game.closeStand(), 'Stand close');
+      if (ports.character().stand) await standClose();
       if (!current()) return;
       await ports.walk.smart({ map: target.map, x: Number(target.x), y: Number(target.y) }, ports.walk.request);
       // The fighter owns the send: its anniversary tick sees the merchant and hands over.
@@ -811,7 +814,7 @@ export function installEventAnniversary(ports: EventAnniversaryPorts) {
     s.busy = true;
     s.stage = 'returning slice to ' + debt.sender;
     try {
-      if (ports.character().stand) await marginCall('close_stand', () => ports.game.closeStand(), 'Stand close');
+      if (ports.character().stand) await standClose();
       await ports.walk.smart({ map: debt.map || ports.character().map, x: Number(debt.x), y: Number(debt.y) }, ports.walk.returnRequest);
       const c = ports.character(), sender = ports.game.player(debt.sender);
       if (!sender || sender.map !== c.map || Math.hypot(sender.x - c.x, sender.y - c.y) > SEND_REACH) throw new Error(debt.sender + ' is not currently reachable');

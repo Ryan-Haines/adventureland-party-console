@@ -1288,7 +1288,7 @@
       partyPositions: function () { return targeting.positions(); }, player: function (name) { return get_player(name); },
       onCooldown: function (skill) { return is_on_cooldown(skill); }, canUse: function (skill) { return can_use(skill); },
       nextSkill: function (skill) { return parent.next_skill && parent.next_skill[skill]; },
-      request: function (url, options) { return request(url, options); }, sleep: scopes.act08.sleep, act: scopes.act08,
+      request: function (url, options) { return request(url, options); }, act: scopes.act08,
       log: function (message, color) { game_log(message, color); },
       rendezvous: function (jobId, name) { return merchantVisits.rendezvous(jobId, name); },
     };

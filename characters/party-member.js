@@ -8069,7 +8069,7 @@
     const band = (question) => ctx.one("calls.band").hooks["calls.band"](question);
     const margin3 = () => Number(ctx.one("calls.margin").hooks["calls.margin"]());
     const callWindow = () => ctx.one("calls.window").hooks["calls.window"]();
-    async function wait(question, act2) {
+    async function wait(question, act2, call) {
       const game2 = () => globalThis.parent, socket = game2()?.socket;
       while (band(question) !== "send") {
         await act2.sleep(callWindow());
@@ -8077,10 +8077,10 @@
         if (socket && (now !== socket || socket.connected === false))
           throw Object.assign(Error(`The connection closed while ${question.method} waited for its call budget`), { reason: "disconnected" });
       }
+      return call();
     }
     async function marginCall2(owner, act2, method, call, label, data, bound3 = margin3()) {
-      await wait({ band: "job", method, data }, act2);
-      return new Promise((resolve2, reject) => {
+      return wait({ band: "job", method, data }, act2, () => new Promise((resolve2, reject) => {
         const timer = act2.setTimeout(() => {
           boundFired({ bound: "callMargin", owner, state: { method, label, ms: bound3 } });
           reject(Object.assign(Error(label + " timed out"), { reason: "timeout" }));
@@ -8092,7 +8092,7 @@
           act2.clearTimeout(timer);
           reject(error);
         });
-      });
+      }));
     }
     const calls = { band, margin: margin3, window: callWindow, wait, marginCall: marginCall2 };
     function policy(ask3, core) {
@@ -12188,7 +12188,7 @@ ${hook}`, was = errors.get(key3);
     if (held) return refused4("the core Hunt holds this member's group");
     const root2 = globalThis;
     if (!root2.__partyHooks || !root2.interact) throw Error("The hunting owner is not installed on this character");
-    if (root2.__partyHooks.calls.band({ band, method: "interact" }) !== "send") return refused4("call budget refused the " + band + " band");
+    if (root2.__partyHooks.calls.band({ band, method: "monsterhunt" }) !== "send") return refused4("call budget refused the " + band + " band");
     return { outcome: "sent", reply: await root2.interact("monsterhunt") };
   }
 
@@ -15986,8 +15986,7 @@ ${hook}`, was = errors.get(key3);
       let result = null, error = null;
       try {
         await ports.npcWalk(ports.findNpc("monsterhunter"));
-        await partyHooks().calls.wait({ band: "job", method: "interact" }, scope("07", "act"));
-        result = await interact("monsterhunt");
+        result = await partyHooks().calls.wait({ band: "job", method: "monsterhunt" }, scope("07", "act"), () => interact("monsterhunt"));
       } catch (huntError) {
         const e = huntError;
         error = String(e && (e.reason || e.message) || huntError);
@@ -16262,8 +16261,7 @@ ${hook}`, was = errors.get(key3);
   }
   async function requestCave(frame, id2, action, fields, bound3, handles = { act: scope("07", "act"), observe: scope("07", "observe") }) {
     const { act: act2, observe } = handles, socket = frame.socket, target = socket;
-    await partyHooks().calls.wait({ band: "job", method: "interaction" }, act2);
-    return new Promise((resolve2, reject) => {
+    return partyHooks().calls.wait({ band: "job", method: "interaction" }, act2, () => new Promise((resolve2, reject) => {
       if (!socket || socket.connected === false) return reject(Error("Cave socket disconnected"));
       let settled = false;
       const timer = act2.setTimeout(() => {
@@ -16298,7 +16296,7 @@ ${hook}`, was = errors.get(key3);
       function incoming(event, data) {
         if (event === "game_response") response(data);
       }
-    });
+    }));
   }
   function installDungeonRuntime(ports) {
     let visit, checking = false, checkId = 0, visitError, owned = false;
@@ -16550,14 +16548,16 @@ ${hook}`, was = errors.get(key3);
       for (const id2 of Object.keys(ports.frame().chests || {})) {
         if (!looting()) return;
         if (!chestAvailable(id2, ports.frame().chests[id2])) continue;
-        await jobBand("open_chest");
-        const margin3 = partyHooks().calls.margin();
-        if (chestAvailable(id2, ports.frame().chests[id2])) await ports.withTimeout(
-          ports.frame().open_chest(id2),
-          margin3,
-          "Dungeon loot",
-          () => boundFired({ bound: "callMargin", owner: "07", state: { method: "open_chest", label: "Dungeon loot", ms: margin3 } })
-        );
+        await partyHooks().calls.wait({ band: "job", method: "open_chest" }, scope("07", "act"), () => {
+          if (!chestAvailable(id2, ports.frame().chests[id2])) return void 0;
+          const margin3 = partyHooks().calls.margin();
+          return ports.withTimeout(
+            ports.frame().open_chest(id2),
+            margin3,
+            "Dungeon loot",
+            () => boundFired({ bound: "callMargin", owner: "07", state: { method: "open_chest", label: "Dungeon loot", ms: margin3 } })
+          );
+        });
       }
     }
     function chestOpened(data) {
@@ -16565,9 +16565,6 @@ ${hook}`, was = errors.get(key3);
       if (!data.cave || !run) return;
       if (opened().run !== run) host3.__partyDungeonOpenedChests = { run, ids: {} };
       opened().ids[data.id] = true;
-    }
-    async function jobBand(method) {
-      await partyHooks().calls.wait({ band: "job", method }, scope("07", "act"));
     }
     const request = async (action, fields) => {
       return requestCave(ports.frame(), "cave:" + me().name + ":" + Date.now() + ":" + Math.random(), action, fields || {}, partyHooks().calls.margin());
@@ -34906,8 +34903,7 @@ ${hook}`, was = errors.get(key3);
   // runtime/events/character/calls.ts
   var act = () => scope("06", "act");
   async function jobCall(method, call, data) {
-    await partyHooks().calls.wait({ band: "job", method, data }, act());
-    return call();
+    return partyHooks().calls.wait({ band: "job", method, data }, act(), call);
   }
   function backgroundCall(method, call) {
     if (partyHooks().calls.band({ band: "background", method }) !== "send") return false;
@@ -34920,9 +34916,8 @@ ${hook}`, was = errors.get(key3);
   }
   var refused2 = (reason4) => ({ outcome: "refused", by: "06", reason: reason4 });
   async function doorCall(band, method, call) {
-    if (band === "background") {
-      if (partyHooks().calls.band({ band, method }) !== "send") return refused2("call budget refused the background band");
-    } else await partyHooks().calls.wait({ band: "job", method }, act());
+    if (band === "job") return { outcome: "sent", reply: await partyHooks().calls.wait({ band: "job", method }, act(), call) };
+    if (partyHooks().calls.band({ band, method }) !== "send") return refused2("call budget refused the background band");
     return { outcome: "sent", reply: await call() };
   }
   var eventDoors2 = {
@@ -36618,10 +36613,11 @@ ${hook}`, was = errors.get(key3);
         if (!merchant7() && ports.attend.active()) pollSoon();
       }
     }
+    const standClose2 = () => marginCall("merchant", () => ports.game.closeStand(), "Stand close", { close: 1 });
     async function closeStand(event, current) {
       s.stage = "closing stand before anniversary kiss";
       ports.log("Closing merchant stand before anniversary travel", "#ff69b4");
-      await marginCall("close_stand", () => ports.game.closeStand(), "Stand close");
+      await standClose2();
       while (ports.character().stand) {
         await nextUpdate(ports.epoch(event.expires), "player");
         current();
@@ -36800,7 +36796,7 @@ ${hook}`, was = errors.get(key3);
       const current = () => ports.current() && !ports.character().rip && !ports.merchant.holder() && !ports.merchant.gathering() && !ports.merchant.forceStand();
       const listed = () => (s.plan.handoffTargets || []).find((entry) => entry.name === target.name && entry.slice === target.slice);
       try {
-        if (ports.character().stand) await marginCall("close_stand", () => ports.game.closeStand(), "Stand close");
+        if (ports.character().stand) await standClose2();
         if (!current()) return;
         await ports.walk.smart({ map: target.map, x: Number(target.x), y: Number(target.y) }, ports.walk.request);
         const unchanged = () => {
@@ -36866,7 +36862,7 @@ ${hook}`, was = errors.get(key3);
       s.busy = true;
       s.stage = "returning slice to " + debt.sender;
       try {
-        if (ports.character().stand) await marginCall("close_stand", () => ports.game.closeStand(), "Stand close");
+        if (ports.character().stand) await standClose2();
         await ports.walk.smart({ map: debt.map || ports.character().map, x: Number(debt.x), y: Number(debt.y) }, ports.walk.returnRequest);
         const c = ports.character(), sender = ports.game.player(debt.sender);
         if (!sender || sender.map !== c.map || Math.hypot(sender.x - c.x, sender.y - c.y) > SEND_REACH) throw new Error(debt.sender + " is not currently reachable");
@@ -46173,9 +46169,8 @@ ${hook}`, was = errors.get(key3);
         boundFired({ bound: "READY_WAIT_MS", owner: "08", state: { player: player.name, onCooldown: !!p.onCooldown("mluck") } });
         return false;
       }
-      const hooks = partyHooks();
-      while (hooks.calls.band({ band: "job", method: "mluck" }) !== "send") await p.sleep(hooks.calls.window());
-      await use_skill("mluck", player);
+      const question = { band: "job", method: "skill", data: { name: "mluck", id: player.id ?? player.name } };
+      await partyHooks().calls.wait(question, p.act, () => use_skill("mluck", player));
       return true;
     }
     async function scanPlayers(limit) {

@@ -28,11 +28,13 @@ test('MJ14: the luck cast leaves strong and fresh luck alone, asks the job band,
  const clearBounds=()=>boundsSent(boundsPending().length);
  const calls=[],answers=['wait','send','send'],previous=globalThis.__partyHooks,realSkill=globalThis.use_skill;let cooling=false,readyAt=0;
  // The run scope's timers, fired by hand: `wake` is the cooldown end the wait reads, `bound` READY_WAIT_MS.
- const timers=[];const act={on(){},off(){},setTimeout:(cb,ms)=>timers.push({cb,ms}),clearTimeout:id=>{if(id)timers[id-1].cb=null}};
+ const timers=[];const act={on(){},off(){},sleep:async()=>{},setTimeout:(cb,ms)=>timers.push({cb,ms}),clearTimeout:id=>{if(id)timers[id-1].cb=null}};
  const fire=async ms=>{await new Promise(r=>setImmediate(r));const t=timers.find(t=>t.cb&&t.ms===ms);assert.ok(t,'a timer of '+ms+' ms waits');const cb=t.cb;t.cb=null;cb()};
- globalThis.__partyHooks={calls:{band:ask=>{calls.push('band '+ask.method);return answers.shift()},window:()=>0},notify(){}};
+ globalThis.__partyHooks=undefined;
+ require('../../runtime/hooks/index.ts').partyHooks().publish({name:'core:calls',folder:'core',author:'test',summary:'Answers from the list.',
+  hooks:{'calls.band':ask=>{calls.push('band '+ask.method+' '+ask.data?.name);return answers.shift()},'calls.window':()=>0,'calls.margin':()=>0}});
  globalThis.use_skill=async(skill,player)=>calls.push(skill+' '+player.name);clearBounds();
- const luck=createMerchantLuck({character:()=>({name:'M',x:0,y:0}),onCooldown:()=>cooling,canUse:()=>true,nextSkill:()=>readyAt,act,sleep:async()=>{},log(){}});
+ const luck=createMerchantLuck({character:()=>({name:'M',x:0,y:0}),onCooldown:()=>cooling,canUse:()=>true,nextSkill:()=>readyAt,act,log(){}});
  const player=(name,x,mluck)=>({name,x,y:0,ctype:'priest',s:mluck?{mluck}:{}});
  try{
   assert.equal(await luck.castMerchantLuck(player('Strong',10,{f:'Other',strong:true,ms:1})),false);
@@ -45,7 +47,35 @@ test('MJ14: the luck cast leaves strong and fresh luck alone, asks the job band,
   cooling=false;const cb=wake.cb;wake.cb=null;cb();assert.equal(await soon,true);
   // A cooldown the game never ends runs out READY_WAIT_MS and reports it.
   cooling=true;readyAt=0;const late=luck.castMerchantLuck(player('Late',10));await fire(5000);assert.equal(await late,false);
-  assert.deepEqual(calls,['band mluck','band mluck','mluck Near','band mluck','mluck Soon']);
+  // The cast asks for the `skill` call use_skill emits, so the budget matches the two.
+  assert.deepEqual(calls,['band skill mluck','band skill mluck','mluck Near','band skill mluck','mluck Soon']);
   assert.deepEqual(boundsPending().map(f=>[f.bound,f.owner,f.state.player]),[['READY_WAIT_MS','08','Late']]);
  }finally{globalThis.__partyHooks=previous;globalThis.use_skill=realSkill;clearBounds();}
+});
+// The luck cast waits on the call budget's one band wait, so a socket that drops while the budget
+// answers "not now" ends the cast as `disconnected`. Isolated: a live run cannot drop the socket
+// inside one wait.
+test('MJ14: a luck cast waiting on the call budget fails as disconnected when the socket drops',async()=>{
+ const {createMerchantLuck}=require('../../runtime/merchant-jobs/character/luck.ts');
+ let ended,pending;const kept={hooks:globalThis.__partyHooks,parent:globalThis.parent,skill:globalThis.use_skill};
+ globalThis.__partyHooks=undefined;
+ const {partyHooks}=require('../../runtime/hooks/index.ts');
+ const hooks=partyHooks();
+ hooks.publish({name:'core:calls',folder:'core',author:'test',summary:'Answers not now.',
+  hooks:{'calls.band':()=>ended?'send':'not-now','calls.window':()=>5,'calls.margin':()=>0}});
+ const act={sleep:ms=>new Promise(resolve=>setTimeout(resolve,ms)),on(){},off(){},setTimeout,clearTimeout};
+ const cast=[];globalThis.use_skill=async(skill,player)=>cast.push(skill+' '+player.name);
+ const luck=createMerchantLuck({character:()=>({name:'M',x:0,y:0}),onCooldown:()=>false,canUse:()=>true,nextSkill:()=>0,act,log(){}});
+ try{
+  globalThis.parent={socket:{connected:true}};
+  pending=luck.castMerchantLuck({name:'Near',x:10,y:0,ctype:'priest',s:{}});
+  await new Promise(resolve=>setTimeout(resolve,20));
+  globalThis.parent.socket.connected=false;
+  ended=await Promise.race([pending.then(()=>'cast',error=>error?.reason),new Promise(resolve=>setTimeout(()=>resolve('still waiting'),200))]);
+  assert.equal(ended,'disconnected','the cast outlived its connection');
+  assert.deepEqual(cast,[]);
+ }finally{
+  // An answer of `send` ends a wait that outlived the assertion, so the file's run ends.
+  ended??='done';await Promise.race([pending?.catch(()=>{}),new Promise(resolve=>setTimeout(resolve,50))]);
+  globalThis.__partyHooks=kept.hooks;globalThis.parent=kept.parent;globalThis.use_skill=kept.skill;}
 });

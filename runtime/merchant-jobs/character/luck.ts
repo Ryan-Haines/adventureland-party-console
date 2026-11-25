@@ -52,9 +52,11 @@ export function createMerchantLuck(p: LuckPorts) {
       boundFired({ bound: 'READY_WAIT_MS', owner: '08', state: { player: player.name, onCooldown: !!p.onCooldown('mluck') } });
       return false;
     }
-    const hooks = partyHooks();
-    while (hooks.calls.band({ band: 'job', method: 'mluck' }) !== 'send') await p.sleep(hooks.calls.window());
-    await use_skill('mluck', player);
+    // use_skill('mluck', player) emits `skill` with the skill's name and the target's id (js/functions.js:1651
+    // at the game pin), so the question names that call and the budget matches it. The budget's
+    // band wait sends it, and a socket that drops during the wait fails the cast as `disconnected`.
+    const question = { band: 'job' as const, method: 'skill', data: { name: 'mluck', id: player.id ?? player.name } };
+    await partyHooks().calls.wait(question, p.act, () => use_skill('mluck', player));
     return true;
   }
 

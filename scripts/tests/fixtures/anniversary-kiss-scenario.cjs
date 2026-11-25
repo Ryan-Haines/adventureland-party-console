@@ -10,8 +10,10 @@ const { partyHooks } = require('../../../runtime/hooks/index.ts');
 const { processScope } = require('../helpers/run-scope.cjs');
 
 processScope();
+// Every question the budget answers, in order, for a row that checks which call was asked.
+const asked = [];
 partyHooks().publish({ name: 'core:calls', folder: 'core', author: 'test', summary: 'Sends every call.',
-  hooks: { 'calls.band': () => 'send', 'calls.window': () => 0, 'calls.margin': () => 0 } });
+  hooks: { 'calls.band': question => { asked.push(question); return 'send'; }, 'calls.window': () => 0, 'calls.margin': () => 0 } });
 
 // Options: `approach` puts the featured player 200 away, `missing` hides it, `move` and `skill` are
 // what the walk and the kiss await, `resolves` lets the kiss reply (with none it never comes), `newBuff` and `oldBuff` set the
@@ -93,4 +95,4 @@ function fixture(options = {}) {
     revise: () => { revision++; }, advance: ms => { now += ms; } };
 }
 
-module.exports = { fixture };
+module.exports = { fixture, asked };

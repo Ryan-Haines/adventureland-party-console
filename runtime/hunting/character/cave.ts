@@ -124,8 +124,7 @@ export async function requestCave(
   handles: { act: ScopeHandle; observe: ScopeHandle } = { act: scope('07', 'act'), observe: scope('07', 'observe') },
 ): Promise<Reply> {
   const { act, observe } = handles, socket = frame.socket, target = socket as Parameters<ScopeHandle['on']>[0];
-  await partyHooks().calls.wait({ band: 'job', method: 'interaction' }, act);
-  return new Promise((resolve, reject) => {
+  return partyHooks().calls.wait({ band: 'job', method: 'interaction' }, act, () => new Promise<Reply>((resolve, reject) => {
     if (!socket || socket.connected === false) return reject(Error("Cave socket disconnected"));
     let settled = false;
     const timer = act.setTimeout(() => {
@@ -161,7 +160,7 @@ export async function requestCave(
     function incoming(event: string, data: Reply) {
       if (event === "game_response") response(data);
     }
-  });
+  }));
 }
 
 // The dungeon runtime.
@@ -600,10 +599,14 @@ export function installCaveClient(ports: CaveClientPorts) {
       if (!looting()) return;
       // The character's own socket opens the chest: loot(id) reads parent.parent, the commander's frame.
       if (!chestAvailable(id, ports.frame().chests![id])) continue;
-      await jobBand('open_chest');
-      const margin = partyHooks().calls.margin();
-      if (chestAvailable(id, ports.frame().chests![id])) await ports.withTimeout(ports.frame().open_chest(id), margin, 'Dungeon loot',
-        () => boundFired({ bound: 'callMargin', owner: '07', state: { method: 'open_chest', label: 'Dungeon loot', ms: margin } }));
+      // The chest asks the job band and waits for the call window while it answers "not now", as
+      // `requestCave`'s emit does.
+      await partyHooks().calls.wait({ band: 'job', method: 'open_chest' }, scope('07', 'act'), () => {
+        if (!chestAvailable(id, ports.frame().chests![id])) return undefined;
+        const margin = partyHooks().calls.margin();
+        return ports.withTimeout(ports.frame().open_chest(id), margin, 'Dungeon loot',
+          () => boundFired({ bound: 'callMargin', owner: '07', state: { method: 'open_chest', label: 'Dungeon loot', ms: margin } }));
+      });
     }
   }
   // A chest the game reports open in this run is not opened again.
@@ -612,11 +615,6 @@ export function installCaveClient(ports: CaveClientPorts) {
     if (!data.cave || !run) return;
     if (opened().run !== run) host.__partyDungeonOpenedChests = { run, ids: {} };
     opened().ids[data.id] = true;
-  }
-  // The Cave's own chest asks the call budget owner's `job` band and waits for the call window
-  // while it answers "not now", as `requestCave`'s emit does.
-  async function jobBand(method: string): Promise<void> {
-    await partyHooks().calls.wait({ band: 'job', method }, scope('07', 'act'));
   }
   const request = async (action: string, fields?: Record<string, unknown>) => {
     return requestCave(ports.frame(), 'cave:' + me().name + ':' + Date.now() + ':' + Math.random(), action, fields || {}, partyHooks().calls.margin());

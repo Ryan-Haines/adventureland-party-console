@@ -157,8 +157,8 @@ export function installHuntClient(ports: HuntClientPorts) {
     let result: unknown = null, error: string | null = null;
     try {
       await ports.npcWalk(ports.findNpc("monsterhunter"));
-      await partyHooks().calls.wait({ band: 'job', method: 'interact' }, scope('07', 'act'));
-      result = await interact("monsterhunt");
+      // interact("monsterhunt") emits `monsterhunt` (runner_functions.js:156-160 at the game pin).
+      result = await partyHooks().calls.wait({ band: 'job', method: 'monsterhunt' }, scope('07', 'act'), () => interact("monsterhunt"));
     } catch (huntError) {
       const e = huntError as { reason?: unknown; message?: unknown } | null;
       error = String(e && (e.reason || e.message) || huntError);

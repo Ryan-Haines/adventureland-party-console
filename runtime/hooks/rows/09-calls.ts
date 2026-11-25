@@ -156,7 +156,10 @@ export function dispatch(ctx: DispatchContext) {
   // server's call cost ends it. A closed connection sends no more of that figure, so the wait ends
   // when the game's socket disconnects or the game replaces it (game.js `init_socket`), and the
   // call fails as `disconnected`.
-  async function wait(question: CallQuestion, act: Pick<ScopeHandle, 'sleep'>): Promise<void> {
+  // The wait runs `call` in the turn of the `send` answer: the budget matches the admission to an
+  // emit of its method in that turn and drops it at the turn's end (call-budget.ts `band`), so a
+  // caller that emitted after awaiting the wait sent its call unmatched.
+  async function wait<T>(question: CallQuestion, act: Pick<ScopeHandle, 'sleep'>, call: () => T | Promise<T>): Promise<T> {
     const game = () => (globalThis as { parent?: { socket?: { connected?: boolean } | null } }).parent, socket = game()?.socket;
     while (band(question) !== 'send') {
       await act.sleep(callWindow());
@@ -164,6 +167,7 @@ export function dispatch(ctx: DispatchContext) {
       if (socket && (now !== socket || socket.connected === false))
         throw Object.assign(Error(`The connection closed while ${question.method} waited for its call budget`), { reason: 'disconnected' });
     }
+    return call();
   }
   // A job call whose reply the server sends from inside its handler: it waits for
   // its send band, and a reply that has not come within `bound` (the call margin, unless the
@@ -171,14 +175,13 @@ export function dispatch(ctx: DispatchContext) {
   // reply lost on the network.
   async function marginCall<T>(owner: string, act: Pick<ScopeHandle, 'sleep' | 'setTimeout' | 'clearTimeout'>, method: string,
     call: () => Promise<T>, label: string, data?: unknown, bound = margin()): Promise<T> {
-    await wait({ band: 'job', method, data }, act);
-    return new Promise<T>((resolve, reject) => {
+    return wait({ band: 'job', method, data }, act, () => new Promise<T>((resolve, reject) => {
       const timer = act.setTimeout(() => {
         boundFired({ bound: 'callMargin', owner, state: { method, label, ms: bound } });
         reject(Object.assign(Error(label + ' timed out'), { reason: 'timeout' }));
       }, bound);
       call().then(value => { act.clearTimeout(timer); resolve(value); }, error => { act.clearTimeout(timer); reject(error); });
-    });
+    }));
   }
   const calls = { band, margin, window: callWindow, wait, marginCall };
   // P5: core's retry as every enabled add-on's answer changes it, inside the bound. A realm with no

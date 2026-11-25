@@ -2,7 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const settle = () => new Promise(resolve => setImmediate(resolve));
 const { scenarioTable } = require('./fixtures/scenarios.cjs');
-const { fixture } = require('./fixtures/anniversary-kiss-scenario.cjs');
+const { fixture, asked } = require('./fixtures/anniversary-kiss-scenario.cjs');
 const { partyHooks } = require('../../runtime/hooks/index.ts');
 
 // The staging walk reads movement's Town landing check (the walk port `landed`), the same check as
@@ -18,6 +18,17 @@ scenarioTable('anniversary staging walks whenever the Town landing check does no
   assert.equal(t.calls.some(c => c[0] === 'to-main'), false);
  }, { scheduled: true, landed: true }],
 ]);
+
+// close_stand() emits `merchant` with `close: 1` (js/functions.js:3850 at the game pin), and the call
+// budget matches an admission to the emit of its method; the merchant's stand close asked for
+// `close_stand`, which no emit matched.
+test('a merchant closes its stand before the kiss under the merchant call the game emits', async () => {
+  const t = fixture({ merchant: true, stand: true, newBuff: true, resolves: true });
+  const from = asked.length;
+  await t.run();
+  assert.ok(t.calls.some(c => c[0] === 'close-stand'), 'the stand closed');
+  assert.deepEqual(asked.slice(from).filter(q => q.method === 'merchant' || q.method === 'close_stand').map(q => [q.method, q.data]), [['merchant', { close: 1 }]]);
+});
 
 // EV20: an abort retires the pending move or kiss with no late claim or kiss.
 for (const pending of ['move', 'skill']) test('abort retires a pending ' + pending + ' without late claims or kisses', async () => {

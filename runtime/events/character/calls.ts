@@ -11,8 +11,7 @@ const act = () => scope('06', 'act');
 
 // `method` and `data` are the socket event and its payload, which 09 prices (call-budget.ts `charge`).
 export async function jobCall<T>(method: string, call: () => Promise<T>, data?: unknown): Promise<T> {
-  await partyHooks().calls.wait({ band: 'job', method, data }, act());
-  return call();
+  return partyHooks().calls.wait({ band: 'job', method, data }, act(), call);
 }
 export function backgroundCall(method: string, call: () => void): boolean {
   if (partyHooks().calls.band({ band: 'background', method }) !== 'send') return false;
@@ -40,9 +39,8 @@ export type ChatBand = 'job' | 'background';
 export type ChatAnswer = { outcome: 'sent'; reply?: unknown } | { outcome: 'refused'; by: string; reason: string };
 const refused = (reason: string): ChatAnswer => ({ outcome: 'refused', by: '06', reason });
 async function doorCall(band: ChatBand, method: string, call: () => unknown): Promise<ChatAnswer> {
-  if (band === 'background') {
-    if (partyHooks().calls.band({ band, method }) !== 'send') return refused('call budget refused the background band');
-  } else await partyHooks().calls.wait({ band: 'job', method }, act());
+  if (band === 'job') return { outcome: 'sent', reply: await partyHooks().calls.wait({ band: 'job', method }, act(), call) };
+  if (partyHooks().calls.band({ band, method }) !== 'send') return refused('call budget refused the background band');
   return { outcome: 'sent', reply: await call() };
 }
 export const eventDoors = {

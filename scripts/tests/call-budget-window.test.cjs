@@ -332,6 +332,41 @@ test('cadence: the budget books every player packet while the decision on them w
   }finally{p.stop();run.dispose();}
 });
 
+// The budget matches an admission to the emit of its method in the same turn (call-budget.ts
+// `band`). Sadokunn's live ring held an unmatched `interact` admission (2026-11-22,
+// owners-ee949d4f2): the Hunt NPC asked for `interact` where the game emits `monsterhunt`, and a
+// band wait's caller emitted after the turn of its admission. Each row is one asker on the planted
+// install; its call must reach the socket under its own admission. MJ14
+// (coordinator-merchant-clusters.test.cjs) checks the luck cast's question, Patinder's 53 unmatched
+// `mluck` admissions and `skill` emits.
+test('each asker\'s question names the call it emits, in the turn of its admission',async(t)=>{
+  const {partyHooks}=require('../../runtime/hooks/index.ts');
+  const hooks=partyHooks(),act={sleep:async()=>{}};
+  const rows=[
+    ['a band wait',p=>hooks.calls.wait({band:'job',method:'equip_batch',data:[1]},act,()=>p.emit('equip_batch',[1])),'equip_batch'],
+    ['the Hunt NPC door',async p=>{
+      const {huntTake}=require('../../runtime/hunting/api.ts');
+      globalThis.__partyHooks=hooks;globalThis.interact=()=>{p.emit('monsterhunt');return Promise.resolve({});};
+      assert.equal((await huntTake({},{band:'job',facts:{held:false}})).outcome,'sent');
+    },'monsterhunt'],
+  ];
+  const kept={parent:globalThis.parent,interact:globalThis.interact,hooks:globalThis.__partyHooks};
+  try{
+    for(const [name,ask,method] of rows) await t.test(name,async()=>{
+      const p=plantedInstall();
+      globalThis.parent=p.win;
+      try{
+        const from=p.budget.records().length;
+        await ask(p);
+        await new Promise(resolve=>setImmediate(resolve));
+        assert.ok(p.emitted.includes(method),`${method} reached the socket`);
+        assert.deepEqual(p.budget.records().slice(from).filter(r=>r.decision==='unmatched').map(r=>[r.method,r.band??null]),[],'no unmatched admission or emit');
+        assert.equal(p.budget.view().ledger.filter(e=>e.method===method).length,1,'the call is booked once');
+      }finally{p.stop();}
+    });
+  }finally{globalThis.parent=kept.parent;globalThis.interact=kept.interact;globalThis.__partyHooks=kept.hooks;}
+});
+
 // The band wait has no cap of its own: it ends when the server's call cost lets the call go. A
 // closed connection sends no more figures, so the wait ends on the connection's own state, a
 // disconnect or a new socket, since no figure can come. Isolated: a live run
