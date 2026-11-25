@@ -16,6 +16,11 @@ scenarioTable("a monster's death releases its id once, on one listener of each k
   c.entities({in:'cave',monsters:[{id:'b',hp:0},{id:'c',dead:true},{id:'d',hp:100}]});
   assert.deepEqual(deaths,['b','c']);
  }],
+ ['an entities packet in this instance names each player it shows alive, a dead or gravestoned one not',({c,alive})=>{
+  c.entities({in:'other',players:[{id:'A',rip:false}]});
+  c.entities({in:'cave',players:[{id:'W',rip:false},{id:'P',rip:true},{id:'R',rip:'gravestone'}]});
+  assert.deepEqual(alive,['W']);
+ }],
  // One `death` packet for another entity makes one `reportFightDeath` and one
  // target reset, the shape of the `disappear` and `entities` listeners above. b9b5c91e ran the
  // packet through shared.js's `combatDeathListener`, which reported it twice; layer 6 carried both
@@ -37,13 +42,24 @@ scenarioTable("a monster's death releases its id once, on one listener of each k
  // the record's 60 s memory: the priest's queue client heard only the first. A goo's death comes
  // as a `death` packet and a lethal `disappear`, and each listener reports it (TG21's live half),
  // so a monster's second report sends the queue client nothing.
+ // Between the two deaths an `entities` packet shows the warrior alive (rip false).
  ["TG21: a character's second death in the same place reaches the queue client again",()=>{
   const queue=[],queueClient={timing:{death(){}},reportEvidence(){},death:id=>queue.push(id),flush(){}};
   const c=targetingContext({root:{},queueClient,fightDeaths:[],groupedCombat:null,character:{map:'arena',in:'arena'},reunionRealm:()=>'US I',coordinatorClockOffset:0,Date,
     get_player:name=>name==='W'?{name:'W',type:'character',rip:true}:null});
-  c.reportFightDeath('W');c.reportFightDeath('goo1');c.reportFightDeath('W');c.reportFightDeath('goo1');
+  c.reportFightDeath('W');c.reportFightDeath('goo1');c.characterAlive('W');c.reportFightDeath('W');c.reportFightDeath('goo1');
   assert.deepEqual(queue,['W','goo1','W'],'each character death, one report per monster death');
   assert.equal(c.fightDeaths.length,2);
+ }],
+ // W43 (closing part 6): the priest saw two killing hits on the warrior in one death's tick, the
+ // rimeshatter kill and an in-flight cgoo `stone` hit with `kill:true`, and its queue client counted
+ // two deaths. No `entities` packet came between them.
+ ["TG21: two killing hits in one character death reach the queue client once",()=>{
+  const queue=[],queueClient={timing:{death(){}},reportEvidence(){},death:id=>queue.push(id),flush(){}};
+  const c=targetingContext({root:{},queueClient,fightDeaths:[],groupedCombat:null,character:{map:'arena',in:'arena'},reunionRealm:()=>'US I',coordinatorClockOffset:0,Date,
+    get_player:name=>name==='W'?{name:'W',type:'character',rip:false}:null});
+  c.reportFightDeath('W');c.reportFightDeath('W');
+  assert.deepEqual(queue,['W'],'one death, one report');
  }],
 ]);
 

@@ -13,8 +13,11 @@ export interface TargetingDeathPorts {
   invalidate(id: string): void;
   // The entities observation stamp. The status owner's telemetry records the fight packets itself.
   entitiesSeen(): void;
+  // shared.js `characterAlive`: a player the `entities` packet shows alive, so its next death counts.
+  alive(id: string): void;
 }
-type Packet = { id?: string; name?: string; death?: boolean; kill?: boolean; dead?: boolean; reason?: string; in?: unknown; monsters?: { id?: string; dead?: boolean; hp?: number }[] } | null | undefined;
+type Packet = { id?: string; name?: string; death?: boolean; kill?: boolean; dead?: boolean; reason?: string; in?: unknown; monsters?: { id?: string; dead?: boolean; hp?: number }[];
+  players?: { id?: string; rip?: unknown }[] } | null | undefined;
 export function createTargetingDeath(p: TargetingDeathPorts) {
   const release = (id: string) => { p.report(id); p.invalidate(id); };
   return {
@@ -22,7 +25,11 @@ export function createTargetingDeath(p: TargetingDeathPorts) {
       if (data && data.id && (data.death === true || data.reason === 'death' || data.reason === 'dead')) release(data.id);
     },
     entities(data: Packet): void {
-      if (!data || data.in !== p.instance() || !Array.isArray(data.monsters)) return;
+      if (!data || data.in !== p.instance()) return;
+      // The server sends each player's `rip` (server.js player_to_client): false while alive, true or
+      // a gravestone after its death.
+      if (Array.isArray(data.players)) for (const pl of data.players) if (pl && pl.id && !pl.rip) p.alive(pl.id);
+      if (!Array.isArray(data.monsters)) return;
       p.entitiesSeen();
       for (const e of data.monsters) if (e && e.id && (e.dead === true || e.hp === 0)) release(e.id);
     },

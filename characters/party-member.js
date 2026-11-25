@@ -37903,7 +37903,11 @@ ${hook}`, was = errors.get(key3);
         if (data && data.id && (data.death === true || data.reason === "death" || data.reason === "dead")) release(data.id);
       },
       entities(data) {
-        if (!data || data.in !== p.instance() || !Array.isArray(data.monsters)) return;
+        if (!data || data.in !== p.instance()) return;
+        if (Array.isArray(data.players)) {
+          for (const pl of data.players) if (pl && pl.id && !pl.rip) p.alive(pl.id);
+        }
+        if (!Array.isArray(data.monsters)) return;
         p.entitiesSeen();
         for (const e of data.monsters) if (e && e.id && (e.dead === true || e.hp === 0)) release(e.id);
       },
@@ -39481,13 +39485,18 @@ ${hook}`, was = errors.get(key3);
       const recorded = s.fightDeaths.some(function(d) {
         return d.id === id2 && d.map === character.map && d.in === character.in && d.server === t.view().reunionRealm;
       });
-      if (recorded && !get_player(id2)) return;
+      const player = get_player(id2);
+      if (recorded && (!player || s.deadCharacters.has(id2))) return;
       if (!recorded) s.fightDeaths.push({ id: id2, map: character.map, in: character.in, server: t.view().reunionRealm, at: Date.now() + p.walkState.clockOffset });
+      if (player) s.deadCharacters.add(id2);
       if (s.queueClient) {
         s.queueClient.reportEvidence(s.fightDeaths);
         if (s.queueClient.death) s.queueClient.death(id2);
         else s.queueClient.flush();
       }
+    }
+    function characterAlive(id2) {
+      s.deadCharacters.delete(id2);
     }
     function queueEvidence(target, state, action) {
       return s.queueClient && s.queueClient.evidence(target, state, action);
@@ -39506,7 +39515,7 @@ ${hook}`, was = errors.get(key3);
       var tgt = grant.successor, e = get_entity(tgt.id);
       return !!(e && e.visible && !e.dead && e.hp > 0 && tgt.map === character.map && tgt.in === character.in && tgt.server === t.view().reunionRealm && !t.isExternallyClaimedMonster(e));
     }
-    return { groupedFresh, groupedEntityReport, groupedThreatReports, groupedSightings, unfinishedFight, groupedDefensiveTarget, groupedDefensePending, engagedCombatTarget, activeCombatTarget, queueCandidates, queueRetentions, queueReport, queueClaims, groupedNomination, groupedAcknowledgement, groupedAnchorVisible, queueRequest, queueAcknowledgement, independentPullActive, acceptQueue, acceptCombatControl, reportFightDeath, queueEvidence, successorAllowed, successorVisible };
+    return { groupedFresh, groupedEntityReport, groupedThreatReports, groupedSightings, unfinishedFight, groupedDefensiveTarget, groupedDefensePending, engagedCombatTarget, activeCombatTarget, queueCandidates, queueRetentions, queueReport, queueClaims, groupedNomination, groupedAcknowledgement, groupedAnchorVisible, queueRequest, queueAcknowledgement, independentPullActive, acceptQueue, acceptCombatControl, reportFightDeath, characterAlive, queueEvidence, successorAllowed, successorVisible };
   }
 
   // runtime/characters/targeting/api.ts
@@ -40680,6 +40689,7 @@ ${hook}`, was = errors.get(key3);
       leaderCombatSelection: null,
       groupedCombat: root2.__partyGroupedCombat || null,
       fightDeaths: root2.__partyFightDeaths || [],
+      deadCharacters: root2.__partyDeadCharacters || (root2.__partyDeadCharacters = /* @__PURE__ */ new Set()),
       combatSelection: { id: null, revision: 0, map: null },
       combatTargetId: null,
       passingEncounters: parent.__partyPassingEncounters || (parent.__partyPassingEncounters = {}),

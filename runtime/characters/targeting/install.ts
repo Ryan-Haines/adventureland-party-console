@@ -59,6 +59,8 @@ export interface TargetingState {
   huntControlSeenAt: number; captures: Record<string, number>;
   // The killed list: each confirmed dead id and when it died, kept while the client can show it.
   killed: Map<string, number>;
+  // The characters whose death the queue client heard, until an `entities` packet shows each alive.
+  deadCharacters: Set<string>;
   // The queue client installQueueClient built for this module, and the independent pull's last refresh key.
   queueClient: any; pullRefreshKey: string | null;
   // The open selection pass's view (view.ts), null between passes.
@@ -86,7 +88,7 @@ export function create(p: TargetingPorts): TargetingMap {
   const root = p.root;
   const s: TargetingState = {
     leaderTarget: null, leaderCombatSelection: null, groupedCombat: root.__partyGroupedCombat || null,
-    fightDeaths: root.__partyFightDeaths || [], combatSelection: { id: null, revision: 0, map: null }, combatTargetId: null,
+    fightDeaths: root.__partyFightDeaths || [], deadCharacters: root.__partyDeadCharacters || (root.__partyDeadCharacters = new Set()), combatSelection: { id: null, revision: 0, map: null }, combatTargetId: null,
     passingEncounters: (parent as any).__partyPassingEncounters || ((parent as any).__partyPassingEncounters = {}),
     peerPassingEncounters: (parent as any).__partyPeerPassingEncounters || [], scatterBreakTarget: null, partyThreats: [], partyTargets: [],
     partyPositions: [], monsterPriorities: {},

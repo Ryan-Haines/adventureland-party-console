@@ -45,11 +45,11 @@ function targetingWorld() {
 // Targeting's own death listeners (runtime/characters/targeting/death.ts) on ports that record each
 // report and each target reset.
 function deathFixture() {
-  const deaths = [], invalidations = [];
+  const deaths = [], invalidations = [], alive = [];
   const { createTargetingDeath } = require('../../../runtime/characters/targeting/death.ts');
   const ports = { self: () => 'W', instance: () => 'cave', report: id => deaths.push(id), invalidate: id => invalidations.push(id),
-    entitiesSeen() {} };
-  return { c: createTargetingDeath(ports), ports, deaths, invalidations, source: sharedSource() };
+    entitiesSeen() {}, alive: id => alive.push(id) };
+  return { c: createTargetingDeath(ports), ports, deaths, invalidations, alive, source: sharedSource() };
 }
 
 // shared.js's claim and party defense checks sliced into one context, with one goo the character

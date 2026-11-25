@@ -858,7 +858,8 @@
     instance: function () { return character.in; },
     report: targeting.reportFightDeath,
     invalidate: targeting.invalidate,
-    entitiesSeen: targeting.entitiesSeen
+    entitiesSeen: targeting.entitiesSeen,
+    alive: targeting.characterAlive
   });
 
   // 12's report and its reply's apply (runtime/status/character/apply.ts).

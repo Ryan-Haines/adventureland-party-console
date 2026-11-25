@@ -58,7 +58,7 @@ test('wrong realm or instance death preserves a real pending projectile',()=>fix
 test('confirmed death hook cleans evidence before flushing even outside grouped mode',()=>fixture(f=>{
  f.client.evidence(target,'pending');f.scatter();
  const context=targetingContext({root:{},queueClient:f.client,groupedCombat:null,fightDeaths:[],character:{map:'mansion',in:'mansion'},
-  coordinatorClockOffset:0,Date},{},{walks:{reunionRealm:()=>'USII'}});
+  coordinatorClockOffset:0,Date,get_player:()=>null},{},{walks:{reunionRealm:()=>'USII'}});
  context.reportFightDeath('rat');
  assert.deepEqual(f.client.events,[]);
  assert.deepEqual(f.client.reportEvidence().filter(e=>e.id==='rat'),[]);

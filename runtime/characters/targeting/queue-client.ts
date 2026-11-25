@@ -586,13 +586,18 @@ export function createQueueClient(t: TargetingMap, p: TargetingPorts, s: Targeti
     s.fightDeaths = p.root.__partyFightDeaths = s.fightDeaths.filter(function (d: any) { return Date.now()-d.at<pick('passingMemoryMs'); });
     // A monster's death comes as a `death` packet and a lethal `disappear`, and each listener
     // reports it, so only the first report of a monster's death reaches the queue. A character's
-    // name outlives its death, and its one report per death is the killing hit, so every report of
-    // a character's death reaches the queue.
+    // name outlives its death, and more than one killing hit can land in its death's tick (W43: a
+    // rimeshatter kill and an in-flight cgoo `stone` hit), so a character's death reaches the queue
+    // once, and again only after an `entities` packet shows that character alive (characterAlive).
     const recorded = s.fightDeaths.some(function (d: any) { return d.id===id && d.map===character.map && d.in===character.in && d.server===t.view().reunionRealm; });
-    if (recorded && !get_player(id)) return;
+    const player = get_player(id);
+    if (recorded && (!player || s.deadCharacters.has(id))) return;
     if (!recorded) s.fightDeaths.push({id:id,map:character.map,in:character.in,server:t.view().reunionRealm,at:Date.now()+p.walkState.clockOffset});
+    if (player) s.deadCharacters.add(id);
     if(s.queueClient) { s.queueClient.reportEvidence(s.fightDeaths); if(s.queueClient.death)s.queueClient.death(id);else s.queueClient.flush(); }
     }
+  // death.ts's `entities` listener calls it for each player the packet shows alive.
+  function characterAlive(id: string) { s.deadCharacters.delete(id); }
   function queueEvidence(target: any,state: any,action: any){return s.queueClient && s.queueClient.evidence(target,state,action);}
   function successorAllowed(grant: any) {
       if(t.view().drain)return false;
@@ -609,5 +614,5 @@ export function createQueueClient(t: TargetingMap, p: TargetingPorts, s: Targeti
       var tgt=grant.successor,e=get_entity(tgt.id);
       return !!(e && e.visible && !e.dead && e.hp>0 && tgt.map===character.map && tgt.in===character.in && tgt.server===t.view().reunionRealm && !t.isExternallyClaimedMonster(e));
     }
-  return { groupedFresh, groupedEntityReport, groupedThreatReports, groupedSightings, unfinishedFight, groupedDefensiveTarget, groupedDefensePending, engagedCombatTarget, activeCombatTarget, queueCandidates, queueRetentions, queueReport, queueClaims, groupedNomination, groupedAcknowledgement, groupedAnchorVisible, queueRequest, queueAcknowledgement, independentPullActive, acceptQueue, acceptCombatControl, reportFightDeath, queueEvidence, successorAllowed, successorVisible };
+  return { groupedFresh, groupedEntityReport, groupedThreatReports, groupedSightings, unfinishedFight, groupedDefensiveTarget, groupedDefensePending, engagedCombatTarget, activeCombatTarget, queueCandidates, queueRetentions, queueReport, queueClaims, groupedNomination, groupedAcknowledgement, groupedAnchorVisible, queueRequest, queueAcknowledgement, independentPullActive, acceptQueue, acceptCombatControl, reportFightDeath, characterAlive, queueEvidence, successorAllowed, successorVisible };
 }
