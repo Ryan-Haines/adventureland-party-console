@@ -111,9 +111,11 @@ export function installWalkCommands(parts: WalkCommandParts, ports: WalkCommandP
     if (command.type === 'party-monster-travel') defendConvoy(state, null);
     if (command.type !== 'town-party' && command.purpose !== 'shared-walk-return') nextTownGeneration(state);
     if (!walk || command.type === 'party-monster-travel' && command.convoyId === walk.id && command.id === walk.commandId) return;
-    // Assembly to preparation keeps the same convoy's cap. Every other takeover restores normal speed
-    // before awaiting the movement stop.
-    if (command.type !== 'party-monster-travel' || command.convoyId !== walk.id) parts.releaseConvoyCruise(walk);
+    // A walk command keeps the cap for the walk it starts, the same convoy's next phase or a new
+    // convoy's walk (walk-client.ts `createLocalConvoy` adopts it). A reset sent here would land after
+    // the next walk's settle read the old cap as its pace, and fail its departure. Every other
+    // takeover restores normal speed before awaiting the movement stop.
+    if (command.type !== 'party-monster-travel') parts.releaseConvoyCruise(walk);
     else walk.cruiseHandoff = true;
     walk.freezeRoute?.();
     walk.cancelled = true;

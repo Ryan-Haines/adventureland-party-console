@@ -16628,7 +16628,6 @@ ${hook}`, was = errors.get(key3);
         town: false,
         gate,
         awaitSharedRoute: !!preparing && !preparing.leader,
-        nativePlanningWhileAdvancing: true,
         repairSharedDrift: shared,
         async barrier() {
           if (me().cave) return runtime.canMove();
@@ -30643,7 +30642,7 @@ ${hook}`, was = errors.get(key3);
         returnWalking: !!command.returnWalking
       };
       groupWalk.travel = convoy;
-      if (cruiseCap && cruiseCap.id === convoy.id) cruiseCap.owner = convoy;
+      if (cruiseCap) cruiseCap = { id: convoy.id, owner: convoy, speed: cruiseCap.speed };
       if (command.purpose === "party-force-travel") ports.forceTravel();
       if (command.purpose !== "grouped-approach" && !/^shared-walk/.test(command.purpose || ""))
         ports.setPartyLocation(command.purpose === "franky-exit" ? null : command.location);
@@ -31955,7 +31954,7 @@ ${hook}`, was = errors.get(key3);
     return timeout;
   }
   function nativePlanningProgress(options) {
-    return options.nativePlanningWhileAdvancing ? Infinity : void 0;
+    return options.shared || options.request?.kind === "cave" ? Infinity : void 0;
   }
   function finalApproach(plot, from, to, options) {
     if (options?.arrivalTolerance === void 0 || options.shared) return plot;
@@ -43408,7 +43407,7 @@ ${hook}`, was = errors.get(key3);
       if (command.type === "party-monster-travel") defendConvoy(state, null);
       if (command.type !== "town-party" && command.purpose !== "shared-walk-return") nextTownGeneration(state);
       if (!walk2 || command.type === "party-monster-travel" && command.convoyId === walk2.id && command.id === walk2.commandId) return;
-      if (command.type !== "party-monster-travel" || command.convoyId !== walk2.id) parts.releaseConvoyCruise(walk2);
+      if (command.type !== "party-monster-travel") parts.releaseConvoyCruise(walk2);
       else walk2.cruiseHandoff = true;
       walk2.freezeRoute?.();
       walk2.cancelled = true;

@@ -146,9 +146,6 @@ export interface MovementOptions {
   // duplicating its search. Large generated floors need an explicit bound.
   awaitSharedRoute?: boolean;
   nativePlanningTimeoutMs?: number;
-  // The same native search goes on past its budget while its frontier keeps advancing, with no
-  // maximum (the hunting owner's Cave walks).
-  nativePlanningWhileAdvancing?: boolean;
   // `lootLeft`: the executor's loot wait left this member's chests (the `ready` check), so it departs without them.
   barrier?: (step: Step, index: number, completed: boolean, lootLeft: boolean) => Promise<boolean>;
   // A gate drives this journey's ticks in place of the service's own tick and ends with the

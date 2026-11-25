@@ -331,7 +331,9 @@ export function createWalkClient(host: WalkHost, ports: WalkClientPorts) {
       phase: "taking-control", routeStarts: 0, replanStarts: 0,
       purpose:command.purpose,requester:command.requester,group:command.group,huntTarget:command.huntTarget,navigationExempt:!!command.navigationExempt,nonPreemptible: !!command.nonPreemptible,continuousReturn:command.continuousReturn,returnWalking:!!command.returnWalking };
     groupWalk.travel = convoy;
-    if (cruiseCap && cruiseCap.id === convoy.id) cruiseCap.owner = convoy;
+    // The cap a walk handed over (commands.ts `takeOverWalk`) becomes this walk's, so its own cap
+    // sends only a changed pace.
+    if (cruiseCap) cruiseCap = { id: convoy.id, owner: convoy, speed: cruiseCap.speed };
     if (command.purpose === "party-force-travel") ports.forceTravel();
     if (command.purpose !== "grouped-approach" && !/^shared-walk/.test(command.purpose||""))
       ports.setPartyLocation(command.purpose === "franky-exit" ? null : command.location);
@@ -447,7 +449,8 @@ export function createWalkClient(host: WalkHost, ports: WalkClientPorts) {
   // attempt record and the step barrier, which asks the coordinator whether the party is ready for
   // each step while this runtime holds the walk's lease. A lost barrier request is a missed
   // report: it answers not ready after the member's next report, and the executor asks again, so
-  // the coordinator's the walk phase table judges the stall.
+  // the coordinator's the walk phase table judges the stall. A native search goes on past the
+  // player's planning budget while its frontier advances (owner.ts `nativePlanningProgress`).
   function sharedMovementOptions(command: Command) {
     const walk = ports.walkIdentity(command.requester, command.convoyId, command.epoch, command.navigationRevision, command.group);
     return { request: walk, owner: {convoyId:command.convoyId,epoch:command.epoch,commandId:command.id,navigationRevision:command.navigationRevision,routeVersion:command.routeVersion,recoveryStage:command.routeRecovery && command.routeRecovery.stage},

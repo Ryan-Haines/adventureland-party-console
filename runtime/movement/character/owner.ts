@@ -128,10 +128,12 @@ function nativePlanningTimeout(options: MovementOptions, planningMs: number): nu
     throw Error('Native planning timeout must be between 1 and 120 seconds');
   return timeout;
 }
-// A request may let the same search run on while it keeps advancing, with no maximum: the
-// planner's frontier is the progress rule.
+// A group walk's shared route and a Cave walk run the same search on while it keeps advancing,
+// with no maximum: the planner's frontier is the progress rule. Their routes cross the most maps
+// (Main to level2s takes 28 s of hidden-window slices on game 18285, docs/movement.md) and the
+// largest generated floors. Every other request ends at its budget.
 function nativePlanningProgress(options: MovementOptions): number | undefined {
-  return options.nativePlanningWhileAdvancing ? Infinity : undefined;
+  return options.shared || options.request?.kind === 'cave' ? Infinity : undefined;
 }
 function finalApproach(plot: Step[], from: Point, to: Point, options?: MovementOptions): Step[] {
   // Precision callers need the final approach that coarse planner nodes omit.

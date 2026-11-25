@@ -225,7 +225,12 @@ the existing combat or nearby-loot checks report outstanding work.
 
 An ALClient plan has a budget of `movementAlclientPlanMs` (2 s by default) and a
 native search one of `movementPlanningMs` (30 s by default, a setting the player
-sees); a requester may name its own per request. A transition that has not
+sees); a requester may name its own per request. A group walk's native search and
+the Cave's go on past that budget while their frontier advances (owner.ts
+`nativePlanningProgress`, from the request: a shared route or a `cave` request), and end once it
+stands still for `NATIVE_FRONTIER_WINDOW_MS` (rules.ts): the game's own search from
+Main to level2s takes 28 s of hidden-window slices on game 18285, so the budget cut a
+search that was still finding the route. A transition that has not
 completed after 12 seconds fails the try. A walking try is never cut while the
 game client shows the character moving: a walk that stops short of its step sends
 the step again one measured round trip later, and the try ends when that re-sent

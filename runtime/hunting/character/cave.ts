@@ -657,11 +657,11 @@ export function installCaveClient(ports: CaveClientPorts) {
       if (track === preparing && !walker.state.found && !me().moving && !ports.frame().transporting && !me().cave?.paused) walker.planTick();
       else walker.tick();
     } } : undefined;
-    // A gather plans the cross-map walk to Dorr and regroups on large generated floors. Every Cave walk
-    // plans while its search advances, from the player's planning budget.
+    // A gather plans the cross-map walk to Dorr and regroups on large generated floors. Movement runs
+    // every Cave walk's search on while it advances (owner.ts `nativePlanningProgress`).
     return walker.move(point, undefined, { request: { kind: 'cave', owner: 'cave:' + command.id }, native: true, shared,
       arrivalTolerance: command.action === 'gather' ? 1 : ARRIVAL_TOLERANCE, town: false, gate, awaitSharedRoute: !!preparing && !preparing.leader,
-      nativePlanningWhileAdvancing: true, repairSharedDrift: shared,
+      repairSharedDrift: shared,
       async barrier() {
         if (me().cave) return runtime!.canMove();
         await ports.loot();

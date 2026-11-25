@@ -94,6 +94,11 @@ The walk sets each member's cruise cap to its pace ):
   `repaceConvoy`); a walk resumed after a defense pause begins at the pace of now.
 - A member counts as paced when its reported speed is the pace within 0.1 (rules.ts
   `cruisePaced`), so the walk departs with every member at the pace.
+- A walk command that takes over from a walk keeps the cap for the walk it starts, the same
+  convoy's next phase or a new convoy's walk, which sends its own cap only when its pace differs
+  (commands.ts `takeOverWalk`, walk-client.ts `createLocalConvoy`). A reset sent between two walks
+  lands after the next walk's settle read the old cap as its pace, and failed that walk's departure
+  with "Cruise speed changed". Every other takeover resets the cap.
 - A runtime with no walk and no live walk lease resets a cap it finds: one a hand-over kept, or
   one a CODE reload left, seen as a speed below its base speed with no stand, dungeon run or
   speed condition (walk-client.ts `clearStrayCruise`).

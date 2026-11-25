@@ -21,6 +21,23 @@ scenarioTable('the character convoy runner holds, caps speed and walks the share
  await r.cancel();await b.promise;
  assert.deepEqual(r.calls.filter(x=>x[0]==='cruise'),[['cruise',57],['cruise',60],['cruise',500]]);
  }],
+ // Observed live on 2026-11-22: each failed Hunt walk was replaced by a walk of a new convoy, and
+ // the takeover sent the reset (500) before the new walk sent its cap (55). The new walk's settle
+ // read the old cap still in force, so it judged the member paced; the reset then landed, and the
+ // departure check failed the walk "Cruise speed changed".
+ ['a walk command of a new convoy keeps the cap it takes over, so no reset goes between the two walks', async r=>{
+ const {installWalkCommands}=require('../../runtime/movement/character/commands.ts');
+ const c=r.context,walks=installWalkCommands({groupWalk:c.groupWalk,releaseConvoyCruise:c.releaseConvoyCruise,convoyRequest:c.convoyRequest,
+  movement:c.movement,state:c.walkState,host:c},{});
+ const a=await r.start({...command,id:1,phase:'assemble'});
+ const next={...command,id:3,convoyId:'next',type:'party-monster-travel',phase:'assemble'};
+ await walks.takeOverWalk(next);await a.promise;
+ const b=await r.start(next);
+ assert.equal(c.groupWalk.travel.phase,'assembled');
+ assert.deepEqual(r.calls.filter(x=>x[0]==='cruise'),[['cruise',57]]);
+ await r.cancel();await b.promise;
+ assert.deepEqual(r.calls.filter(x=>x[0]==='cruise'),[['cruise',57],['cruise',500]],'the last walk resets the cap it holds');
+ }],
  ['assembly holds ownership and caps speed without awaiting cruise acknowledgement', async r=>{
   const {promise}=await r.start({...command,phase:'assemble'});
   assert.equal(r.context.groupWalk.travel.phase,'assembled');
@@ -167,6 +184,21 @@ scenarioTable('a leader plans the shared route without moving and walks it only 
   await f.tick(3);assert.equal(r.context.groupWalk.travel.phase,'failed');
   await r.cancel();await run.promise;
  },{slow:false,noPath:true}],
+ // Observed live on 2026-11-22: the Hunt walk's other-route rung searched natively from Main to
+ // level2s and was cut at 30 s, every try. The same search offline on game 18285 finds the route
+ // through the Desertland transporter in 28 s of hidden-window slices, so the cut ended a search
+ // that was still advancing. The walk's search runs while its frontier advances, as the Cave's does.
+ ['the leader\'s native search goes on past the planning budget while its frontier advances',async f=>{
+  const {r}=f;
+  r.context.movement.settingsReply({movementPlanningMs:1000});
+  const run=await r.start(f.p.commands.L);
+  let ticks=0;
+  for(;ticks<50&&!r.context.groupWalk.travel.routeReady&&!r.context.groupWalk.travel.failure;ticks++)await f.tick();
+  assert.ok(ticks*80>1000,'precondition: the search outlasts the 1 s budget ('+ticks+' ticks)');
+  assert.equal(r.context.groupWalk.travel.failure,undefined);
+  assert.equal(r.context.groupWalk.travel.routeReady,true);
+  await r.cancel();await run.promise;
+ }],
  ['native multi-tick search prepares without movement; same plot walks at offset departure',async f=>{
   const {r}=f;let restores=0;
   r.context.partyPorcupineEquipment={depart(){restores++;return new Promise(()=>{});}};

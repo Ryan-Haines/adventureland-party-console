@@ -355,7 +355,7 @@ scenarioTable("the walking try ends on the game's own movement, never on a fixed
 // movement names no Cave.
 scenarioTable('a shared request carries its own planning budget', fixture, [
  ['a shared request plans with its own 60 s budget and goes on while its search advances', async r=>{
- const p=r.service.move({map:'main',x:100,y:0},undefined,{shared:true,native:true,nativePlanningTimeoutMs:60000,nativePlanningWhileAdvancing:true});
+ const p=r.service.move({map:'main',x:100,y:0},undefined,{shared:true,native:true,nativePlanningTimeoutMs:60000});
  await r.ticks(12);await p;assert.equal(r.service.last().done,true);r.dispose();
  }],
  // The sight search, repair and crossing picks are rules.ts `MOVEMENT_PICKS`, so a reply that names
