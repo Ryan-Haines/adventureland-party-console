@@ -84,6 +84,11 @@ test('MP cost reductions, pending reservations, and survival exceptions',()=>{
  const p=fixture('priest'),line=cost(p.w,'partyheal')+p.actor.mp_cost;
  p.actor.mp=line-p.actor.mp_cost/2;assert.equal(priestAttacks(p.w),false,'half an attack above the forecast');
  p.actor.mp=line;assert.equal(priestAttacks(p.w),true,'a whole attack above the forecast');
+ // W45: the mage of max MP 7660 spent down to 20% (1532), under Blink's 1600 (G.skills.blink.mp), and
+ // its escape walked instead of Blinking. Its reserve keeps the Blink once its max MP covers it.
+ const m=fixture('mage');m.actor.max_mp=7660;m.w.skills.blink=m.w.skills.blink||{name:'blink',class:['mage'],type:'skill',mp:1600,cooldown:1200};
+ assert.equal(reserve(m.w),1600,'the mage keeps its escape Blink');
+ m.actor.max_mp=1000;assert.equal(reserve(m.w),200,'a mage that cannot fill a Blink keeps the share');
 });
 // Absorb goes only from the leader. The engine's Absorb choice, asked through the core `absorb`
 // source at `task`, reaches the executor and casts on the leader; the same setup sends nothing from
@@ -492,6 +497,15 @@ test('projectile tracker excludes strangers and settles accepted actions at thei
       a.s.stunned={};
       const b=r.w.context.monsters.find(m=>m.id==='b');b.s.stunned={};
       assert.ok(!rank(r.w,a).casts.some(d=>d.skill==='stomp'),'monsters already stunned save nothing more');
+    }],
+    // W45 (final-gate-closing6): the mage cast Light three times at 2000 MP each, valued as one
+    // attack, and its Magiport then lacked the MP. The server's Light only spends MP and lights the
+    // area (adventureland_mongodb node/server.js `data.name == "light"`).
+    ['light: the mage never ranks Light, which deals no damage',()=>{
+      const r=fixture('mage');r.actor.mp=r.actor.max_mp=7660;
+      r.w.skills.light={name:'light',class:['mage'],type:'skill',mp:2000,cooldown:0,hostile:true};
+      const a=r.add('a');
+      assert.ok(!rank(r.w,a).casts.some(d=>d.skill==='light'));
     }],
     ["targeting's area read: Cleave and Shadow Strike land damage around the caster, Stomp and Agitate deal none",()=>{
       assert.deepEqual(['cleave','shadowstrike','stomp','agitate','3shot','burst'].map(hitsAroundCaster),[true,true,false,false,false,false]);

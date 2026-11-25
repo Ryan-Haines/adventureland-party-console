@@ -32,6 +32,8 @@ const HANDLING: Partial<Record<SkillId, ServerHandling>> = {
   burst: { area: 'one', pool: true }, purify: { area: 'one', strips: true },
   // Taunt's 1 damage moves aggro; Hunter's Mark and Curse leave a condition (:10736, :3437).
   taunt: { area: 'one', noDamage: true }, huntersmark: { area: 'one', noDamage: true }, curse: { area: 'one', noDamage: true },
+  // Light only spends its MP and lights the caster's area (`data.name == "light"`), so it hits nothing.
+  light: { area: 'caster', noDamage: true },
 };
 export function handling(id: SkillId): ServerHandling {
   return HANDLING[id] ?? { area: 'one' };

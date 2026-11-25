@@ -17155,7 +17155,9 @@ ${hook}`, was = errors.get(key3);
     // Taunt's 1 damage moves aggro; Hunter's Mark and Curse leave a condition (:10736, :3437).
     taunt: { area: "one", noDamage: true },
     huntersmark: { area: "one", noDamage: true },
-    curse: { area: "one", noDamage: true }
+    curse: { area: "one", noDamage: true },
+    // Light only spends its MP and lights the caster's area (`data.name == "light"`), so it hits nothing.
+    light: { area: "caster", noDamage: true }
   };
   function handling(id2) {
     return HANDLING[id2] ?? { area: "one" };
@@ -17547,7 +17549,9 @@ ${hook}`, was = errors.get(key3);
     if (c === "paladin") return Math.max(w.actor.max_mp * RESERVE_SHARE.paladin, 2 * availableCost("selfheal") + availableCost("guardians_oath"));
     if (c === "priest") return Math.max(w.actor.max_mp * RESERVE_SHARE.priest, 2 * cost(w, "heal") + availableCost("partyheal"));
     if (c === "warrior") return (w.context.leader === w.actor.name ? availableCost("taunt") : 0) + Math.max(availableCost("stomp"), availableCost("hardshell"));
-    return w.actor.max_mp * RESERVE_SHARE.other;
+    const share = w.actor.max_mp * RESERVE_SHARE.other;
+    if (c === "mage" && availableCost("blink") <= w.actor.max_mp) return Math.max(share, availableCost("blink"));
+    return share;
   }
   function unrestrictedArea(w, d) {
     if (handling(d.skill).area !== "caster" || d.targets.length < 2) return false;

@@ -44,6 +44,9 @@ export function unlocked(w: SkillWorld, id: SkillId): boolean {
 // The class reserve's share of max MP: the paladin and the priest keep at least this share or their
 // survival casts' cost, whichever is more; every other class but the warrior keeps the `other`
 // share.
+// The mage also keeps its escape's Blink (G.skills.blink.mp, 1600), since survival's escape walks
+// every member home when the mage's MP does not cover it (survival/escape.ts `blinkFailed`). A mage
+// whose max MP is below the Blink can never cast it, so its reserve stays the share.
 const RESERVE_SHARE = { paladin: .3, priest: .35, other: .2 };
 export function reserve(w: SkillWorld): number {
   const availableCost = (id: SkillId) => unlocked(w, id) ? cost(w, id) : 0;
@@ -52,7 +55,9 @@ export function reserve(w: SkillWorld): number {
   if (c === 'priest') return Math.max(w.actor.max_mp * RESERVE_SHARE.priest, 2 * cost(w, 'heal') + availableCost('partyheal'));
   if (c === 'warrior') return (w.context.leader === w.actor.name ? availableCost('taunt') : 0) +
     Math.max(availableCost('stomp'), availableCost('hardshell'));
-  return w.actor.max_mp * RESERVE_SHARE.other;
+  const share = w.actor.max_mp * RESERVE_SHARE.other;
+  if (c === 'mage' && availableCost('blink') <= w.actor.max_mp) return Math.max(share, availableCost('blink'));
+  return share;
 }
 // The urgent area cast (and upstream issues", v1.5.0's, the warrior's Cleave): a
 // cast the server centres on the caster that hits two or more monsters, at Franky, or in Default or an
