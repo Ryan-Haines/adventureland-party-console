@@ -1,6 +1,6 @@
 // The hunts and farming owner's fixture add-on: one add-on that registers its three decision hooks, `hunt.quest`,
 // `farm.spot` and `rare.search`, and every 07 notice, and asks `farming.focus`, `hunt.view`,
-// `passive.rule` and `cave.state` at each notice, so e2e/live-hunting-hooks.spec.ts proves each
+// `passive.rule` and `cave.state` at each notice, so W60 and W41c's Cave owner rows prove each
 // `HOOKS` row is told at its change and answers its read. Its refusals and preferences stay unset
 // until a row sets one, so registering it changes no play. It joins the live coordinator's registry
 // through e2e/live-coordinator.cjs, as the events fixture does. The types come from the add-on API only.
@@ -9,7 +9,7 @@ import { keepCapped, switches, type FixtureHooks } from './hooks-fixture-kit.ts'
 
 export const HUNTING_HOOKS_ADDON = 'hunting-hooks-fixture';
 // The page script that reads the coordinator's add-on switches with this add-on on or off, for the
-// `addons` setting e2e/live-hunting-hooks.spec.ts and e2e/live-cave.spec.ts write.
+// `addons` setting W60 and e2e/cave-rows.ts `caveOwnerPlay` (W41c) write.
 export const addonSwitches = (enabled: boolean) => switches(HUNTING_HOOKS_ADDON, enabled);
 // The coordinator's 07 notices (6 part 2).
 export const HUNTING_NOTICES = ['hunt.stage', 'hunt.questChanged', 'hunt.counted', 'hunt.blacklisted', 'farming.focusChanged',
