@@ -4,7 +4,7 @@ import {drawMapProjectile} from "./draw-map-projectile";
 import {drawMapSprites, endMapSpriteFrame} from "./draw-map-sprites";
 import {drawMapRing} from "./draw-map-ring";
 import { useEffect, useRef, type RefObject } from "react";
-import { cachedMapImage } from "./cached-map-image";
+import { askMissingMapImages, cachedMapImage } from "./cached-map-image";
 import { croppedTile } from "./cropped-tile";
 import { dollLayers } from "./doll-layers";
 import { HIT_RING_MS } from "./map-render-buffer";
@@ -72,6 +72,7 @@ export function MapCanvas({
     fullMap, pins,
   });
   useEffect(() => {
+    askMissingMapImages();
     propsRef.current = {
       definition,
       frame,

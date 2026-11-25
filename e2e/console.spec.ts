@@ -1395,8 +1395,11 @@ test('fixed-origin map image proxy returns native Dreams tiles and rejects exter
     // Actual dashboard server boundary: fetch the verified native Dreams
     // tileset through the maintained fixed-origin proxy, without intercepting it.
     const nativeUrl='https://adventure.land/images/tiles/map/dreams-v3.png?v=3';
-    const proxied=await page.request.get('/api/map-image?url='+encodeURIComponent(nativeUrl));
-    expect(proxied.status()).toBe(200);
+    const ask=()=>page.request.get('/api/map-image?url='+encodeURIComponent(nativeUrl));
+    // The proxy answers from its copy (dashboard/lib/game-image.ts), so the requests before the copy
+    // lands answer 503 and the first one after it gets the image.
+    let proxied=await ask();
+    await expect.poll(async()=>(proxied=await ask()).status()).toBe(200);
     expect(proxied.headers()['content-type']).toContain('image/png');
     expect(proxied.headers()['x-content-type-options']).toBe('nosniff');
     // The proxy passes the game server's own caching.

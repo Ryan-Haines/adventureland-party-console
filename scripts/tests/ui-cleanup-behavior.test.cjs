@@ -156,19 +156,6 @@ test('DF20: the D2 dashboard bug fixes hold', async () => {
       assert.match(text(build.root), /deploy refused: \/console-build\/deploy/);
     } finally { await build.done(); }
   });
-  // The game image proxy hands the browser's abort to its fetch and keeps the game's Cache-Control.
-  const { proxyGameImage } = require('../../dashboard/lib/game-image.ts');
-  let signal;
-  await withGlobals({ fetch: async (_url, init) => { signal = init.signal; return new Response('png', { headers: { 'content-type': 'image/png', 'cache-control': 'max-age=60' } }); } }, async () => {
-    const abort = new AbortController();
-    const answer = await proxyGameImage(new Request('http://console/proxy?url=/images/tiles/map/a.png', { signal: abort.signal }), '/images/', /\.png$/, 'Map image');
-    assert.equal(answer.headers.get('cache-control'), 'max-age=60');
-    abort.abort();
-    assert.equal(signal.aborted, true, 'the browser drops the request and the fetch ends with it');
-    assert.equal((await proxyGameImage(new Request('http://console/proxy?url=https://example.com/a.png'), '/images/', /\.png$/, 'Map image')).status, 400);
-  });
-  await withGlobals({ fetch: async () => { throw new Error('stalled'); } }, async () =>
-    assert.equal((await proxyGameImage(new Request('http://console/proxy?url=/images/a.png'), '/images/', /\.png$/, 'Map image')).status, 502));
   // A headless character's gear comparison shows the doll the coordinator saved for it.
   const portraits = [];
   const { PartyReferencePanels } = load('party-reference-panels.tsx', { ...ui, ...siblings('anniversary-dialog', 'bestiary-dialog', 'monster-details-dialog', 'skills-dialog', 'donation-preview'),
@@ -186,4 +173,68 @@ test('DF20: the D2 dashboard bug fixes hold', async () => {
   assert.deepEqual(settings.root.findAllByType('MerchantTripSetting').map(node => [node.props.routine, node.props.enabled]),
     [['deliveries', true], ['withdrawals', false]]);
   await settings.done();
+});
+
+// TW-D1: in final-gate-closing12 the image proxy waited on a stalled adventure.land, its sprite loads
+// held the browser's six connections, and W09's blacklist add and W12's Hunt start queued behind them.
+test('TW-D1: the game image proxy answers at once while adventure.land stalls, and from its copy after', async () => {
+  const { proxyGameImage } = require('../../dashboard/lib/game-image.ts');
+  const ask = (url, prefix = '/images/') => proxyGameImage(new Request('http://console/proxy?url=' + encodeURIComponent(url)), prefix, /\.png$/, 'Monster sprite');
+  const settled = () => new Promise(resolve => setImmediate(resolve));
+  const fetched = [];
+  let land;
+  // A fetch that never resolves until the row lands it: adventure.land stalled.
+  await withGlobals({ fetch: url => { fetched.push(String(url)); return new Promise(resolve => { land = resolve; }); } }, async () => {
+    const sheet = 'https://adventure.land/images/tiles/monsters/monster1.png?v=2';
+    const first = await Promise.race([ask(sheet), settled().then(() => 'waiting')]);
+    assert.notEqual(first, 'waiting', 'a stalled adventure.land holds no browser request');
+    assert.equal(first.status, 503);
+    assert.equal(first.headers.get('cache-control'), 'no-store', 'the browser keeps no copy of the miss');
+    assert.equal((await ask(sheet)).status, 503, 'a request while the fetch is out answers at once');
+    assert.deepEqual(fetched, [sheet], 'one fetch per image');
+    land(new Response('png', { headers: { 'content-type': 'image/png', 'cache-control': 'public, max-age=2592000' } }));
+    await settled();
+    const copy = await ask(sheet);
+    assert.equal(copy.status, 200);
+    assert.equal(await copy.text(), 'png');
+    assert.equal(copy.headers.get('content-type'), 'image/png');
+    assert.equal(copy.headers.get('cache-control'), 'public, max-age=2592000', 'the browser caches as the game server says');
+    assert.equal(copy.headers.get('x-content-type-options'), 'nosniff');
+    assert.deepEqual(fetched, [sheet], 'the copy answers without a second fetch');
+    // A new `?v=` is the game's new version of the image, so it gets its own fetch.
+    assert.equal((await ask('https://adventure.land/images/tiles/monsters/monster1.png?v=3')).status, 503);
+    assert.equal(fetched.length, 2);
+    // Validation: only adventure.land, only under the route's prefix and extension.
+    assert.equal((await ask('https://example.com/images/a.png')).status, 400);
+    assert.equal((await ask('/images/tiles/map/a.png', '/images/tiles/monsters/')).status, 400);
+    assert.equal((await ask('/images/tiles/monsters/a.gif')).status, 400);
+    assert.equal(fetched.length, 2, 'a refused request fetches nothing');
+  });
+  // A failed fetch keeps no copy, so the next request fetches again.
+  let calls = 0;
+  await withGlobals({ fetch: async () => { calls++; if (calls === 1) throw new Error('refused'); return new Response('png2'); } }, async () => {
+    const sheet = '/images/tiles/monsters/monster2.png';
+    assert.equal((await ask(sheet)).status, 503);
+    await settled();
+    assert.equal((await ask(sheet)).status, 503, 'the request after the failure fetches again');
+    await settled();
+    assert.equal(calls, 2);
+    const copy = await ask(sheet);
+    assert.equal(copy.status, 200);
+    assert.equal(await copy.text(), 'png2');
+  });
+  // The map keeps an image the proxy answered as a miss out of its draws until its next frame asks again.
+  const { cachedMapImage, askMissingMapImages } = load('cached-map-image.tsx');
+  await withGlobals({ window: {}, Image: class { set src(value) { this.url = value; } } }, async () => {
+    const tileset = 'https://adventure.land/images/tiles/map/tw-d1.png';
+    const first = cachedMapImage(tileset);
+    assert.equal(first.url, '/api/map-image?url=' + encodeURIComponent(tileset));
+    first.onerror();
+    assert.equal(cachedMapImage(tileset), first, 'a draw before the next frame asks nothing');
+    askMissingMapImages();
+    const second = cachedMapImage(tileset);
+    assert.notEqual(second, first, 'the next frame asks again');
+    askMissingMapImages();
+    assert.equal(cachedMapImage(tileset), second, 'an image still loading is kept');
+  });
 });

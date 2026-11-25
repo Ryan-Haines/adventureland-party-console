@@ -6,7 +6,7 @@ import { createServer } from 'node:net';
 import { appendFileSync, mkdirSync, readFileSync, existsSync } from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { gateway } from '../tools/hosting/gateway';
 import { Access } from '../tools/hosting/access';
 import { DebugInstances } from '../tools/debug/service';
@@ -69,7 +69,7 @@ async function ready(process: ChildProcess, url: string, log: string) {
 }
 export type App = { url: string; journal: string; restartCoordinator(): Promise<void>; crashCoordinator(whileDown?: () => unknown): Promise<void>; state(): Promise<any>; deliverStatus(report: unknown): Promise<unknown>; deliverMerchantCompletion(report: unknown): Promise<unknown> };
 
-export const test = base.extend<{ app: App; merchantDialogs: boolean; merchantConnected: boolean; merchantManaged: boolean; playerInventory: boolean; marketStand: boolean; bankboiOfferings: boolean; mapCapture: boolean; standBuyOrders: boolean; mailbox:boolean; statusConditions:boolean; fixtureAddon: boolean; savedRecords: Record<string, unknown>[]; stateFields: string }, { dashboard: { port: number; log: string } }>({
+export const test = base.extend<{ app: App; merchantDialogs: boolean; merchantConnected: boolean; merchantManaged: boolean; playerInventory: boolean; marketStand: boolean; bankboiOfferings: boolean; mapCapture: boolean; standBuyOrders: boolean; mailbox:boolean; statusConditions:boolean; fixtureAddon: boolean; savedRecords: Record<string, unknown>[]; stateFields: string }, { dashboard: { port: number; log: string }; dashboardImport: string }>({
   // Journal records a scenario saved before this start, appended after the other seeds.
   savedRecords: [[], {option:true}],
   // PARTY_STATE_FIELDS for the coordinator (docs/state-field-registry.md, Rollout).
@@ -86,7 +86,10 @@ export const test = base.extend<{ app: App; merchantDialogs: boolean; merchantCo
   merchantManaged: [false, {option:true}],
   playerInventory: [false, {option:true}],
   marketStand: [false, {option:true}],
-  dashboard: [async ({}, use) => {
+  // A module the dashboard server imports before it starts, for a file whose rows need the server's
+  // own outside fetches changed (console-image-stall.spec.ts stalls adventure.land).
+  dashboardImport: ['', {option:true, scope:'worker'}],
+  dashboard: [async ({dashboardImport}, use) => {
     const directory = path.join(root, '.build/e2e', `dashboard-${randomUUID()}`);
     mkdirSync(directory, { recursive: true });
     const port = await unusedPort(), log = path.join(directory, 'dashboard.log');
@@ -94,7 +97,8 @@ export const test = base.extend<{ app: App; merchantDialogs: boolean; merchantCo
     if(!candidate||!candidate.directory.startsWith(path.join(root,'.build/console/releases')+path.sep))throw Error('Verified E2E dashboard candidate required');
     const process = child(path.join(candidate.directory,'tools/dashboard/node-server.mts'),
       [String(port),path.join(candidate.directory,'dashboard/.build/container')],path.join(candidate.directory,'dashboard'),
-      environment({NODE_ENV:'production',AL_DASHBOARD_PORT:String(port)}),log);
+      environment({NODE_ENV:'production',AL_DASHBOARD_PORT:String(port),
+        ...dashboardImport ? {NODE_OPTIONS:[globalThis.process.env.NODE_OPTIONS,'--import='+pathToFileURL(dashboardImport).href].filter(Boolean).join(' ')} : {}}),log);
     let used=false;
     try {
       await ready(process, `http://127.0.0.1:${port}`, log);
