@@ -97,6 +97,12 @@ export function installPartyMembership(ports: MembershipPorts) {
       // "Party sync failed" line below.
       const current = ports.partyList(), currentLeader = current[0] || null;
       now = pair(current);
+      // A path memo answers its pair only while the party stands on it. Once the party moves off,
+      // a return to the same pair is a new occurrence: in final-gate-closing8 W21 the party dissolved
+      // back to the empty pair both sides had joined from, and each side's memo held its call for 79 s.
+      if (invited !== now) invited = null;
+      if (accepted !== now) accepted = null;
+      if (joined !== now) joined = null;
       if (now === acted) return;
       attempted = "none";
       if (leader === me) {

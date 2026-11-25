@@ -34495,6 +34495,9 @@ ${hook}`, was = errors.get(key3);
       try {
         const current = ports.partyList(), currentLeader = current[0] || null;
         now = pair(current);
+        if (invited !== now) invited = null;
+        if (accepted !== now) accepted = null;
+        if (joined !== now) joined = null;
         if (now === acted) return;
         attempted = "none";
         if (leader === me) {

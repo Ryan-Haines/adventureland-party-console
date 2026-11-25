@@ -76,4 +76,19 @@ scenarioTable('the game party asks once per change of the pair, for the leader, 
   await r.m.reconcile();
   assert.equal(r.calls.length, 3, 'the accept in flight holds an invite for the same pair');
 }, { leader: 'W', me: 'W' }],
+// final-gate-closing8 W21: the priest joined from an empty party by accepting an invite and the
+// warrior had accepted a request from one, then the party dissolved back to the same empty pair.
+// Neither side sent a party call for 79 s, so H46, H48 and H49 waited on `party` false.
+['a pair the party left and came back to gets one more path into the party, for the leader', async r => {
+  r.hold(); await r.m.reconcile(); r.send(); r.m.acceptRequest('P');
+  r.state.party = ['W', 'P']; await r.m.reconcile();
+  r.state.party = []; await r.m.reconcile();
+  assert.deepEqual(r.calls, ['raccept P', 'invite P'], 'the dissolved party is a new occurrence of the pair, so the leader invites');
+}, { leader: 'W', me: 'W' }],
+['a pair the party left and came back to gets one more path into the party, for a follower', async r => {
+  r.hold(); await r.m.reconcile(); r.send(); r.m.acceptInvite('W');
+  r.state.party = ['W', 'P']; await r.m.reconcile();
+  r.state.party = []; await r.m.reconcile();
+  assert.deepEqual(r.calls, ['accept W', 'request W'], 'the dissolved party is a new occurrence of the pair, so the follower asks to join');
+}],
 ]);
