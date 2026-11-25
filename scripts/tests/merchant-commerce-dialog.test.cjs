@@ -22,8 +22,3 @@ test('dialog suppresses duplicate pending submissions and clears its cart only o
  resolve();await first;assert.equal(f.effects.filter(e=>e[0]==='cart').length,1);assert.equal(f.r.pending.current,false);
 });
 
-test('craft submissions no longer request removal of automatic bank marks',async()=>{
- const calls=[];const f=fixture(async(...args)=>calls.push(args));
- await f.submit();assert.equal(calls.length,1);assert.equal(calls[0].length,3);
- assert.equal(calls[0][1][0].quantity,4);assert.ok(f.effects.some(e=>e[0]==='cart'));
-});

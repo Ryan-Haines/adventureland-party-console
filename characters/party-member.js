@@ -5492,7 +5492,7 @@
       answers: "one",
       core: true,
       addonMayAsk: true,
-      fixture: "scripts/tests/coordinator-hunt-control.test.cjs#event.pending: a released Hunt waits while a member reports an event pending",
+      fixture: "scripts/tests/coordinator-hunt-control.test.cjs#events-pending waits for one report per online participant after the hand-in, then releases",
       receives: "a member name",
       returns: "true while the member's latest report says its Hunt waits on an event"
     },
@@ -8275,7 +8275,7 @@
     "items.bank": read2(`${SPEC2}#items.bank: the snapshot read`, "nothing", "the bank snapshot", true, "coordinator"),
     "items.storagePending": read2(`${UNIT2}#items.storagePending: a pending BankBoi transfer is named`, "character", "whether storage work waits for it", true, "coordinator"),
     "items.productionPending": read2(`${UNIT2}#items.productionPending: a pending intent is named`, "character", "whether production work waits for it", true, "coordinator"),
-    "items.bag": read2(`${UNIT2}#items.bag: the bag facts of the holder record`, "character", "the bag holder's facts (3.4)", true, "character"),
+    "items.bag": read2("scripts/tests/items-bag.test.cjs#each fact follows the holder", "character", "the bag holder's facts (3.4)", true, "character"),
     "items.standSlots": read2(`${UNIT2}#items.standSlots: the stand's cells and the listings that use them`, "merchant", "{slots, used, free} from the one count (E10-12, A79)", true, "coordinator")
   };
   var ACTIONS10 = {
@@ -9749,7 +9749,7 @@
       owner: "14",
       data: "each enabled entry of 01's target-mode and combat-mode slots with its declared button {label, description, color}",
       section: false,
-      fixture: "e2e/addon-console.case.ts#the mode rows: the combat modes in row 1 and the target modes in row 2, each sending its own field, one pressed per row"
+      fixture: "e2e/hunt.spec.ts#Hunt saves a backup, accepts settings, and exits without losing preferences"
     },
     // Every enabled add-on with a section gets it; `save` reaches a target mode add-on's `target.settings`
     // and any other add-on's `addon.command`.

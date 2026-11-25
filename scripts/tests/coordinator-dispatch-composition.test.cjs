@@ -165,3 +165,49 @@ test('the dispatcher pass drops an expired giveaway and keeps one that is still 
   g.service.dispatch();
   assert.equal(g.state.merchantCurrent?.id ?? g.state.commands.M?.jobId, 'live');
 });
+
+// The dispatcher's job choices on the composition fixture, with helpers/coordinator-dispatch.cjs's
+// sample job. The composition copies its ports when it is built, so each test sets them first.
+const { sampleJob } = require('./helpers/coordinator-dispatch.cjs');
+const composed = f => createCoordinatorMerchantDispatcher(f.state, f.ports);
+test('gathering wins only at a strictly higher priority and waits for the home realm', () => {
+  const f = fixture(), at = { home: false, gather: 60 };
+  Object.assign(f.state, { merchantQueue: [sampleJob('restock')], gatheringModes: ['fishing'] });
+  Object.assign(f.ports, { priority: () => 50, routinePriority: () => at.gather, ensureHome: () => at.home });
+  const service = composed(f);
+  service.dispatch();
+  assert.equal(f.state.merchantQueue.length, 1); assert.equal(f.state.commands.M, undefined);
+  at.home = true; service.dispatch(); assert.equal(f.state.commands.M.type, 'merchant-gather');
+  at.gather = 50; service.dispatch(); assert.equal(f.state.commands.M.type, 'merchant-self-restock');
+});
+
+test('marketplace batching retains other sellers and tags each listing with its original bid', () => {
+  const f = fixture(), selected = sampleJob('ALData marketplace purchases'), queued = sampleJob('ALData marketplace purchases');
+  selected.bidItemId = 'first'; queued.id = 'other'; queued.bidItemId = 'second';
+  queued.listings = [{ ...queued.listings[0], key: 'second' }, { ...queued.listings[0], key: 'third', seller: 'other-seller' }];
+  // The items owner's needs read the merchant's bag and gold before a purchase.
+  Object.assign(f.state.statuses.M, { map: 'main', x: 1, y: 2, gold: 500, items: Array(42).fill(null) });
+  f.state.merchantQueue = [selected, queued]; f.ports.planPonty = listings => listings.slice().reverse();
+  composed(f).dispatch();
+  assert.deepEqual(f.state.commands.M.listings.map(l => [l.key, l.bidItemId]), [['listing', 'first'], ['second', 'second']]);
+  assert.deepEqual(f.state.merchantQueue[0].listings.map(l => l.key), ['third']);
+});
+
+test('new merchant commands carry only runnable NPC sale reservations', () => {
+  const f = fixture();
+  Object.assign(f.state, { merchantQueue: [sampleJob('npc sales')], npcSaleMarks: [{ id: 'ready', retryAt: 99 }, { id: 'future', retryAt: 101 }, { id: 'blocked', state: 'blocked' }] });
+  composed(f).dispatch();
+  assert.deepEqual(f.state.commands.M.npcSales.map(mark => mark.id), ['ready']);
+});
+
+test('legacy and already-split empty manual compound jobs never dispatch a merchant visit', () => {
+  for (const reason of ['upgrades and compounds', 'manual compounds']) {
+    const f = fixture(), logs = [];
+    Object.assign(f.state, { merchantQueue: [sampleJob(reason, 'F')], compounds: { F: [] } });
+    f.ports.log = message => logs.push(message);
+    composed(f).dispatch();
+    assert.ok(!f.state.merchantQueue.some(j => j.reason === 'manual compounds'));
+    assert.notEqual(f.state.merchantCurrent?.reason, 'manual compounds');
+    assert.ok(logs.includes('Discarded empty manual compound job'), reason);
+  }
+});

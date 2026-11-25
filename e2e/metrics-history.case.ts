@@ -19,32 +19,6 @@ async function installCollector(page:Page,script:string,name:string,sample:Recor
 }
 const SAMPLE={luck:1,ping:20,level:1,xp:0,maxXp:100};
 
-test('metrics persists deduplicated native observations across coordinator restart',async({app,page},info)=>{
-  const at=Math.floor(Date.now()/10000)*10000;
-  const sample={at:at+100,gold:100,luck:100,ping:30,level:1,xp:0,maxXp:100};
-  const frame={at,sequence:1,observedMs:1000,partial:false,damage:[{monster:'goo',skill:'attack',amount:23,hits:1}],credits:[],kills:[{id:'metrics-native-death',at:at+100,monster:'goo',actor:'W'}],loot:[],first:sample,last:sample};
-  const batch={character:'W',server:'US I',runtime:'metrics-e2e',frames:[frame]};
-  const receipts:Array<{status:number;body:string}>=[];
-  const deliver=async()=>{
-    const response=await page.request.post(app.url+'/party-api/metrics',{data:batch,headers:{origin:app.url}});
-    const body=await response.text();receipts.push({status:response.status(),body});
-    expect(response.ok(), 'Metrics ingest HTTP '+response.status()+': '+body).toBeTruthy();
-  };
-  await deliver();await deliver();
-  await app.restartCoordinator();
-  await deliver();
-  const response=await page.request.get(app.url+'/party-api/metrics?from='+at+'&to='+(at+20000));
-  expect(response.ok()).toBeTruthy();const history=await response.json();
-  const points=history.points;expect(points.flatMap((p:any)=>p.kills).reduce((n:number,k:any)=>n+k.count,0)).toBe(1);
-  expect(points.flatMap((p:any)=>p.values).flatMap((v:any)=>v.damage).reduce((n:number,d:any)=>n+d.amount,0)).toBe(23);
-  // The kill total is the saved lifetime count, so the restart keeps it and the
-  // repeated kill id adds nothing.
-  const day=new Date(at);day.setHours(0,0,0,0);
-  const kills=await (await page.request.get(app.url+'/party-api/metrics/kills?from='+at+'&to='+(at+20000)+'&dayFrom='+day.getTime()+'&dayTo='+(at+20000))).json();
-  expect(kills.monsters.find((row:any)=>row.monster==='goo')?.total).toBe(1);
-  await info.attach('metrics-restart-deduplication',{body:JSON.stringify({receipts,history,kills}),contentType:'application/json'});
-});
-
 // The kills, damage, items and loot views count days from the browser's midnight,
 // daylight saving included, and say so. Run in New York, where 2026-03-08 is 23 hours long.
 test.describe('metric days',()=>{
@@ -63,27 +37,6 @@ test.describe('metric days',()=>{
     for(const view of ['metrics-kills.tsx','metrics-measurements.tsx','metrics-loot.tsx'])
       expect(readFileSync('dashboard/features/party/'+view,'utf8'),view).toContain('METRIC_DAY_NOTE');
   });
-});
-
-
-test('metrics collector retries persisted browser frames after CODE replacement',async({page},info)=>{
-  // Failure inventory: a numeric ring-header loses queued frames on reload;
-  // replacement CODE changes receipt identity or resamples old gold; legacy
-  // frame content must remain immutable until coordinator acknowledgement.
-  const built=await build({entryPoints:['runtime/status/character/telemetry.ts'],bundle:true,write:false,format:'iife',platform:'browser',globalName:'Telemetry'});
-  const script=built.outputFiles[0].text;
-  await page.goto('/');
-  const install=(deliver:boolean)=>installCollector(page,script,'BrowserMetricsE2E',{gold:deliver?999:111,...SAMPLE},deliver);
-  await install(false);
-  const key='party-metrics-v1:BrowserMetricsE2E';
-  await expect.poll(()=>page.evaluate(key=>JSON.parse(localStorage.getItem(key)||'null')?.queue.length||0,key)).toBeGreaterThan(0);
-  const pending=await page.evaluate(key=>JSON.parse(localStorage.getItem(key)!),key);
-  const sequence=pending.queue[0];expect(typeof sequence).toBe('number');
-  await page.reload();await install(true);
-  await expect.poll(()=>page.evaluate(({runtime,sequence})=>(window as any).metricsReceived.some((b:any)=>b.runtime===runtime&&b.frames.some((f:any)=>f.sequence===sequence&&f.first.gold===111)),{runtime:pending.runtime,sequence})).toBe(true);
-  const received=await page.evaluate(()=>(window as any).metricsReceived);
-  const matching=received.flatMap((b:any)=>b.frames.filter((f:any)=>f.sequence===sequence));expect(matching).toHaveLength(1);expect(matching[0].last.gold).toBe(111);
-  await info.attach('metrics-browser-replacement-retries',{body:JSON.stringify({pending,received}),contentType:'application/json'});
 });
 
 test('metrics outbox keeps ring keys only for unconfirmed frames across a reload',async({page},info)=>{
@@ -110,7 +63,8 @@ test('metrics outbox keeps ring keys only for unconfirmed frames across a reload
   }),key);
   const ringKeys=async()=>(await snapshot()).ringKeys;
   const header=async()=>(await snapshot()).header;
-  const install=(deliver:boolean)=>installCollector(page,script,'BrowserOutboxE2E',{gold:1,...SAMPLE},deliver);
+  // The replacement CODE samples another gold, so a resent frame shows it kept its first content.
+  const install=(deliver:boolean)=>installCollector(page,script,'BrowserOutboxE2E',{gold:deliver?999:1,...SAMPLE},deliver);
   await install(false);
   expect(await ringKeys(),'install removes the confirmed 1.5 frame keys and keeps the queued frame').toEqual([key+':frame:41']);
   await expect.poll(async()=>(await header()).queue.length,{timeout:15_000}).toBeGreaterThanOrEqual(3);
@@ -124,6 +78,8 @@ test('metrics outbox keeps ring keys only for unconfirmed frames across a reload
   const received=await page.evaluate(()=>(window as any).metricsReceived);
   const frames=received.flatMap((batch:any)=>batch.frames);
   for(const sequence of pending.queue)expect(frames.filter((frame:any)=>frame.sequence===sequence),'frame '+sequence+' sent once').toHaveLength(1);
+  for(const sequence of pending.queue.filter((sequence:number)=>sequence!==41))
+    expect(frames.find((frame:any)=>frame.sequence===sequence).last.gold,'frame '+sequence+' keeps its first gold').toBe(1);
   const original=frames.find((frame:any)=>frame.sequence===41);
   expect(original.first.gold).toBe(4242);expect(original.damage).toEqual(queued.damage);
   expect(received.every((batch:any)=>batch.runtime==='outbox-e2e')).toBe(true);

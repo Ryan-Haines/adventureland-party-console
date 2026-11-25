@@ -3,6 +3,7 @@
 // moved it out before the row's upgrade read it. Failure mode: a reply with no command tidies while
 // the runner holds the merchant (idle at its stand, gathering, a job), which v1.5.0
 // never did (shared.js `merchantIdleActive`, `gatheringActive`, `__merchantActiveJob`).
+const {settle}=require('./helpers/settle.cjs');
 const test = require('node:test'), assert = require('node:assert/strict');
 const { productionHarness } = require('./helpers/items-character.cjs');
 
@@ -17,7 +18,6 @@ function merchant(held) {
   h.production.luckyReply({ luckySlotLocks: { M: 4 } });
   return { ...h, character, swaps };
 }
-const settle = async () => { for (let i = 0; i < 20; i++) await new Promise(resolve => setImmediate(resolve)); };
 
 test('a reply with no command leaves the seeded lucky slot alone while the runner holds the merchant', async () => {
   const held = merchant(true);

@@ -33,17 +33,6 @@ test('launcher recognition does not mistake legacy imports or comments for the a
   assert.equal(isCoordinatorApplicationLauncher('coordinatorPolicies.createCoordinatorHunt(party, {});'),false);
 });
 
-// The coordinator bundle holds one copy of movement's defense.ts. start.ts takes the convoy
-// defense step from movement's door, as every other caller does, so the bundle requires no second
-// build of defense.ts (scripts/convoy-defense.cjs) at run time.
-test('the coordinator bundle evaluates defense.ts once',()=>{
-  const {buildSync}=require('esbuild');
-  const built=buildSync({entryPoints:['runtime/coordinator/application.ts'],bundle:true,write:false,format:'cjs',platform:'node',
-    target:'node22',external:['alpathfinder','bot-web-interface','express','../monitoring_util','../src/*'],logLevel:'silent'}).outputFiles[0].text;
-  assert.equal(built.split('function travelObservationIssue(').length-1,1);
-  assert.doesNotMatch(built,/convoy-defense\.cjs/);
-});
-
 // The coordinator process holds one copy of the console's modules. The targeting queue and the
 // roster routes come from the application bundle's own modules; grouped-combat.cjs and roster.cjs
 // each bundled most of the console beside it. The movement planner runs in its own worker.

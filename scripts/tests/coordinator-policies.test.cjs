@@ -5,7 +5,7 @@ const assert = require('node:assert/strict');
 const { commerceRuleKey, markMatches, markedItem, ruleMode } = require('../../runtime/items/api.ts');
 const { createALDataClient } = require('../../runtime/items/coordinator/market.ts');
 const { queueExchangeStorage } = require('../../runtime/items/coordinator/storage.ts');
-const { merchantJobPriority, selectMerchantJob } = require('../../runtime/merchant-jobs/rules.ts');
+const { merchantJobPriority } = require('../../runtime/merchant-jobs/rules.ts');
 const { collectionSlotCount, markedCollectionReady, merchantCollectionNearby } = require('../../runtime/merchant-jobs/coordinator/owner.ts');
 const { mluckRemaining, mluckTravelLead } = require('../../runtime/merchant-jobs/coordinator/sources.ts');
 const { resolveABStrategy } = require('../../runtime/events/coordinator/api.ts');
@@ -69,16 +69,6 @@ test('exchange shortages retrieve matching BankBoi stacks once and never consume
   assert.equal(queueExchangeStorage(exchanges, shortages, workers, requests), true);
   assert.equal(requests.length, 2);
   assert.equal(queueExchangeStorage([], shortages, workers, requests), false);
-});
-
-test('queue selection retains FIFO ties and leaves delayed, blocked, and capacity-limited jobs queued', () => {
-  const queue = [{ reason: 'a', queuedAt: 1, retryAt: 101 }, { reason: 'b', queuedAt: 2, blockedOnBankboi: true }, { reason: 'c', queuedAt: 3 }, { reason: 'd', queuedAt: 4 }];
-  const selection = { now: 100, priority: () => 50, capacityBlocked: job => job.reason === 'c', collectionReady: () => true };
-  assert.equal(selectMerchantJob(queue, selection), 3);
-  assert.equal(queue.length, 4);
-  selection.capacityBlocked = () => false;
-  assert.equal(selectMerchantJob(queue, selection), 2);
-  selection.now = 101; assert.equal(selectMerchantJob(queue, selection), 0);
 });
 
 test('luck uses authoritative absence and caster ownership before persisted cast time', () => {

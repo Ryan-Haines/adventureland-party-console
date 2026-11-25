@@ -1,8 +1,9 @@
+const {settle}=require('./helpers/settle.cjs');
 const assert = require('node:assert/strict');
 const {scenarioTable}=require('./fixtures/scenarios.cjs');
 const {runner,geometry}=require('./fixtures/combat-runner-scenario.cjs');
 const {update: drawUpdate}=require('./helpers/run-scope.cjs');
-const flush = async () => { for (let i = 0; i < 12; i++) await Promise.resolve(); };
+const flush = settle;
 
 // The movers run in one list (e2e/movement-owner-failures.md "Step 9" item 6): an add-on answer
 // at `formation` runs after the event return, Franky and rare movers and before the farm approach

@@ -6,7 +6,7 @@
 const {test}=require('node:test'),assert=require('node:assert/strict');
 const {fixture:workersFixture}=require('./helpers/coordinator-workers.cjs');
 const {lifecycleSavedFields}=require('../../runtime/lifecycle/fields.ts');
-const settle=async(done)=>{for(let i=0;i<1000&&!done();i++)await new Promise(resolve=>setImmediate(resolve));};
+const {until:settle}=require('./helpers/settle.cjs');
 // A, B and Offline run the live client 10; Pinned keeps version 7. `reports` sends each started
 // worker's first report on its own instance.
 function fixture(){

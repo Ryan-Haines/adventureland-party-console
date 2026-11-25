@@ -1,3 +1,4 @@
+const {settle}=require('./helpers/settle.cjs');
 const {test}=require('node:test');
 const assert=require('node:assert/strict');
 const {loaderWindow,loaderSource,manifestFor,sha}=require('./fixtures/loader-scenario.cjs');
@@ -25,7 +26,7 @@ function loader(host){
    return {ok:true,status:200,text:async()=>code(revision)};
   }});
  l.w.eval(loaderSource());
- const tick=async()=>{l.interval();for(let n=0;n<20;n++)await new Promise(r=>setImmediate(r));};
+ const tick=async()=>{l.interval();await settle();};
  return {w:l.w,requests,until:l.until,tick,bounds,count:name=>requests.filter(value=>value===name).length};
 }
 

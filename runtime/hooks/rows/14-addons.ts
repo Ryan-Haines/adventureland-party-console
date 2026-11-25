@@ -39,7 +39,7 @@ export const HOOKS = {
 // fixture is the console table every installed add-on's journey joins.
 export const SLOTS = {
   'mode-row': { owner: '14', data: "each enabled entry of 01's target-mode and combat-mode slots with its declared button {label, description, color}", section: false,
-    fixture: 'e2e/addon-console.case.ts#the mode rows: the combat modes in row 1 and the target modes in row 2, each sending its own field, one pressed per row' },
+    fixture: 'e2e/hunt.spec.ts#Hunt saves a backup, accepts settings, and exits without losing preferences' },
   // Every enabled add-on with a section gets it; `save` reaches a target mode add-on's `target.settings`
   // and any other add-on's `addon.command`.
   'settings-section': { owner: '14', data: "an add-on's dashboard.tsx section with {store, settings, save, inherited, monsters} (addon-kit.ts AddonSectionProps)", section: true,

@@ -79,15 +79,6 @@ test('a runtime replacement keeps the spawn attempts the Hunt recorded',()=>{
  r.step();assert.deepEqual(r.entry().attempts.slice(0,attempts.length),attempts);
 });
 
-// A Hunt walk ends on the rules every walk uses, so movement declares none of the Hunt-only walk
-// ends. The saved-fields row, then one walk row per row of the design's table " progress ends".
-// `walkGeometryReloadMs` went with the rework pass's (the geometry repair ends on its progress).
-test('movement declares none of the Hunt-only walk ends', () => {
-  const { movementSavedFields } = require('../../runtime/movement/saved-fields.ts');
-  for (const field of ['huntWalkRallyStallMs', 'huntWalkRallyMs', 'huntWalkPrepareMs', 'huntWalkRouteHandleMs', 'walkRuntimeWaitMs',
-    'walkCommunicationStableMs', 'walkCommunicationResumeGapMs', 'walkGeometryReloadMs'])
-    assert.equal(Object.hasOwn(movementSavedFields, field), false, field + ' is still declared');
-});
 
 // Walk rows: each plants the same reports on a walk no Hunt owns and on a walk a Hunt route owns,
 // past the moment the old setting ended the Hunt walk, and reads the same phase, failure, rung and

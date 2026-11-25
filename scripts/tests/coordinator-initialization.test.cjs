@@ -30,9 +30,15 @@ test('an empty journal loads every declared field as a fresh install does', asyn
   // The farming scopes as the start composes them (application.ts): the row runs the start and
   // keeps the scope builder and the lists it hands it, then builds them over an empty journal's load.
   let startScopes;
-  await require('./helpers/coordinator-host.cjs').run(100, {'../tasks/coordinator/api.ts': api => ({...api,
+  const host = await require('./helpers/coordinator-host.cjs').run(100, {'../tasks/coordinator/api.ts': api => ({...api,
     createFarmingScopes(state, lists, ...rest) { startScopes = {build: api.createFarmingScopes, lists}; return api.createFarmingScopes(state, lists, ...rest); }})});
   assert.ok(startScopes, 'the start makes the farming scopes');
+  // The start builds each part after what it reads. The metrics service takes its first account gold
+  // point as it opens, which reads the roster projection (slotPayload); a projection declared later in
+  // application.ts threw "Cannot access 'rosterProjection' before initialization" there, and the
+  // start went on with metrics unavailable (side-by-side dry run, 2026-11-16).
+  const references = host.warnings.flat().filter(value => value instanceof ReferenceError || value?.error instanceof ReferenceError);
+  assert.deepEqual(references.map(value => String(value.error ?? value)), [], 'the start reaches its ready state with no ReferenceError');
   const {party} = initializeCoordinatorState({get: () => undefined, set: () => {}}, {}, () => 'SR_USII', {
     now: () => 100, loadBankVaultDefinitions: () => [], log: { warn: () => assert.fail('an empty journal warned') },
   });
@@ -168,16 +174,6 @@ test('every hidden setting loads its saved copy through the one pass', () => {
     now: () => 100, loadBankVaultDefinitions: () => [], log: {warn: () => assert.fail('a saved hidden setting warned')},
   });
   for (const entry of hidden) assert.equal(party[entry.field], saved[entry.field], entry.field);
-});
-
-// The start builds each part after what it reads. The metrics service takes its first account gold
-// point as it opens, which reads the roster projection (slotPayload); a projection declared later in
-// application.ts threw "Cannot access 'rosterProjection' before initialization" there, and the
-// start went on with metrics unavailable (side-by-side dry run, 2026-11-16).
-test('the coordinator start reaches its ready state with no ReferenceError', async () => {
-  const host = await require('./helpers/coordinator-host.cjs').run(100);
-  const references = host.warnings.flat().filter(value => value instanceof ReferenceError || value?.error instanceof ReferenceError);
-  assert.deepEqual(references.map(value => String(value.error ?? value)), []);
 });
 
 // The home realm setting is the one home every reader takes (user, 2026-11-09: other players have

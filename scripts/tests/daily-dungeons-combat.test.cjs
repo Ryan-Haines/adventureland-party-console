@@ -5,6 +5,7 @@ const {drivePositions,positionsOf} = require('./helpers/targeting-module.cjs');
 const { createMovementContext } = require('./fixtures/movement-owner-callers.cjs');
 const { installCaveClient } = require('../../runtime/hunting/character/cave.ts');
 const test = require('node:test');
+const {restoreGlobals} = require('./helpers/test-registry.cjs');
 const assert = require('node:assert/strict');
 const vm = require('node:vm');
 const fs = require('node:fs');
@@ -48,12 +49,13 @@ test('cave looting opens only this instance, stops during votes and death',async
   actor.cave.paused=false;actor.rip=true;await cave.loot();
   assert.deepEqual(opened,['yes']);
 });
-test('normal priest healing in cave uses live injured allies instead of pre-entry status',async()=>{
+test('normal priest healing in cave uses live injured allies instead of pre-entry status',async t=>{
   // The survival owner's heal choice (needs.ts) reads its members through the character half's
   // `members` port, which shared.js answers with the Cave's live members inside a Cave (S-07s6).
   const {c,actor,priest,cave}=fixture(); actor.ctype='priest';actor.mp=100;actor.heal=10;actor.level=80;
   drivePositions(c,[{...priest,map:'main',hp:100}]);
   const {createNeeds}=require('../../runtime/characters/survival/needs.ts'),g=globalThis;
+  restoreGlobals(t,['character','get_player','is_on_cooldown','can_use','is_in_range','G']);
   Object.assign(g,{character:actor,get_player:c.get_player,is_on_cooldown:()=>false,can_use:()=>true,is_in_range:()=>true,
     G:{skills:{partyheal:{mp:400,levels:[[60,800]]},heal:{class:['priest']}},items:{}}});
   const needs=createNeeds({members:()=>actor.cave?cave.partyMembers():positionsOf(c),escapeStage:()=>null,sameTeam:()=>true,townCasting:()=>false,partyhealAllowed:()=>true,isLeader:()=>false,

@@ -5,6 +5,7 @@
 // `skills.allows` (TC41), and on the pass where the Cave revival holds the priest no attack and no
 // class decision goes (TC46). Isolated: no live row plants the A/B feed with a hold, or a Stomp in
 // the same pass as a class decision.
+const {settle}=require('./helpers/settle.cjs');
 const assert=require('node:assert/strict');
 const test=require('node:test');
 const vm=require('node:vm');
@@ -58,12 +59,12 @@ async function run(r,{occupied,mode,stomp,revival}){
   c.RunnerTest.installRoleRunner({combat:true,beforeAttack:async()=>{log.push('class');return false;}});
   c.partyRoleRunner.start();
   try{
-    for(let k=0;k<12;k++)await Promise.resolve();
+    await settle();
     log.length=0;
     now+=250;r.now(now);
     c.__partyHooks.notify('report.sent',{character:warrior.name,by:'core:lifecycle'});
     await update();
-    for(let k=0;k<12;k++)await Promise.resolve();
+    await settle();
     return log.slice();
   }finally{c.partyRoleRunner.stop();}
 }

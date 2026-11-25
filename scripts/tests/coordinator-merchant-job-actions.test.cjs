@@ -47,20 +47,9 @@ test('merchant job realm changes respond before scheduling a restart and reject 
   assert.equal(t.state.merchantCurrent.phase, 'processing'); assert.equal(t.state.merchantCurrent.heartbeatAt, 100000);
 });
 
-test('marketplace location refresh selects the correct feed normalization and follows only a new spot', async () => {
-  for (const sale of [false, true]) {
-    const t = fixture();
-    t.state.merchantCurrent = {id: 'job', reason: sale ? 'ALData marketplace sales' : 'ALData marketplace purchases',
-      buyOrder: t.offer, listings: [t.offer]};
-    const report = {jobId: 'job', listingKey: 'offer'};
-    assert.deepEqual((await t.invoke(t.service.location, report)).value, {location: {map: 'main', x: sale ? 200 : 100, y: 0}});
-    assert.deepEqual(t.calls.slice(0, 3), ['/merchants', [sale ? 'sales' : 'purchases', sale ? 'Buyer' : 'Seller'], 'persist']);
-    assert.deepEqual((await t.invoke(t.service.location, report)).value, {location: null});
-    assert.equal(t.calls.filter(call => call === '/merchants').length, 2);
-  }
-});
-
-test('cluster reports use the live command sequence and Ponty acknowledgements remain idempotent', async () => {
+// The cluster routes number their queued job from the coordinator's own command counter, so a
+// repeated cluster report queues one job. Ponty's dismiss-once is coordinator-marketplace-progress's.
+test('cluster reports use the live command sequence', async () => {
   const t = fixture();
   t.state.statuses = {P: {seenAt: 100000, map: 'main', x: 0, y: 0}, Q: {seenAt: 100000, map: 'main', x: 10, y: 0}};
   t.state.marked.Q = [1]; t.state.nextCommandId = 90;
@@ -69,13 +58,6 @@ test('cluster reports use the live command sequence and Ponty acknowledgements r
   await t.invoke(t.service.clusters.marked, {jobId: 'job'});
   assert.equal(t.state.merchantQueue.length, 1); assert.equal(t.state.merchantQueue[0].id, 'merchant-100000-90');
   assert.equal(t.state.merchantQueue[0].priority, 50); assert.equal(t.state.nextCommandId, 91);
-  t.state.merchantCurrent = {id: 'ponty', reason: 'Ponty purchases', listings: [t.offer]};
-  t.state.commands = {M: {}};
-  const report = {jobId: 'ponty', listingKey: 'offer', success: true};
-  await t.invoke(t.service.marketplace.ponty, report); await t.invoke(t.service.marketplace.ponty, report);
-  assert.equal(t.calls.filter(call => call[0] === 'fulfill').length, 1);
-  assert.equal(t.calls.filter(call => call[0] === 'dismiss').length, 1);
-  assert.deepEqual(t.state.commands.M.completedListingKeys, ['offer']);
 });
 
 // MJ38: the job realm route was the one route with no PVP

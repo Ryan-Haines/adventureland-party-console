@@ -1,5 +1,4 @@
-const test = require('node:test'), assert = require('node:assert/strict'), fs = require('node:fs'), vm = require('node:vm');
-const source=require('./helpers/coordinator-source.cjs').coordinatorSource();
+const test = require('node:test'), assert = require('node:assert/strict');
 function fixture(policy='farming') {
   let route, starts=0, authorizations=0;
   const party={monsterFocus:["snake"],monsterFocusByCharacter:{},statuses:{},leader:'L',targetMode:policy,monsterHunterLocation:{map:'main',x:-100,y:-100}};

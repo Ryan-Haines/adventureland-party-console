@@ -47,19 +47,14 @@ function startWarrior() {
   return { frame, error };
 }
 
-// ae41fe0ff built targeting after the merchant's Luck, whose ports read `targeting.positions` as
-// they were built, so every class load threw a TypeError in luckPorts and no character started
-// (side-by-side dry run, 2026-11-16).
-test('shared.js installs its shared routine at load', () => {
-  const { frame, error } = startWarrior();
-  assert.ok(frame.sharedRoutine, String(error && error.stack));
-});
-
-// 8b3c70adc moved the role runner's movement tick from the shared routine to movement's door,
-// root.partyMovement, which held the movers only as `follow`, so the runner's start threw
-// "startMovementTick is not a function".
+// One warrior start checks two breaks. ae41fe0ff built targeting after the merchant's Luck, whose
+// ports read `targeting.positions` as they were built, so every class load threw a TypeError in
+// luckPorts and no character started (side-by-side dry run, 2026-11-16). 8b3c70adc moved the role
+// runner's movement tick from the shared routine to movement's door, root.partyMovement, which held
+// the movers only as `follow`, so the runner's start threw "startMovementTick is not a function".
 test('the role runner starts with movement\'s tick', () => {
   const { frame, error } = startWarrior();
   assert.equal(error, null, String(error && error.stack));
+  assert.ok(frame.sharedRoutine, 'shared.js installs its shared routine at load');
   assert.ok(frame.partyRoleRunner);
 });

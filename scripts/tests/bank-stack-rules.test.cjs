@@ -21,4 +21,11 @@ test('an account-bound pile stays apart, and can_stack merges a stackable title'
   const merge = nextStackMerge([cells[0], cells[2]], () => 9999, native);
   assert.deepEqual([merge.target.slot, merge.source.slot, merge.quantity], [0, 2, 7]);
   assert.deepEqual(stackDepositPlan({name: 'spidersilk', q: 5, p: 'cavefound'}, 9999, cells, native).moves.map(move => move.slot), [0]);
+  // Under a can_stack keyed by the pile key, as helpers/bank-stacks.cjs plants it, a PvP copy (`v`)
+  // stays apart from a plain pile, and an `acl` or `ps` pile merges with it.
+  const {stackKey} = require('../../runtime/items/identity.ts');
+  const sameKey = (target, source) => stackKey(target) === stackKey(source), key = q => ({name: 'tombkey', q});
+  assert.equal(nextStackMerge([at(0, key(10)), at(1, {...key(5), v: 1})], () => 50, sameKey), null);
+  for (const extra of [{acl: 1}, {ps: ['x']}]) assert.ok(nextStackMerge([at(0, key(10)), at(1, {...key(5), ...extra})], () => 50, sameKey));
+  assert.ok(nextStackMerge([at(0, key(10)), at(1, key(5))], () => 50, sameKey));
 });

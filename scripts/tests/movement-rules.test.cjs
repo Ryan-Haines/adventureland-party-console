@@ -757,6 +757,13 @@ scenarioTable('the Town requests answer as shared.js enforcePartyTownOverride an
   world.cooldown = false; await requesters.enforcePartyTownOverride();
   assert.equal(world.casts, 2, 'the override casts again once the game allows use_town');
  }],
+ // Step 10: the Town override is a rank 85 claim; the 100 ms watchdog that stopped movement went.
+ // A merchant under the party's Town takes no claim, casts nothing and keeps its walk.
+ ['the Town override never claims or stops a merchant, even with a stale global hold', async ({ world, requesters }) => {
+  world.c.ctype = 'merchant';
+  await requesters.enforcePartyTownOverride();
+  assert.deepEqual(world.holds, []); assert.equal(world.casts, 0); assert.equal(world.walk.cancelled, false);
+ }],
  ['the retained Town command owns the channel: the override never casts over it', async ({ world, requesters }) => {
   world.root.__partyTownCycleId = 'cycle'; await requesters.enforcePartyTownOverride();
   assert.equal(world.casts, 0); assert.equal(world.walk.cancelled, false);

@@ -3,9 +3,11 @@ const {validateRoute}=require('../../runtime/movement/geometry/validation.ts');
 const {geometryFingerprint,cachedGeometryFingerprint}=require('../../runtime/movement/geometry/contracts.ts');
 const {createPlannerService}=require('../../runtime/movement/coordinator/planner-service.ts');
 const {testScope}=require('./helpers/run-scope.cjs');
+const {testRegistry}=require('./helpers/test-registry.cjs');
 const {createNative}=require('../../tools/game/pathfinder-benchmark/native.cjs');
 const {scenarioTable}=require('./fixtures/scenarios.cjs');
 const {settle,fixture,reachedWalkFixture,correctionFixture}=require('./fixtures/movement-service-scenario.cjs');
+const {townConnector}=require('./fixtures/town-connector-scenario.cjs');
 // The owner's questions go to a planted call budget on the realm's registry.
 const {plantCalls,withMargin}=require('./helpers/planted-calls.cjs');
 plantCalls();
@@ -308,14 +310,14 @@ scenarioTable("the walking try ends on the game's own movement, never on a fixed
  }), {stall:true}],
  // An add-on's zone refusal names the add-on and its reason in the step's reason, so the player
  // reads who refused the step.
- ['a step that ends inside an add-on zone is refused with the add-on and its reason', r=>{
- const {partyHooks}=require('../../runtime/hooks/index.ts');
- partyHooks().register({name:'zone-fixture',folder:'addons',author:'test',summary:'Refuses every step while the row enables it.',
+ ['a step that ends inside an add-on zone is refused with the add-on and its reason', (r,row)=>{
+ const hooks=testRegistry(row);
+ hooks.register({name:'zone-fixture',folder:'addons',author:'test',summary:'Refuses every step while the row enables it.',
  hooks:{'step.safety':()=>'inside the fixture zone'}});
- partyHooks().configure({'zone-fixture':{enabled:true}});
+ hooks.configure({'zone-fixture':{enabled:true}});
  // The zones' view asks the events owner which event the character joined.
  const facts=globalThis.__partyEventFacts;globalThis.__partyEventFacts={joinedEventName:()=>null};
- let step;try{step=r.service.step({x:20,y:0},'test');}finally{globalThis.__partyEventFacts=facts;partyHooks().configure({'zone-fixture':{enabled:false}});}
+ let step;try{step=r.service.step({x:20,y:0},'test');}finally{globalThis.__partyEventFacts=facts;}
  assert.equal(step.status,'refused');
  assert.equal(step.reason,'unsafe:zone zone-fixture: inside the fixture zone');
  r.dispose();
@@ -420,85 +422,77 @@ scenarioTable('reached walking points finish without a zero-distance move and ke
  }],
 ]);
 
-// The server scatters a Town landing around the spawn. The arrival connector's walk to the exact
-// spawn outlasts a round trip; the live Town connector rows ended it with "Failed town warp".
-test('a scattered Town landing walks its connector past a round trip and arrives', async()=>{
- const {createMovementExecutor}=require('../../runtime/movement/character/executor.ts');
- let now=1000;const calls=[];
- const character={map:'main',in:'main',real_x:200,real_y:-120,x:200,y:-120,moving:false};
- const host={character,move:(x,y)=>{calls.push(['move',x,y]);character.moving=true;return Promise.resolve();},
-  can_walk:()=>true,is_transporting:()=>false,can_use:()=>true,town:()=>{calls.push('town');return Promise.resolve({success:true});}};
- const executor=createMovementExecutor(host,{plot:[{map:'main',x:0,y:0,town:true}],use_town:true},{game:{maps:{main:{spawns:[[0,0]]}}},walk:()=>true},
-  ()=>now,{townReady:()=>true,transitionReady:()=>true,judge:()=>()=>'clear'},
-  {band:()=>'job',stopTown:()=>Promise.resolve(),standStill:()=>Promise.resolve(),roundTrip:()=>100});
- assert.equal(executor.tick({}),false);await settle();
- Object.assign(character,{x:1.5,y:41.5,real_x:1.5,real_y:41.5});now+=50;
- assert.equal(executor.tick({}),false);assert.deepEqual(calls,['town',['move',0,0]]);
- now+=500;assert.equal(executor.tick({}),false,'the connector still walks after five round trips');
- Object.assign(character,{x:0,y:0,real_x:0,real_y:0,moving:false});now+=50;executor.tick({});now+=50;
- assert.equal(executor.tick({}),true);assert.deepEqual(executor.remaining(),[]);
-});
-// A lost connector move is sent again no sooner than v1.5.0's 1000 ms after its last send with no
-// progress, so the walk request rate stays at v1.5.0's (the round2 connector rows'
-// 950 ms floor). The connector is a walk: once the resend's round trip passes with the client
-// standing, the crossing fails, as the round2 "all submission loss" row expects (red before: the
-// connector was sent again every second with no end).
-test('a lost arrival connector is sent again no faster than once per second, and a lost resend fails the crossing', async()=>{
- const {createMovementExecutor}=require('../../runtime/movement/character/executor.ts');
- let now=1000;const moves=[];
- const character={map:'main',in:'main',real_x:200,real_y:-120,x:200,y:-120,moving:false};
- const host={character,move:()=>{moves.push(now);return new Promise(()=>{});},
-  can_walk:()=>true,is_transporting:()=>false,can_use:()=>true,town:()=>Promise.resolve({success:true})};
- const executor=createMovementExecutor(host,{plot:[{map:'main',x:0,y:0,town:true}],use_town:true},{game:{maps:{main:{spawns:[[0,0]]}}},walk:()=>true},
-  ()=>now,{townReady:()=>true,transitionReady:()=>true,judge:()=>()=>'clear'},
-  {band:()=>'job',stopTown:()=>Promise.resolve(),standStill:()=>Promise.resolve(),roundTrip:()=>100});
- executor.tick({});await settle();
- Object.assign(character,{x:1.5,y:41.5,real_x:1.5,real_y:41.5});
- let failure=null;
- for(let i=0;i<30&&!failure;i++){now+=100;try{assert.equal(executor.tick({}),false);}catch(error){failure=error;}}
- assert.equal(moves.length,2,'the first send and one resend');
- assert.ok(moves[1]-moves[0]>=1000,`the resend came ${moves[1]-moves[0]} ms after the first send`);
- assert.match(String(failure?.message),/Failed town warp/);
- assert.ok(now-moves[1]>100&&now-moves[1]<=200,'the crossing fails one round trip after the resend');
-});
-// The live round2 "all submission loss" row measured a round trip above the 1000 ms spacing; the
-// connector was sent 27 times in 35 s with no end.
-test('a lost connector resend fails the crossing when the round trip outlasts the resend spacing', async()=>{
- const {createMovementExecutor}=require('../../runtime/movement/character/executor.ts');
- let now=1000;const moves=[];
- const character={map:'main',in:'main',real_x:200,real_y:-120,x:200,y:-120,moving:false};
- const host={character,move:()=>{moves.push(now);return new Promise(()=>{});},
-  can_walk:()=>true,is_transporting:()=>false,can_use:()=>true,town:()=>Promise.resolve({success:true})};
- const executor=createMovementExecutor(host,{plot:[{map:'main',x:0,y:0,town:true}],use_town:true},{game:{maps:{main:{spawns:[[0,0]]}}},walk:()=>true},
-  ()=>now,{townReady:()=>true,transitionReady:()=>true,judge:()=>()=>'clear'},
-  {band:()=>'job',stopTown:()=>Promise.resolve(),standStill:()=>Promise.resolve(),roundTrip:()=>1200});
- executor.tick({});await settle();
- Object.assign(character,{x:1.5,y:41.5,real_x:1.5,real_y:41.5});
- let failure=null;
- for(let i=0;i<60&&!failure;i++){now+=100;try{assert.equal(executor.tick({}),false);}catch(error){failure=error;}}
- assert.equal(moves.length,2,'the first send and one resend');
- assert.ok(moves[1]-moves[0]>=1200,`the resend came ${moves[1]-moves[0]} ms after the first send`);
- assert.match(String(failure?.message),/Failed town warp/);
- assert.ok(now-moves[1]>1200&&now-moves[1]<=1300,'the crossing fails one round trip after the resend');
-});
-// A connector whose resend walks makes progress and arrives: the first send was the only loss.
-test('a connector whose first send is lost walks on its resend and arrives', async()=>{
- const {createMovementExecutor}=require('../../runtime/movement/character/executor.ts');
- let now=1000;const moves=[];
- const character={map:'main',in:'main',real_x:200,real_y:-120,x:200,y:-120,moving:false};
- const host={character,move:()=>{moves.push(now);if(moves.length===1)return new Promise(()=>{});character.moving=true;return Promise.resolve();},
-  can_walk:()=>true,is_transporting:()=>false,can_use:()=>true,town:()=>Promise.resolve({success:true})};
- const executor=createMovementExecutor(host,{plot:[{map:'main',x:0,y:0,town:true}],use_town:true},{game:{maps:{main:{spawns:[[0,0]]}}},walk:()=>true},
-  ()=>now,{townReady:()=>true,transitionReady:()=>true,judge:()=>()=>'clear'},
-  {band:()=>'job',stopTown:()=>Promise.resolve(),standStill:()=>Promise.resolve(),roundTrip:()=>100});
- executor.tick({});await settle();
- Object.assign(character,{x:1.5,y:41.5,real_x:1.5,real_y:41.5});
- for(let i=0;i<15;i++){now+=100;assert.equal(executor.tick({}),false);}
- assert.equal(moves.length,2);
- Object.assign(character,{x:1,y:20,real_x:1,real_y:20});now+=500;assert.equal(executor.tick({}),false,'the walking connector goes on');
- Object.assign(character,{x:0,y:0,real_x:0,real_y:0,moving:false});now+=50;executor.tick({});now+=50;
- assert.equal(executor.tick({}),true);
-});
+
+// The Town arrival connector: one Town plot step, its cast and the walk to the exact spawn, on the
+// harness's connector (fixtures/town-connector-scenario.cjs).
+scenarioTable('the Town arrival connector', ()=>townConnector, [
+ // The server scatters a Town landing around the spawn. The arrival connector's walk to the exact
+ // spawn outlasts a round trip; the live Town connector rows ended it with "Failed town warp".
+ ['a scattered Town landing walks its connector past a round trip and arrives', async connector=>{
+  const f=connector({move:character=>{character.moving=true;return Promise.resolve();},town:()=>Promise.resolve({success:true})});
+  assert.equal(f.executor.tick({}),false);await settle();
+  f.at(1.5,41.5);f.clock.now+=50;
+  assert.equal(f.executor.tick({}),false);assert.deepEqual(f.calls,['town',['move',0,0]]);
+  f.clock.now+=500;assert.equal(f.executor.tick({}),false,'the connector still walks after five round trips');
+  f.at(0,0).moving=false;f.clock.now+=50;f.executor.tick({});f.clock.now+=50;
+  assert.equal(f.executor.tick({}),true);assert.deepEqual(f.executor.remaining(),[]);
+ }],
+ // A lost connector move is sent again no sooner than v1.5.0's 1000 ms after its last send with no
+ // progress, so the walk request rate stays at v1.5.0's (the round2 connector rows'
+ // 950 ms floor). The connector is a walk: once the resend's round trip passes with the client
+ // standing, the crossing fails, as the round2 "all submission loss" row expects (red before: the
+ // connector was sent again every second with no end).
+ ['a lost arrival connector is sent again no faster than once per second, and a lost resend fails the crossing', async connector=>{
+  const f=connector({move:()=>new Promise(()=>{}),town:()=>Promise.resolve({success:true})});
+  f.executor.tick({});await settle();
+  f.at(1.5,41.5);
+  let failure=null;
+  for(let i=0;i<30&&!failure;i++){f.clock.now+=100;try{assert.equal(f.executor.tick({}),false);}catch(error){failure=error;}}
+  assert.equal(f.moves.length,2,'the first send and one resend');
+  assert.ok(f.moves[1]-f.moves[0]>=1000,`the resend came ${f.moves[1]-f.moves[0]} ms after the first send`);
+  assert.match(String(failure?.message),/Failed town warp/);
+  assert.ok(f.clock.now-f.moves[1]>100&&f.clock.now-f.moves[1]<=200,'the crossing fails one round trip after the resend');
+ }],
+ // The live round2 "all submission loss" row measured a round trip above the 1000 ms spacing; the
+ // connector was sent 27 times in 35 s with no end.
+ ['a lost connector resend fails the crossing when the round trip outlasts the resend spacing', async connector=>{
+  const f=connector({move:()=>new Promise(()=>{}),town:()=>Promise.resolve({success:true}),roundTrip:1200});
+  f.executor.tick({});await settle();
+  f.at(1.5,41.5);
+  let failure=null;
+  for(let i=0;i<60&&!failure;i++){f.clock.now+=100;try{assert.equal(f.executor.tick({}),false);}catch(error){failure=error;}}
+  assert.equal(f.moves.length,2,'the first send and one resend');
+  assert.ok(f.moves[1]-f.moves[0]>=1200,`the resend came ${f.moves[1]-f.moves[0]} ms after the first send`);
+  assert.match(String(failure?.message),/Failed town warp/);
+  assert.ok(f.clock.now-f.moves[1]>1200&&f.clock.now-f.moves[1]<=1300,'the crossing fails one round trip after the resend');
+ }],
+ // A connector whose resend walks makes progress and arrives: the first send was the only loss.
+ ['a connector whose first send is lost walks on its resend and arrives', async connector=>{
+  const f=connector({move:(character,moves)=>{if(moves.length===1)return new Promise(()=>{});character.moving=true;return Promise.resolve();},town:()=>Promise.resolve({success:true})});
+  f.executor.tick({});await settle();
+  f.at(1.5,41.5);
+  for(let i=0;i<15;i++){f.clock.now+=100;assert.equal(f.executor.tick({}),false);}
+  assert.equal(f.moves.length,2);
+  f.at(1,20);f.clock.now+=500;assert.equal(f.executor.tick({}),false,'the walking connector goes on');
+  f.at(0,0).moving=false;f.clock.now+=50;f.executor.tick({});f.clock.now+=50;
+  assert.equal(f.executor.tick({}),true);
+ }],
+ // Halloween Mr. Green return (live run on a4884e05f): the game answers a Town cast only when the
+ // cast ends (js/runner_functions.js town(): new_map with effect 1, a failure or its own 10 s
+ // timeout), and on a busy realm the cast showed on the character 3 s after the send. The executor
+ // failed the warp after one round trip with no answer ("Failed town warp") and stopped the cast.
+ // A transition waits on its own answer while the game has not given one.
+ ['a Town warp whose answer is still pending is not failed by the round trip', async connector=>{
+  let answer;
+  const f=connector({move:()=>Promise.resolve(),town:()=>new Promise(resolve=>{answer=resolve;})});
+  assert.equal(f.executor.tick({}),false);await settle();
+  for(let i=0;i<30;i++){f.clock.now+=100;assert.equal(f.executor.tick({}),false,"the cast is still the game's");await settle();}
+  assert.deepEqual(f.calls,['town'],'one cast, no stop and no second send');
+  f.at(0,0);answer({success:true});await settle();
+  f.clock.now+=50;f.executor.tick({});f.clock.now+=50;
+  assert.equal(f.executor.tick({}),true,'the answered warp arrives');
+ }],
+]);
 
 // The `ready` check on the character: the executor's loot and Town waits
 // last while the gate's chests or attackers' HP fall, not 30 s or 5 s.
@@ -605,21 +599,6 @@ scenarioTable('an accepted server correction pauses only the live owned walking 
  }],
 ]);
 
-test('real pinned planner worker uses native collision validation and geometry identity',async()=>{
- const {version,directory}=require('./helpers/installed-game.cjs');const n=createNative(directory,'native-visible');
- const service=createPlannerService(path.resolve('.build/runtime/movement-planner.cjs'),testScope('02','act'));
- try {
-  const prepared=service.prepare(n.game,version);await prepared.ready;
-  const from={map:'main',x:0,y:0},to={map:'halloween',x:0,y:0};
-  const result=await service.plan({id:'probe',from,to,speed:60,town:true,version,fingerprint:prepared.fingerprint});
-  assert.ok(result.plot.some(p=>p.town));assert.ok(result.ms<2000);
-  const ports={game:n.game,walk:(a,b)=>n.canWalk(a,b),door:(p,d)=>n.context.is_door_close(p.map,d,p.x,p.y)&&n.context.can_use_door(p.map,d,p.x,p.y),hasKey:()=>false};
-  assert.equal(validateRoute(ports,from,to,result.plot,true),null);
-  await assert.rejects(service.plan({id:'wrong',from,to,speed:60,town:true,version:version+1,fingerprint:prepared.fingerprint}),/compatible/);
-  assert.equal(geometryFingerprint(n.game),prepared.fingerprint);
- } finally{service.dispose();}
-});
-
 // No plan request starts a worker. A worker that retires on a
 // failure starts one replacement at once; a replacement that fails before its first answer starts
 // none, and the geometry's next delivery prepares it again. The fake worker exits on the request
@@ -631,7 +610,8 @@ function retiringPlanner() {
  const worker=new URL('data:text/javascript,'+encodeURIComponent("import {parentPort} from 'node:worker_threads';"+
   "parentPort.postMessage({ready:true});parentPort.on('message',m=>m.id==='exit'?process.exit(0):m.id==='hang'?0:parentPort.postMessage({id:m.id,plot:[],ms:0}));"));
  const service=createPlannerService(worker,testScope('02','act')),game={maps:{},geometry:{},npcs:{transporter:{places:{}}}};
- const r={service,game,prepared:service.prepare(game,1),budget,
+ // `release` drops the row's held state, so the planner reads the declared budgets again.
+ const r={service,game,prepared:service.prepare(game,1),budget,release:()=>holdHiddenSettings(null),
   ask:id=>({id,from:{map:'main',x:0,y:0},to:{map:'main',x:10,y:0},speed:60,version:1,fingerprint:r.prepared.fingerprint})};
  return r;
 }
@@ -644,7 +624,7 @@ scenarioTable('a retired planner worker is replaced once at its retirement, neve
    r.budget({movementAlclientPlanMs:50});
    await assert.rejects(r.service.plan(r.ask('hang')),/ALClient planning timed out/);
    assert.deepEqual((await r.service.plan(r.ask('b'))).plot,[]);
-  } finally{r.budget({movementAlclientPlanMs:2000});r.service.dispose();}
+  } finally{r.release();r.service.dispose();}
  }],
  ['a replacement that fails before its first answer starts none; requests fail until the geometry is delivered again', async r=>{
   try {
@@ -744,27 +724,6 @@ test('a journey to the spot the character stands on ends arrived while the drain
  r.dispose();
 });
 
-// Halloween Mr. Green return (live run on a4884e05f): the game answers a Town cast only when the
-// cast ends (js/runner_functions.js town(): new_map with effect 1, a failure or its own 10 s
-// timeout), and on a busy realm the cast showed on the character 3 s after the send. The executor
-// failed the warp after one round trip with no answer ("Failed town warp") and stopped the cast.
-// A transition waits on its own answer while the game has not given one.
-test('a Town warp whose answer is still pending is not failed by the round trip', async()=>{
- const {createMovementExecutor}=require('../../runtime/movement/character/executor.ts');
- let now=1000,answer;const calls=[];
- const character={map:'main',in:'main',real_x:200,real_y:-120,x:200,y:-120,moving:false};
- const host={character,move:(x,y)=>{calls.push(['move',x,y]);return Promise.resolve();},
-  can_walk:()=>true,is_transporting:()=>false,can_use:()=>true,town:()=>{calls.push('town');return new Promise(resolve=>{answer=resolve;});}};
- const executor=createMovementExecutor(host,{plot:[{map:'main',x:0,y:0,town:true}],use_town:true},{game:{maps:{main:{spawns:[[0,0]]}}},walk:()=>true},
-  ()=>now,{townReady:()=>true,transitionReady:()=>true,judge:()=>()=>'clear'},
-  {band:()=>'job',stopTown:()=>Promise.resolve(),standStill:()=>Promise.resolve(),roundTrip:()=>100});
- assert.equal(executor.tick({}),false);await settle();
- for(let i=0;i<30;i++){now+=100;assert.equal(executor.tick({}),false,'the cast is still the game\'s');await settle();}
- assert.deepEqual(calls,['town'],'one cast, no stop and no second send');
- Object.assign(character,{x:0,y:0,real_x:0,real_y:0});answer({success:true});await settle();
- now+=50;executor.tick({});now+=50;
- assert.equal(executor.tick({}),true,'the answered warp arrives');
-});
 
 // A stop the call budget holds stays the owner's unsent decision until the budget lets it go, with
 // no cap of its own. A closed connection sends no more call cost, so the decision ends when the

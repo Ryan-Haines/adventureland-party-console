@@ -6,6 +6,7 @@
 // realm-hold; R1 to R3 disagree with the code they replaced; the console's home realm ignores your
 // setting, takes a PVP or unknown realm, or falls back to a realm the account does not list.
 const test = require('node:test'), assert = require('node:assert/strict');
+const { testRegistry } = require('./helpers/test-registry.cjs');
 const { createMerchantRealmOwner } = require('../../runtime/merchant-realm/coordinator/owner.ts');
 const { wantRank, realmRefusal, validRealmBlacklist, validHomeRealm, consoleHomeRealm, firstAccountRealm, ARRIVAL_WINDOW_MS } = require('../../runtime/merchant-realm/rules.ts');
 
@@ -167,19 +168,19 @@ test('MJ91: a reconnect logs in once on the realm the character reports and adds
 
 // The one hop executor on the character. An answer with `alreadyThere`
 // continues with no hold and no page change; any other answer ends the job's code at the hop, holds
-// `realm` and, on Steam, changes the page once the job band sends. The job band the hop asks: the
-// first question waits one window, every later one sends. It records each asked method.
-const band = [];
-function hopBand() {
-  const { partyHooks } = require('../../runtime/hooks/index.ts');
-  if (!partyHooks().map().registrations.some(r => r.name === 'core:hop-band-fixture'))
-    partyHooks().register({ name: 'core:hop-band-fixture', folder: 'core', author: 'test', summary: 'test',
-      hooks: { 'calls.band': question => { band.push(question.method); return band.length === 1 ? 'not-now' : 'send'; }, 'calls.window': () => 4000 } });
+// `realm` and, on Steam, changes the page once the job band sends. The job band the hop asks, on the
+// test's own registry: `first` answers the first question, every later one sends. It records each
+// asked method.
+function hopBand(t, first) {
+  const band = [];
+  testRegistry(t).register({ name: 'core:hop-band-fixture', folder: 'core', author: 'test', summary: 'test',
+    hooks: { 'calls.band': question => { band.push(question.method); return band.length === 1 ? first : 'send'; }, 'calls.window': () => 4000 } });
   return band;
 }
-test('a hop answered already there continues, and one that waits for a restart yields under the realm holder', async () => {
+test('a hop answered already there continues, and one that waits for a restart yields under the realm holder', async t => {
   const { createMerchantHop } = require('../../runtime/merchant-realm/character/hop.ts');
-  hopBand();
+  // The first switch waits one window.
+  const band = hopBand(t, 'not-now');
   function hopFixture(answer, headless) {
     const held = [], slept = [], parent = { server_region: 'US', server_identifier: 'I', caracAL: headless, window: { location: { search: '?no_html=1&x=2', href: '' } } };
     const hop = createMerchantHop({ parent: () => parent, character: () => ({ name: 'M' }),
@@ -242,7 +243,7 @@ test("A4: the realm owner's notices: a move starts, fails one window, is retried
 // And (3.10 rule 6): set home asks the job band and answers the coordinator with the game's result, respawning first when
 // dead; the native switch refuses a headless runtime and changes the page once; each realm error is logged once until its
 // text changes.
-test('set home reports its result, the native switch changes the page once, and a realm error logs once', async () => {
+test('set home reports its result, the native switch changes the page once, and a realm error logs once', async t => {
   const { createMerchantHop, logRealmErrors } = require('../../runtime/merchant-realm/character/hop.ts');
   const posts = [], respawns = [], parent = { server_region: 'US', server_identifier: 'II', caracAL: false, window: { location: { search: '', href: '' } } };
   let rip = true, answer = { success: true };
@@ -250,10 +251,10 @@ test('set home reports its result, the native switch changes the page once, and 
     request: async (route, options) => { posts.push([route, options.body.success, options.body.error]); return null; },
     sleep: async () => {}, log() {}, holdRealm() {}, afterCombat: work => work(), respawn: async by => { respawns.push(by); rip = false; },
     setHome: async () => answer });
-  const asked = hopBand().length;
+  const band = hopBand(t, 'send');
   await hop.setHome({ realm: 'SR_EUI', operationId: 'op' });
   // set_home is a socket send, so it asks the job band before it goes.
-  assert.deepEqual(band.slice(asked), ['set_home']);
+  assert.deepEqual(band, ['set_home']);
   answer = { failed: true, reason: 'cant_set_home' };
   await assert.rejects(hop.setHome({ realm: 'SR_EUI', operationId: 'op' }), /cant_set_home/);
   assert.deepEqual(respawns, ['realm-set-home']);

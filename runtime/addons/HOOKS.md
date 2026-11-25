@@ -283,7 +283,7 @@ fails while this file differs from the code. The add-on guide is [README.md](REA
 | `event.presence` | core only | yes |  | a member name | the member's event, occurrence, realm, phase (walking, attending, returning) and since; or nothing | e2e/live-events-hooks.spec.ts#L: the add-on reads presence while attending |
 | `event.targets` | core only | yes |  | nothing | the current event's monster types and the area event of the map the character stands on | e2e/live-events-hooks.spec.ts#L: the add-on reads the event targets while attending |
 | `event.schedule` | core only | yes |  | an occurrence id (a group's event, `occurrenceId`) | the spawn, the planned walk and its lead, the phase (scheduled, due, live) and the short window; or nothing | e2e/live-events-hooks.spec.ts#L: the add-on reads the schedule when due |
-| `event.pending` | core only | yes |  | a member name | true while the member's latest report says its Hunt waits on an event | scripts/tests/coordinator-hunt-control.test.cjs#event.pending: a released Hunt waits while a member reports an event pending |
+| `event.pending` | core only | yes |  | a member name | true while the member's latest report says its Hunt waits on an event | scripts/tests/coordinator-hunt-control.test.cjs#events-pending waits for one report per online participant after the hand-in, then releases |
 | `event.cycle` | core only | yes |  | nothing | true while the anniversary cycle is staged and its return has not completed, been superseded or handed to combat | scripts/tests/coordinator-anniversary-control.test.cjs#event.cycle: a rare waits through the anniversary's staging and its return |
 | `event.attend` | many | no | refusal only | the member, its event and occurrence, and K4's answer | `refuse` with a reason, or nothing | e2e/live-events-hooks.spec.ts#L: an add-on refuses the priest's admission |
 | `event.kind` | many | no | refusal only for a core name; an add-on kind ranks event-attendance through 01, never a new tier | nothing | a K1 row for a new event name: name, label, kind (join or walk), map, targets, point, exit rungs | e2e/live-events-hooks.spec.ts#L: an add-on event kind is attended and returned from |
@@ -451,7 +451,7 @@ fails while this file differs from the code. The add-on guide is [README.md](REA
 | `items.bank` | core only | yes |  | nothing | the bank snapshot | e2e/live-items-hooks.spec.ts#items.bank: the snapshot read |
 | `items.storagePending` | core only | yes |  | character | whether storage work waits for it | scripts/tests/hook-registry.test.cjs#items.storagePending: a pending BankBoi transfer is named |
 | `items.productionPending` | core only | yes |  | character | whether production work waits for it | scripts/tests/hook-registry.test.cjs#items.productionPending: a pending intent is named |
-| `items.bag` | core only | yes |  | character | the bag holder's facts (3.4) | scripts/tests/hook-registry.test.cjs#items.bag: the bag facts of the holder record |
+| `items.bag` | core only | yes |  | character | the bag holder's facts (3.4) | scripts/tests/items-bag.test.cjs#each fact follows the holder |
 | `items.standSlots` | core only | yes |  | merchant | {slots, used, free} from the one count (E10-12, A79) | scripts/tests/hook-registry.test.cjs#items.standSlots: the stand's cells and the listings that use them |
 
 ### Events (read-only)
@@ -604,7 +604,7 @@ fails while this file differs from the code. The add-on guide is [README.md](REA
 
 | Slot | Data | Takes a section | Bound | Fixture |
 |---|---|---|---|---|
-| `mode-row` | each enabled entry of 01's target-mode and combat-mode slots with its declared button {label, description, color} | no |  | e2e/addon-console.case.ts#the mode rows: the combat modes in row 1 and the target modes in row 2, each sending its own field, one pressed per row |
+| `mode-row` | each enabled entry of 01's target-mode and combat-mode slots with its declared button {label, description, color} | no |  | e2e/hunt.spec.ts#Hunt saves a backup, accepts settings, and exits without losing preferences |
 | `settings-section` | an add-on's dashboard.tsx section with {store, settings, save, inherited, monsters} (addon-kit.ts AddonSectionProps) | yes |  | scripts/tests/dashboard-addon-slots.test.cjs#settings-section: an enabled add-on with a section and no target mode gets its Farming settings section |
 | `status-line` | a target mode entry's declared status {title, field, idle}, drawn in its button's colour | no |  | e2e/addon-console.case.ts#add-on console journeys |
 

@@ -108,12 +108,15 @@ scenarioTable('an escaping fighter cancels other travel, lands clear, steps away
    [[convoy],true,1,null,false,false,4]);
   const {publishTargetingReads}=require('../../runtime/characters/targeting/install.ts');
   let published,set=[];
+  const character=globalThis.character;
   globalThis.character={name:'warrior'};
+  try{
   publishTargetingReads({'targeting.setTargetId':(id,by)=>set.push([id,by])},{publish:r=>{published=r;return {ok:true};}});
   published.hooks['survival.escapeMember']({character:'warrior',change:'stage',stage:'port:priest'});
   published.hooks['survival.escapeMember']({character:'other',change:'joined',stage:'blink'});
   published.hooks['survival.escapeMember']({character:'warrior',change:'joined',stage:'blink'});
   assert.deepEqual(set,[[null,'core:targeting']]);
+  }finally{globalThis.character=character;}
  }],
  ['landing chooses clear points off the door\'s edge and respects terrain and rejected Blink points', ({ r, escape })=>{
   r.parent.entities.enemy = { type: 'monster', visible: true, x: 160, y: 0, range: 100 };

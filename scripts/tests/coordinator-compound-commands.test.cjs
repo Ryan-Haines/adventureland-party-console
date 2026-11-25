@@ -8,6 +8,23 @@ test('compound groups reserve disjoint triplets with the selected slot first',()
  const f=fixture();f.send({type:'compound-mark',slot:4,item:f.item});f.send({type:'compound-mark',slot:5,item:f.item});
  assert.deepEqual(f.state.compounds.F.map(g=>g.items.map(i=>i.slot)),[[4,0,1],[5,2,3]]);
  assert.deepEqual(f.state.compounds.F.map(g=>g.id),['group-1','group-2']);assert.equal(f.send({type:'compound-mark',slot:4,item:f.item}).status,409);
+ // IT60: a manual compound may take its triplet from a BankBoi's stock; the selection names the
+ // BankBoi pack and the group keeps each copy's storage.
+ {
+  const ring = {name: 'ring', level: 1};
+  const state = {merchantCharacter: 'M', compounds: {}, autoCompounds: {}, autoUpgradeMarks: {}, upgrades: {}, merchantQueue: [], merchantCurrent: null,
+    statuses: {M: {items: []}}, bankSnapshot: {packs: {}}, bankbois: {B: {name: 'B', items: [0, 1, 2, 3].map(slot => ({slot, item: {...ring}}))}},
+    merchantCatalog: {allItems: [{id: 'ring', meta: {compoundable: true}}]}};
+  const queued = [];
+  const service = createCompoundCommands(state, {write: () => ({ok: true}), persist() {}, schedule() {}, log() {}, queue: (names, reason) => queued.push(reason)});
+  service.handle({type: 'compound-mark', character: 'M', pack: 'bankboi:B', slot: 0, item: ring});
+  assert.deepEqual(state.compounds.M?.[0]?.items.map(mark => mark.storage), [{pack: 'bankboi:B', slot: 0}, {pack: 'bankboi:B', slot: 1}, {pack: 'bankboi:B', slot: 2}]);
+  assert.deepEqual(queued, ['manual compounds']);
+  // v1.5 row 38: a cell with a pending withdrawal is left out of the next triplet.
+  state.compounds.M = []; state.withdrawals = {M: [{pack: 'bankboi:B', slot: 1, item: ring, improvement: 'manual upgrades'}]};
+  service.handle({type: 'compound-mark', character: 'M', pack: 'bankboi:B', slot: 0, item: ring});
+  assert.deepEqual(state.compounds.M?.[0]?.items.map(mark => mark.storage.slot), [0, 2, 3]);
+ }
 });
 test('removing a compound member retains the partial group until its final member is removed',()=>{
  const f=fixture();f.send({type:'compound-mark',slot:0,item:f.item});

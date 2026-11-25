@@ -4,7 +4,6 @@ const React = require('../../dashboard/node_modules/react'), {create, act} = req
 const {supportedEvents} = require('../../runtime/events/api.ts');
 global.IS_REACT_ACT_ENVIRONMENT = true;
 const runtime = fs.readFileSync('characters/shared.js', 'utf8');
-const coordinator = require('./helpers/coordinator-source.cjs').coordinatorSource();
 // The clock's `test` echo asks the call budget's `background` band (character/calls.ts); this realm's
 // budget sends it unless a test sets `bandAnswer`.
 let bandAnswer = 'send';

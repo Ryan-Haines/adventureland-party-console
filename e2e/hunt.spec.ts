@@ -83,6 +83,19 @@ test('Hunt saves a backup, accepts settings, and exits without losing preference
   await expect(relocate).not.toBeChecked();
   await page.keyboard.press('Escape');
 
+  // The mode rows: row 1 holds the combat modes and row 2 the target modes, each button from its
+  // slot entry's declared data, with one button pressed in each row. Scatter while hunting changes
+  // only the formation.
+  const combatRow = warrior.getByRole('group', { name: 'Combat mode' }), targetRow = warrior.getByRole('group', { name: 'Target mode' });
+  await expect(combatRow.getByRole('button')).toHaveText(['Auto', 'Default', 'Scatter']);
+  await expect(targetRow.getByRole('button')).toHaveText(['Farming', 'Hunt']);
+  const pressed = async () => [await combatRow.locator('[aria-pressed="true"]').allTextContents(), await targetRow.locator('[aria-pressed="true"]').allTextContents()];
+  const scatter = responseFor('/farming-mode');
+  await combatRow.getByRole('button', { name: 'Scatter', exact: true }).click();
+  expect(await record(scatter)).toEqual({ character: 'W', combatMode: 'scatter' });
+  await expect.poll(pressed).toEqual([['Scatter'], ['Hunt']]);
+  expect((await app.state()).farmingProfiles.W.targetMode).toBe('hunt');
+
   // A mode button sends only its own slot's field (5498ac068):
   // Default is a combat mode and keeps the Hunt; Farming is the target mode that ends it.
   const combat = responseFor('/farming-mode');

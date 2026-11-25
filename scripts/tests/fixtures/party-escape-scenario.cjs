@@ -3,12 +3,13 @@
 // The module runs in a vm context with the shared movement harness (fixtures/movement-owner-callers.cjs),
 // so its game globals are the context's, over a turns owner that sends each push as the game call
 // and reads readiness from the context's cooldowns.
+const {settle}=require('../helpers/settle.cjs');
 const { createMovementContext } = require('./movement-owner-callers.cjs');
 const vm = require('node:vm');
 const { installReunion } = require('../helpers/crossings.cjs');
 const { contextScope } = require('../helpers/run-scope.cjs');
 let bundle;
-const flush = async () => { for (let i = 0; i < 20; i++) await new Promise(resolve => setImmediate(resolve)); };
+const flush = settle;
 // `fresh` starts with no escape; otherwise the context's mage holds stage `blink` of escape `op`.
 function runtime(overrides = {}, { fresh = false } = {}) {
   bundle ??= require('esbuild').buildSync({ stdin: { contents: "export { createEscape, createEscapeSpends, escapeCost } from './runtime/characters/survival/escape.ts'; export { createNeeds } from './runtime/characters/survival/needs.ts';",

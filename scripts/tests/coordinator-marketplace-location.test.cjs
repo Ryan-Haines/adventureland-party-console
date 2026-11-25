@@ -21,6 +21,14 @@ test('marketplace location refresh requires the same level and favorable price, 
  t.offer.x=203;assert.equal((await t.send()).body.location.x,203);assert.equal((await t.send()).body.location,null);
  const wrongLevel=fixture();wrongLevel.offer.item={name:'cap',level:7};assert.equal((await wrongLevel.send()).body.location,null);
  const expensive=fixture();expensive.offer.price=101;assert.equal((await expensive.send()).body.location,null);
+ // A sale follows its buy order's buyer through the sales feed; a purchase follows the seller.
+ for(const sale of [false,true]){
+  const f=fixture(),asked=[],listing=f.state.merchantCurrent.listings[0];
+  f.state.merchantCurrent={id:'job',reason:sale?'ALData marketplace sales':'ALData marketplace purchases',buyOrder:{...listing,buyer:'Buyer'},listings:[listing]};
+  const fetch=f.ports.fetch;f.ports.fetch=async()=>[...await fetch(),{id:'Buyer',serverRegion:'US',serverIdentifier:'II',map:'main',x:100,y:0}];
+  f.ports.normalize=(records,isSale)=>{asked.push([!!isSale,...records.map(r=>r.id)]);return [f.offer];};
+  await f.send();assert.deepEqual(asked,[[sale,sale?'Buyer':'Seller']]);
+ }
 });
 test('in-flight marketplace location reply cannot revive a cancelled job',async()=>{
  const t=fixture(),fetch=t.ports.fetch;t.ports.fetch=async()=>{t.state.merchantCurrent=null;return fetch();};assert.equal((await t.send()).code,409);

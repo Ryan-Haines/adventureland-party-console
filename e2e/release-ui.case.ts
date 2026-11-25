@@ -248,7 +248,8 @@ test.describe("offline observation persistence", () => {
       gold: 123,
       clientVersion: 17175,
       characterDollHtml:'<img src="/settings-character-sprite.png" width="54" height="76">',
-      items: [{ slot: 0, item, meta }],
+      // Slot 1's copy carries only its own meta, so the dashboard joins the catalog's name to it.
+      items: [{ slot: 0, item, meta }, { slot: 1, item: { name: "coat", level: 3 }, meta: { properties: {} } }],
       slots: {
         chest: {
           item: { name: "coat", level: 0 },
@@ -258,6 +259,7 @@ test.describe("offline observation persistence", () => {
     });
     const before = (await app.state()).characterSnapshots.M;
     expect(before.items[0].item).toEqual(item);
+    expect(before.items[1]).toEqual({ slot: 1, item: { name: "coat", level: 3 }, meta: { properties: {} } });
     expect(before.attack).toBe(137);
     await page.goto(app.url);
     await page.getByRole('button',{name:'Interface settings',exact:true}).click();
@@ -292,6 +294,7 @@ test.describe("offline observation persistence", () => {
     await expect(
       page.getByRole("button", { name: "Inspect Saved coat +2", exact: true }),
     ).toBeVisible();
+    await expect(page.getByRole("button", { name: "Inspect Coat +3", exact: true })).toBeVisible();
     await page.getByRole("button", { name: "View M stats", exact: true }).click();
     const stats = page.getByRole("region", { name: "Character card", exact: true });
     await expect(stats).toContainText("137");

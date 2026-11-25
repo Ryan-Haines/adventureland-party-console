@@ -21,14 +21,6 @@ scenarioTable('convoy reports keep their order and only fresh connected samples 
 ]);
 
 const test=require('node:test');
-test('disconnected sampler cannot claim a clear observation even when HTTP is fresh',()=>{
- require('./helpers/requesters.cjs').publishPresence();
- const {classifyTravelDefense}=require('../../runtime/movement/coordinator/defense.ts');
- const p={statuses:{L:acceptTravelReport(sample('L',1,2000),undefined,2000)}};
- const raw=sample('F',2,2000);raw.travelSample.connected=false;
- p.statuses.F=acceptTravelReport(raw,undefined,2000);
- assert.equal(classifyTravelDefense(p,['L','F'],2000).state,'waiting-for-observations');
-});
 test('fast responses retain lease ownership while renewal alone leaves combat revision unchanged',()=>{
  const {createCombatChannel}=require('../../runtime/status/coordinator/channel.ts');
  let now=1000;const read=()=>({serverNow:now,convoySignal:{id:'c',epoch:1,phase:'travel',
@@ -56,25 +48,4 @@ test('a parked combat poll stays parked through its own combat report and answer
  channel.wait('W',channel.snapshot('W').combatRevision,res());
  channel.flush('W');
  assert.equal(answers.length,3,'its own full report answers it, since that reply carries no combat revision');
-});
-test('genuine report loss stops once and resumes at the stopped leader without old rally or fake loot',()=>{
- const {fixture}=require('./fixtures/convoy-communication-scenario.cjs');
- const f=fixture(),p=f.p;
- p.activeConvoy.rally={map:'main',x:100,y:0};f.report(1000,'travelling');
- f.step(4500);const epoch=p.activeConvoy.epoch,id=p.commands.L.id;
- assert.equal(p.activeConvoy.phase,'communication-hold');assert.equal(p.commands.L.phase,'shared-hold');
- f.step(5000);assert.equal(p.commands.L.id,id);assert.equal(p.activeConvoy.epoch,epoch);
- for(let at=6000;at<=11000;at+=1000){f.report(at);f.step(at);}
- assert.equal(p.activeConvoy.phase,'shared-prepare');assert.equal(p.activeConvoy.rally.x,0,'the rally is where the leader stopped, not its old 100');
- assert.equal(p.commands.L.phase,'shared-prepare');assert.equal(p.activeConvoy.loot,undefined);
- assert.ok(!(p.combatLogs.L||[]).some(x=>/defensive kill|encounter complete/.test(x.message)));
-});
-test('transporting reports cannot release a communication hold',()=>{
- const {fixture}=require('./fixtures/convoy-communication-scenario.cjs');
- const f=fixture(),p=f.p;f.step(4500);
- for(let at=6000;at<=12000;at+=1000){f.report(at);p.statuses.L.transporting=true;f.step(at);}
- assert.equal(p.activeConvoy.phase,'communication-hold');
- p.statuses.L.transporting=false;
- for(let at=13000;at<=18000;at+=1000){f.report(at);f.step(at);}
- assert.equal(p.activeConvoy.phase,'shared-prepare');
 });

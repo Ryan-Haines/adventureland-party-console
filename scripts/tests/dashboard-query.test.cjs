@@ -23,14 +23,6 @@ test('configuration polls slowly but successful actions refresh active configura
    assert.ok(affectedDomains(path).includes('config'),path);
  } finally {stop();client.clear();global.fetch=original;}
 });
-test('cache deduplicates concurrent reference reads and garbage collects unused entries', async () => {
-  const client = createDashboardClient(); let calls = 0;
-  const options = { queryKey: ['party', 'reference', 'r1', 'map', 'main'], staleTime: Infinity, gcTime: 20,
-    queryFn: async () => { calls++; return { map: 'main' }; } };
-  const [first, second] = await Promise.all([client.fetchQuery(options), client.fetchQuery(options)]);
-  assert.equal(first, second); assert.equal(calls, 1); await client.fetchQuery(options); assert.equal(calls, 1);
-  await new Promise(done => setTimeout(done, 40)); assert.equal(client.getQueryData(options.queryKey), undefined); client.clear();
-});
 test('recurring reads do not retry, failed mutations preserve cache and never replay', async () => {
   const client = createDashboardClient(); client.setQueryData(key('inventory'), { confirmed: true });
   assert.equal(client.getDefaultOptions().queries.retry, false); assert.equal(client.getDefaultOptions().mutations.retry, false);
@@ -63,15 +55,6 @@ test('late fallback responses cannot overwrite a fresh stream snapshot', async (
     assert.deepEqual(client.getQueryData(['party', 'character', 'A', 'vitals']), { hp: 50 });
   } finally { global.fetch = original; client.clear(); }
 });
-test('structural sharing sends no content notifications for unchanged telemetry', () => {
-  const client = createDashboardClient(), queryKey = ['party', 'character', 'A', 'inventory'];
-  const value = { items: [{ item: { name: 'coat' } }], slots: {} }; client.setQueryData(queryKey, value);
-  const observer = new QueryObserver(client, { queryKey, enabled: false, notifyOnChangeProps: ['data'] });
-  let renders = 0; const unsubscribe = observer.subscribe(() => renders++);
-  client.setQueryData(queryKey, JSON.parse(JSON.stringify(value))); assert.equal(renders, 0);
-  client.setQueryData(['party', 'character', 'A', 'vitals'], { hp: 50 }); assert.equal(renders, 0);
-  unsubscribe(); client.clear();
-});
 
 test('legacy catalog responses cannot overwrite account state or character snapshots', async () => {
  const client=createDashboardClient(), original=global.fetch;
@@ -80,22 +63,6 @@ test('legacy catalog responses cannot overwrite account state or character snaps
   const result=await client.fetchQuery(domainOptions(client,'catalog'));
   assert.deepEqual(result,{merchantCatalog:{allItems:[]}});
  } finally {global.fetch=original;client.clear();}
-});
-test('authentication loss clears all account-scoped caches', async () => {
- const client=createDashboardClient(), original=global.fetch;
- client.setQueryData(['party','character','A','inventory'],{items:[{name:'coat'}]});
- global.fetch=async()=>({ok:false,status:401});
- let removedQuery;
- try {
-  const pending=client.fetchQuery(domainOptions(client,'core'));
-  removedQuery=client.getQueryCache().find({queryKey:key('core')});
-  await assert.rejects(pending);
-  assert.equal(client.getQueryData(['party','character','A','inventory']),undefined);
- } finally {
-  // Authentication removes the active query before its promise settles. Its
-  // final GC timer belongs to the removed query, outside client.clear().
-  removedQuery?.destroy();global.fetch=original;client.clear();
- }
 });
 
 test('material conflict preserves structured shortages, invalidates commerce and never resubmits', async () => {

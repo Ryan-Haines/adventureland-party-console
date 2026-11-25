@@ -8,6 +8,8 @@ test('merchant staging reserves ninety seconds and tolerates a fifteen-second la
   for(const [next,reserved] of [[190001,false],[190000,true],[85000,true],[84999,false]]){
     assert.equal(control({live:false,next}).preWindow,reserved);
   }
+  // An active event's lead-up reserves merchant work from its first moment.
+  for(const [next,reserved] of [[190001,false],[190000,true]])assert.equal(control({active:true,live:false,next}).reserved,reserved);
 });
 
 test('featured merchant leaves after one minute of the five-minute round',()=>{

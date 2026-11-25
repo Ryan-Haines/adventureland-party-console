@@ -3,12 +3,13 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 const { namedFunction } = require('./helpers/named-function.cjs');
+const { pinnedGameFiles } = require('./helpers/installed-game.cjs');
 const { installGameRendering } = require('../../runtime/status/character/telemetry.ts');
 
 // Failure modes and the native-versus-isolated boundary were recorded first in
 // docs/testing-ice-roamer-failures.md. Execute the pinned native selector itself.
 function fixture() {
-  const source = fs.readFileSync('.caracal/game_files/17175/functions.js', 'utf8');
+  const source = fs.readFileSync(require('node:path').join(pinnedGameFiles().directory, 'functions.js'), 'utf8');
   const game = { textures: {}, in_arr: (value, values) => values.includes(value), warnings: [] };
   game.console = { warn: (...args) => game.warnings.push(args) };
   vm.runInNewContext(namedFunction(source, 'set_texture'), game);

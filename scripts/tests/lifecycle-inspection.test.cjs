@@ -86,11 +86,11 @@ test('the lifecycle route install registers the character inspection route',()=>
 
 // (inspection.ts's half): the route reads its three hidden settings through the settings owner's
 // hiddenValue, so the party's copy applies. A held reuse of 0 makes every inspection read the game
-// again; a read of the declaration's default kept the first answer for 30 s. It runs last, since
-// the held party copy stays for the rest of the file.
-test('the inspection reads its reuse window as the party holds it', async () => {
+// again; a read of the declaration's default kept the first answer for 30 s.
+test('the inspection reads its reuse window as the party holds it', async t => {
  const {hiddenSettings,holdHiddenSettings}=require('../../runtime/settings/coordinator/table.ts');
  holdHiddenSettings({...hiddenSettings({}),inspectionReuseMs:0});
+ t.after(()=>holdHiddenSettings(null));
  let fetches=0;
  const route=inspectionRoute({
   loadFetch:async()=>async()=>(fetches++,{ok:true,json:async()=>profile})});

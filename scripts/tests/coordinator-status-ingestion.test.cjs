@@ -58,14 +58,37 @@ test('a BankBoi checkpoint with an unchanged bank writes the snapshot once',()=>
  const { run } = require('./helpers/coordinator-host.cjs');
  const report = extra => ({ name: 'P', ctype: 'priest', map: 'main', x: 0, y: 0, server: 'USII', gold: 0, items: Array(42).fill(null), hp: 100, max_hp: 100, ...extra });
  const post = (host, body) => { let reply; host.handlers.get('/party-api/status')({ body }, { status() { return this; }, json(value) { reply = value; } }); return reply; };
- test('a report runs table I in order, each row timed', async () => {
+ // One host run checks table I and the start's timers.
+ // The root registers survival's one party step every 250 ms after movement's walk step, in the
+ // earlier console's periods and order (navigation/runtime.ts `startTravel`): the escape, then the
+ // death recovery. The rare registers no timer: it steps on each member report and each walk notice
+ // (hunting/coordinator/install.ts `rareTick`). The event returns register none either: they look on
+ // a member's report, a walk notice and a settings change.
+ test('a report runs table I in order, each row timed, and the application registers the walk step at its period, and no survival, rare or return timer', async () => {
   const rows = TABLE_I.map(row => row.stage);
   // The hunting owner's rare steps right after its report and before bankboi, as.
   assert.deepEqual(rows.slice(rows.indexOf('rareReport'), rows.indexOf('rareReport') + 3), ['rareReport', 'rareTick', 'bankboi']);
-  const host = await run(1900000000000);
+  const calls = [];
+  const host = await run(1900000000000, {
+   './survival/api.ts':survival=>({...survival,installCoordinatorSurvival:ports=>Object.assign(survival.installCoordinatorSurvival(ports),{step:()=>calls.push('survival')})}),
+   '../movement/api/coordinator.ts':movement=>({...movement,
+    createCoordinatorTravelClock:ports=>movement.createCoordinatorTravelClock({...ports,convoyStep:()=>{calls.push('walk');return false;}})}),
+   '../events/coordinator/api.ts':events=>({...events,
+    createCoordinatorAnniversaryReturns:(state,ports)=>Object.assign(events.createCoordinatorAnniversaryReturns(state,ports),{tick:()=>calls.push('anniversary')})}),
+  });
   const stages = Object.keys(post(host, report()).transportTiming.statusStages);
   assert.deepEqual(rows.filter(stage => !stages.includes(stage)), [], 'every row has its stage time');
   assert.deepEqual(stages.filter(stage => rows.includes(stage)), rows, "the stages ran in table I's order");
+  const intervals=host.timers.filter(timer=>timer[0]==='interval'),ran=index=>{calls.length=0;intervals[index][2]();return [...calls];};
+  // The coordinator's run scope registers its own wrapper of each tick (lifecycle/character/run.ts
+  // `interval`), so the row finds the walk step by the interval that runs it.
+  const walk=intervals.findIndex((_,index)=>ran(index).includes('walk'));
+  assert.ok(walk>=0,'the walk step is registered');
+  assert.equal(intervals[walk][1],250);assert.deepEqual(ran(walk),['walk']);
+  assert.equal(intervals.filter(timer=>timer[1]===250).length,1,'no 250 ms rare tick');
+  // Survival steps on report arrival and stage change, so no interval runs it.
+  for(let index=0;index<intervals.length;index++){const run=ran(index);
+   assert.ok(!run.includes('anniversary'),'no timer runs the anniversary return');assert.ok(!run.includes('survival'),'no timer runs the survival step');}
  });
  // The items owner's lucky slot evidence runs right after the bounds and ahead of the add-on stores and
  // the roster evidence, as v1.5.0 ran it first.
@@ -112,8 +135,13 @@ test('a BankBoi checkpoint with an unchanged bank writes the snapshot once',()=>
   assert.deepEqual(boundFirings().caps.DOLL_CACHE_ENTRIES, { owner: '12', count: dollBefore + 2 }, 'a resent post counts once');
   assert.deepEqual(boundFirings().counts, countsBefore, 'a dashboard post fires no bound');
  });
+ // The host composes the merchant job owner's completion route with the items owner's command ids.
  test('a command given after a reload is newer than the last one the character holds', async () => {
-  const host = await run(1900000000000);
+  let party, completion;
+  const host = await run(1900000000000, {
+   '../items/coordinator/api.ts': policies => ({ ...policies, installItems(state, ports) { party = state; return policies.installItems(state, ports); } }),
+   '../merchant-jobs/coordinator/api.ts': policies => ({ ...policies, createMerchantCompletionRoute(state, ports) { completion = ports; return policies.createMerchantCompletionRoute(state, ports); } }),
+  });
   post(host, report({ lastCommandId: 900 }));
   host.handlers.get('/party-api/command')({ body: { character: 'P', type: 'town' } }, { status() { return this; }, json() {} });
   const reply = post(host, report({ lastCommandId: 900 }));
@@ -123,6 +151,7 @@ test('a BankBoi checkpoint with an unchanged bank writes the snapshot once',()=>
   post(host, report({ lastCommandId: Number.MAX_SAFE_INTEGER }));
   host.handlers.get('/party-api/command')({ body: { character: 'P', type: 'town' } }, { status() { return this; }, json() {} });
   assert.ok(Number.isSafeInteger(post(host, report({ lastCommandId: 900 })).command?.id), 'the next id is a safe integer');
+  assert.equal(completion.nextCommand(), party.nextCommandId - 1, "the completion route takes 10's command ids");
  });
 }
 

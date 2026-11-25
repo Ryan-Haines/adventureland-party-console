@@ -80,7 +80,7 @@ export const HOOKS = {
   'items.bank': read(`${SPEC}#items.bank: the snapshot read`, 'nothing', 'the bank snapshot', true, 'coordinator'),
   'items.storagePending': read(`${UNIT}#items.storagePending: a pending BankBoi transfer is named`, 'character', 'whether storage work waits for it', true, 'coordinator'),
   'items.productionPending': read(`${UNIT}#items.productionPending: a pending intent is named`, 'character', 'whether production work waits for it', true, 'coordinator'),
-  'items.bag': read(`${UNIT}#items.bag: the bag facts of the holder record`, 'character', "the bag holder's facts (3.4)", true, 'character'),
+  'items.bag': read('scripts/tests/items-bag.test.cjs#each fact follows the holder', 'character', "the bag holder's facts (3.4)", true, 'character'),
   'items.standSlots': read(`${UNIT}#items.standSlots: the stand's cells and the listings that use them`, 'merchant', '{slots, used, free} from the one count (E10-12, A79)', true, 'coordinator'),
 } as const satisfies Record<string, HookRow>;
 

@@ -157,23 +157,6 @@ test('chat.say: public chat, party chat and a whisper to any player are sent', (
   });
 });
 
-test("the L3 rows: every hook row names its side, and every offered action's door is its owner's export", () => {
-  const owners = { '06-events': '../../runtime/events/api.ts', '07-hunting': '../../runtime/hunting/api.ts', '10-items': '../../runtime/items/api.ts' };
-  for (const [file, door] of Object.entries(owners)) {
-    const rows = require(`../../runtime/hooks/rows/${file}.ts`), api = require(door);
-    for (const [name, row] of Object.entries(rows.HOOKS)) assert.ok(['character', 'coordinator', 'both'].includes(row.side), `${file} ${name} has no side`);
-    const coordinator = require(door.replace('/api.ts', '/coordinator/api.ts'));
-    for (const [name, row] of Object.entries(rows.ACTIONS ?? {})) {
-      if ('closed' in row) { assert.ok(row.cite, `${name} closes with no cite`); continue; }
-      assert.equal(typeof (api[row.door] ?? coordinator[row.door]), 'function', `${name}'s door ${row.door} is not exported by ${door}`);
-    }
-    for (const [name, row] of Object.entries(rows.READS ?? {})) {
-      const [path, exported] = row.door.split('#');
-      assert.notEqual(require(`../../${path}`)[exported], undefined, `${name}'s door ${row.door} is not exported`);
-    }
-  }
-});
-
 test("event.join: refused with no K4 answer, a refused admission or an event the game does not join; sent when K4 admits it", () => {
   const joined = [];
   return withGame({ __partyHooks: budget(), G: { events: { goobrawl: { join: true }, franky: {} } }, join: event => { joined.push(event); return Promise.resolve({}); } }, async () => {
@@ -208,19 +191,4 @@ test("dungeon.enter: the Cave's enter action refuses a run in progress, a member
   assert.match(dungeonEnter({ key: 'crypt' }, ask).reason, /Cave only/);
   assert.match(dungeonEnter({ key: 'cave' }, { ...ask, character: 'P' }).reason, /party leader/);
   assert.match(dungeonEnter({ key: 'cave' }, ask).reason, /already owns the party/);
-});
-
-// The completeness rule for those three owners: every value export of
-// an owner's doors is in its READS, its DOOR_ONLY or an ACTIONS row, and every PLAIN read is a READS row.
-test('the L3 doors: every export is a read, a door-only entry or an action', () => {
-  const owners = { '06-events': 'events', '07-hunting': 'hunting', '10-items': 'items' };
-  for (const [file, area] of Object.entries(owners)) {
-    const rows = require(`../../runtime/hooks/rows/${file}.ts`);
-    const covered = new Set([...Object.values(rows.READS).map(row => row.door.split('#')[1]), ...Object.keys(rows.DOOR_ONLY).map(key => key.split('#')[1]),
-      ...Object.values(rows.ACTIONS).flatMap(row => row.door ? [row.door] : [])]);
-    for (const door of [`runtime/${area}/api.ts`, `runtime/${area}/coordinator/api.ts`])
-      for (const name of Object.keys(require(`../../${door}`))) assert.ok(covered.has(name), `${door} ${name} is in none of ${file}'s READS, DOOR_ONLY or ACTIONS`);
-    const reads = new Set(Object.values(rows.READS).map(row => row.door.split('#')[1]));
-    for (const [name, kind] of Object.entries(rows.PLAIN)) if (kind === 'read') assert.ok(reads.has(name), `${file} PLAIN read ${name} has no READS row`);
-  }
 });

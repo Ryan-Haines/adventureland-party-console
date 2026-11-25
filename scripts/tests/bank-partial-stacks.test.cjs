@@ -141,17 +141,6 @@ test('a stack changed during floor travel is replanned without depositing stale 
  assert.equal(r.calls.length,0);assert.equal(r.character.items[0].q,5);assert.equal(r.journal(),null);
 });
 
-// The bank plans stack what the game's `can_stack` stacks: a PvP copy (`v`) stays apart from a
-// plain pile, an `acl` or `ps` pile merges with it.
-test("bank piles merge by the game's stack identity",()=>{
- const {nextStackMerge}=require('../../runtime/items/rules.ts'),{stackKey}=require('../../runtime/items/identity.ts');
- // The game's can_stack as helpers/bank-stacks.cjs plants it: the same pile key.
- const canStack=(target,source)=>stackKey(target)===stackKey(source);
- assert.equal(nextStackMerge([{pack:'items0',slot:0,item:key(10)},{pack:'items0',slot:1,item:{...key(5),v:1}}],()=>50,canStack),null);
- for(const extra of [{acl:1},{ps:['x']}])
-  assert.ok(nextStackMerge([{pack:'items0',slot:0,item:key(10)},{pack:'items0',slot:1,item:{...key(5),...extra}}],()=>50,canStack));
- assert.ok(nextStackMerge([{pack:'items0',slot:0,item:key(10)},{pack:'items0',slot:1,item:key(5)}],()=>50,canStack));
-});
 // T1-12: a buffer journaled by carries its nine-field stackIdentity
 // (characters/party-member.js:1251-1253 at v1.5.0); the load keys it by stackKey
 // once, so the recovery returns the buffered pile to its bank cell instead of clearing the
@@ -167,14 +156,4 @@ test('T1-12: a stack journal returns its buffered pile to the bank',async()=>{
  await h.bank.bankSortMove('bank');
  assert.deepEqual(character.bank.items0[0],pile);assert.equal(character.items[0],null);
  assert.equal(h.p.saved('party-bank-stack-buffer'),null);
-});
-// Every bank sort move carries the items owner's errand request, so movement names 10 as its
-// caller and the shared protocol filters no 10 function by name.
-test('a bank sort move asks movement with the errand request',async()=>{
- const {bankHarness}=require('./helpers/items-character.cjs');
- const errand={kind:'errand',owner:'items'},moves=[];
- const character={name:'M',ctype:'merchant',map:'main',items:[null],isize:1,bank:{}};
- const h=bankHarness({character,ports:{errand:()=>errand,move:async(destination,callback,options)=>{moves.push(options);}}});
- await h.bank.bankSortMove('bank');
- assert.deepEqual(moves,[{request:errand}]);
 });

@@ -33,6 +33,9 @@ test('U: a planted too-hard escape counts on the target; the planted second coun
   assert.deepEqual(heard.filter(h => h.hook === 'hunt.blacklisted').map(h => [h.payload.group, h.payload.target]), [['party:L', 'bee']]);
   recordHuntFailure(state, 'bee', 'deaths', 1, 300, 'party:L');
   assert.equal(heard.filter(h => h.hook === 'hunt.blacklisted').length, 1, 'a target joins the blacklist once');
+  // A blacklist edit names the group that made it.
+  require('../../runtime/hunting/coordinator/hunt.ts').editHuntBlacklist(state, 'add', 'goo', 400, 'solo:R');
+  assert.deepEqual(heard.filter(h => h.hook === 'hunt.blacklisted').map(h => [h.payload.group, h.payload.target]), [['party:L', 'bee'], ['solo:R', 'goo']]);
 });
 
 test("U: the add-on's order is the patrol's next region", () => {
@@ -132,8 +135,3 @@ test('RARE_PROGRESS_BOUND_MS: a rare in combat whose HP sets no new low trips th
   const entry = boundFirings().entries.at(-1); assert.equal(entry.owner, '07'); assert.equal(entry.state.hp, 5600);
 });
 
-test('the Hunt pauses for an event only through 01\'s table: no row reads a stale joinedEvent or writes paused-event', () => {
-  const source = fs.readFileSync(path.join(__dirname, '../../runtime/hunting/coordinator/hunt.ts'), 'utf8');
-  assert.doesNotMatch(source, /\bjoinedEvent\b/);
-  assert.doesNotMatch(source, /stage\s*=\s*['"]paused-event['"]/);
-});

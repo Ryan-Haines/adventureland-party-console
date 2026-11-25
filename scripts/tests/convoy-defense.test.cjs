@@ -50,6 +50,12 @@ scenarioTable('the coordinator defends a walk only from a live party attacker', 
   assert.equal(defense.classifyTravelDefense(p,['W','P'],1000).state,'clear');
   p.statuses.P.groupedCombat.currentAttackers=[t];assert.equal(defense.classifyTravelDefense(p,['W','P'],1000).state,'defending');
  }],
+ ['a disconnected sampler cannot claim a clear observation even when HTTP is fresh', ({p,defense})=>{
+  const {acceptTravelReport}=require('../../runtime/movement/coordinator/routes.ts'),{sample}=require('./fixtures/convoy-timing-scenario.cjs');
+  const raw=sample('P',2,2000);raw.travelSample.connected=false;
+  Object.assign(p.statuses,{W:acceptTravelReport(sample('W',1,2000),undefined,2000),P:acceptTravelReport(raw,undefined,2000)});
+  assert.equal(defense.classifyTravelDefense(p,['W','P'],2000).state,'waiting-for-observations');
+ }],
  ...['escape-recovery','franky-exit','event-return'].map(purpose=>['a '+purpose+' walk keeps its travel policy', ({p,t,defense,make})=>{
   p.activeConvoy.purpose=purpose;p.statuses.P.groupedCombat.currentAttackers=[t];
   assert.equal(defense.step(p,1000,make),false);assert.equal(p.activeConvoy.phase,'assemble');

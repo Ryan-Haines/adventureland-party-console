@@ -17,4 +17,10 @@ function gameFiles(version){
  const newest=Math.max(...versions);
  return {version:newest,directory:path.join(cache,String(newest))};
 }
-module.exports={gameFiles,get version(){return gameFiles().version;},get directory(){return gameFiles().directory;}};
+// The newest client fixtures/game/manifest.json pins, which restore-game-fixtures installs. A row on
+// it reads the same client on every machine, whatever the running coordinator has downloaded since.
+function pinnedGameFiles(){
+ const pins=require('../fixtures/game/manifest.json').versions.map(entry=>Number(entry.version));
+ return gameFiles(Math.max(...pins));
+}
+module.exports={gameFiles,pinnedGameFiles,get version(){return gameFiles().version;},get directory(){return gameFiles().directory;}};

@@ -1,5 +1,6 @@
 const test=require('node:test');
 const assert=require('node:assert/strict');
+const {testRegistry}=require('./helpers/test-registry.cjs');
 // The observer with the events owner's member rows, as the coordinator composes it (returns.ts).
 const {createEventReturnObservations:createEventObservations}=require('../../runtime/events/coordinator/returns.ts');
 function fixture(){
@@ -437,7 +438,8 @@ test('U: the kinds list includes the add-on kind', () => {
 // spawn minus the lead; the live list starts and ends it; a member whose current feed drops the walk
 // misses it; a live record keeps its spawn; a failed estimate is asked again on the next report.
 const { createOccurrences } = require('../../runtime/events/coordinator/occurrences.ts');
-test('K2 schedules, dues, starts and ends one group occurrence', async () => {
+test('K2 schedules, dues, starts and ends one group occurrence', async t => {
+  testRegistry(t);
   const notices = [], asks = [];
   let now = 1234, answer = () => Promise.resolve(4321);
   const notice = name => payload => notices.push([name, payload.event, payload.reason ?? null]);
@@ -483,8 +485,8 @@ test('K2 schedules, dues, starts and ends one group occurrence', async () => {
 // walk, so no report named its spawn and no record opened; its live listing fired no
 // `event.started`. The first current report that lists an event no walk scheduled opens its record
 // live, and `event.schedule` leaves it out, since it has no spawn or walk to read.
-test('the occurrence record starts and ends an event no walk scheduled from the live list', () => {
-  delete globalThis.__partyHooks;
+test('the occurrence record starts and ends an event no walk scheduled from the live list', t => {
+  testRegistry(t);
   const notices = [];
   const notice = name => payload => notices.push([name, payload.event, payload.reason ?? null]);
   partyHooks().publish({ name: 'test:k2-join', folder: 'core', author: 'test', summary: 'Hears K2.',
@@ -505,9 +507,8 @@ test('the occurrence record starts and ends an event no walk scheduled from the 
 // Separate: the live events hook table, where the warrior and the priest reported Mr. Green's spawn
 // 125 ms apart on their report clocks. Each report ended the other's record as missed and opened a
 // new one, so the walk estimate's answer always went to a replaced record and `due` came with no walk.
-test('K2 keeps one record for a spawn two members name at different report-clock times', async () => {
-  // A registry of its own: the row above leaves its estimate answering a rejection.
-  delete globalThis.__partyHooks;
+test('K2 keeps one record for a spawn two members name at different report-clock times', async t => {
+  testRegistry(t);
   const notices = [];
   partyHooks().publish({ name: 'test:k2-members', folder: 'core', author: 'test', summary: 'Answers the walk estimate and hears K2.',
     hooks: { 'walks.estimate': () => Promise.resolve(4321),

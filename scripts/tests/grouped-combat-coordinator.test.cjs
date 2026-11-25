@@ -1,7 +1,5 @@
 const assert = require('node:assert/strict');
 const vm = require('node:vm');
-const fs = require('node:fs');
-const source = require('./helpers/coordinator-source.cjs').coordinatorSource();
 function setup() {
   const routes = {}, party = { leader: 'W', partyFarmingMode: 'default', statuses: {
     W: { seenAt: Date.now(), combatSelection: { id: 'A', map: 'main' }, joinedEvent: 'franky' },

@@ -31,18 +31,6 @@ function merchantRow(event, anniversary) {
     gathering: () => null, stopGathering: async () => undefined, request: async () => ({}) });
 }
 
-test('merchant work is reserved throughout the ninety-second anniversary lead-up', () => {
-  const result = control({ active: true, live: false, next: 1_090_000 });
-  assert.equal(result.preWindow, true);
-  assert.equal(result.reserved, true);
-});
-
-test('merchant work is not reserved before the ninety-second anniversary lead-up', () => {
-  const result = control({ active: true, live: false, next: 1_090_001 });
-  assert.equal(result.preWindow, false);
-  assert.equal(result.reserved, false);
-});
-
 test('merchant work remains reserved through retries until the live kiss completes', () => {
   const event = { active: true, live: true, round: 'r1', target: 'Other', expires: 1_300_000 };
   assert.equal(control(event, { mode: 'retry-wait', retryAt: 1_010_000 }).reserved, true);

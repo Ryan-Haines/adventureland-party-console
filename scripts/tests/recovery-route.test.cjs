@@ -23,7 +23,7 @@ scenarioTable("the recovery route search finds a clear multi-goal route or fails
   for(const reach of [21,161.5]){
    const start={x:0,y:395.76},target={x:-11,y:115};
    const c=vm.createContext({G:{},character:{map:'level1',...start,base:{h:8,v:7,vn:2}}});
-   if(!require('./helpers/game-geometry.cjs').installGameGeometry(c,require('./helpers/installed-game.cjs').version))return t.skip('native geometry unavailable');
+   require('./helpers/game-geometry.cjs').installGameGeometry(c);
    let probes=0;
    const clear=(a,b)=>{probes++;return c.can_move({map:'level1',x:a.x,y:a.y,going_x:b.x,going_y:b.y,base:c.character.base});};
    const goals=[],reaches=[reach,(reach+Math.min(reach,42))/2,Math.min(reach,42)];

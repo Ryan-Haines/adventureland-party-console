@@ -1,4 +1,5 @@
 const test=require('node:test'),assert=require('node:assert/strict');
+const {until}=require('./helpers/settle.cjs');
 // The fixture's members report every 500 ms; each wait ends at the next report or its bound.
 const REPORT_MS=500;
 const {createCoordinatorRealmActions}=require('../../runtime/merchant-realm/coordinator/routes.ts');
@@ -19,7 +20,7 @@ function fixture(){
   account:{response:{characters:[{name:'F',online:true},{name:'M',online:true}]},updateInfo:async()=>{calls.push('refresh');if(Object.values(state.commands).some(command=>command.type==='realm-set-home'))home='SR_EUI';}},
  });
  async function invoke(handler,body){const res={code:200,status(code){this.code=code;return this;},json(body){this.body=body;return this;}};await handler({body},res);return res;}
- async function settled(){for(let i=0;i<30&&state.realmSwitch.phase==='switching';i++)await new Promise(resolve=>setImmediate(resolve));assert.notEqual(state.realmSwitch.phase,'switching');}
+ const settled=()=>until(()=>state.realmSwitch.phase!=='switching','the realm switch ends its switching phase');
  return {state,calls,routes,invoke,settled};
 }
 

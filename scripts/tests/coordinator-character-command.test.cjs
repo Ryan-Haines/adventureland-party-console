@@ -19,8 +19,11 @@ test('command boundary validates farming area before character and never runs re
 test('command boundary preserves accepted farming location, response keys and first-handler ownership',()=>{
  const f=routeFixture(),location={map:'main',x:1,y:2};
  f.ports.handlers.push(()=>undefined,body=>{f.state.marked.F=[body.location];return null;},()=>{throw Error('double dispatch');});
- const response=f.send({character:'F',farmingMonsterIds:['goo'],location});
+ // The hunting owner's farming half (createFarmingCommand) keeps the spot and sets the character's
+ // focus once per monster.
+ const response=f.send({character:'F',farmingMonsterIds:['goo','goo'],location});
  assert.deepEqual(f.state.farmAreaState,{preferredLocation:location});assert.equal(f.calls.length,2);
+ assert.deepEqual(f.state.monsterFocusByCharacter.F,['goo']);
  assert.deepEqual(response.body,{ok:true,marked:[location],merchantMarked:[],autoItemMarks:{},upgrades:[],statScrolls:[],compounds:[],withdrawals:[]});
 });
 test('command boundary keeps explicit error and deferred responses and rejects unhandled commands',()=>{
@@ -50,14 +53,4 @@ test('stat marking rejects stale items and already applied stats but permits rem
  const f=statFixture();assert.equal(f.send({item:{name:'other'},statType:'dex'}).status,409);
  f.item.stat_type='dex';assert.equal(f.send({statType:'dex'}).status,409);
  f.state.statScrolls.M=[{slot:1,item:f.item,statType:'luck'}];assert.equal(f.send({statType:'luck',remove:true}),null);assert.deepEqual(f.state.statScrolls.M,[]);
-});
-// The command's farming rule is the hunting owner's (createFarmingCommand), over the scope the
-// character farms in: the farm area check, the preferred spot and the character's focus.
-test('07\'s farming half of the command checks the area, keeps the spot and sets the character\'s focus',()=>{
- const scope={leader:'L',monsterFocus:[],monsterFocusByCharacter:{},farmAreaState:null},state={monsterChoices:[],farmAreaState:null},location={map:'main',x:1,y:2};
- const farming=createFarmingCommand(state,{farmingState:()=>scope,location:(_c,_ids,at)=>at,members:()=>['L','F'],invalidate(){},persist(){}});
- assert.equal(farming.valid({farmingMonsterIds:['phoenix'],location}),false);
- const body={character:'F',farmingMonsterIds:['goo','goo'],location};
- assert.equal(farming.valid(body),true);farming.place(body);farming.focus(body);
- assert.deepEqual(state.farmAreaState,{preferredLocation:location});assert.deepEqual(scope.monsterFocusByCharacter.F,['goo']);
 });

@@ -2,6 +2,7 @@
 // any owner installs (characters/shared.js:6-11). The scope has had its first status reply, so table
 // P's row is `running` and an `act` handle runs at once, as it does in play after the first reply.
 // lifecycle-run.test.cjs tests the hold itself on its own scope.
+const {settle}=require('./settle.cjs');
 const { createRunScope } = require('../../../runtime/lifecycle/character/run.ts');
 
 const TIMERS = ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'];
@@ -59,7 +60,7 @@ async function update() {
     game.draws = (Number(game.draws) || 0) + 1;
     try { for (const callback of game.__partyTestDraws.splice(0)) callback(); } finally { game.in_draw = false; }
   }
-  for (let i = 0; i < 5; i++) await Promise.resolve();
+  await settle();
 }
 
 module.exports = { processScope, testScope, contextScope, contextRun, update };

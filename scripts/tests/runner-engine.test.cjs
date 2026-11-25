@@ -9,11 +9,8 @@ const jquery = require('../../.caracal/node_modules/jquery');
 const { createRunnerHost } = require('../../runtime/lifecycle/character/host.ts');
 
 test('downloaded game and CODE engines survive repeated runner disposal on one socket', async () => {
-  const gameRoot=path.resolve('.caracal/game_files');
-  const versions=(await fs.readdir(gameRoot)).filter(name=>/^\d+$/.test(name)).sort((a,b)=>Number(b)-Number(a));
-  assert.ok(versions.length,'a downloaded game version is required');
-  const gameDirectory=path.join(gameRoot,versions[0]);
-  // Snapshot the fixture before repeated reloads; the live coordinator may retire old caches meanwhile.
+  const gameDirectory=require('./helpers/installed-game.cjs').pinnedGameFiles().directory;
+  // Snapshot the fixture before repeated reloads.
   const gameSources=new Map(await Promise.all((await fs.readdir(gameDirectory)).filter(name=>name.endsWith('.js'))
     .map(async name=>[name,await fs.readFile(path.join(gameDirectory,name),'utf8')])));
   const directory = path.resolve('.build/test-runners/real-engine');

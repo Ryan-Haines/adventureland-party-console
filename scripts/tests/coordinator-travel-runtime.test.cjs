@@ -4,6 +4,7 @@ const {coordinatorEventCheckpoint} = require('../../runtime/events/coordinator/r
 
 
 const {scenarioTable}=require('./fixtures/scenarios.cjs');
+const {testRegistry,restoreGlobals}=require('./helpers/test-registry.cjs');
 const {clockFixture}=require('./fixtures/coordinator-travel-runtime-scenario.cjs');
 scenarioTable('the travel clock steps every convoy and the escape on its interval (MOV-146, MOV-158)', clockFixture, [
  ['event checkpoint follows the current leader and keeps the original numeric coercion', ()=>{
@@ -34,38 +35,14 @@ scenarioTable('the travel clock steps every convoy and the escape on its interva
  }],
 ]);
 
-// The root registers survival's one party step every 250 ms after movement's walk step, in the
-// earlier console's periods and order (navigation/runtime.ts `startTravel`): the escape, then the
-// death recovery. The rare registers no timer: it steps on each member report and each walk notice
-// (hunting/coordinator/install.ts `rareTick`). The event returns register none either: they look on
-// a member's report, a walk notice and a settings change.
-test('the application registers the walk step at its period, and no survival, rare or return timer',async()=>{
- const {run}=require('./helpers/coordinator-host.cjs'),calls=[];
- const host=await run(1900000000000,{
-  './survival/api.ts':survival=>({...survival,installCoordinatorSurvival:ports=>Object.assign(survival.installCoordinatorSurvival(ports),{step:()=>calls.push('survival')})}),
-  '../movement/api/coordinator.ts':movement=>({...movement,
-   createCoordinatorTravelClock:ports=>movement.createCoordinatorTravelClock({...ports,convoyStep:()=>{calls.push('walk');return false;}})}),
-  '../events/coordinator/api.ts':events=>({...events,
-   createCoordinatorAnniversaryReturns:(state,ports)=>Object.assign(events.createCoordinatorAnniversaryReturns(state,ports),{tick:()=>calls.push('anniversary')})}),
- });
- const intervals=host.timers.filter(timer=>timer[0]==='interval'),ran=index=>{calls.length=0;intervals[index][2]();return [...calls];};
- // The coordinator's run scope registers its own wrapper of each tick (lifecycle/character/run.ts
- // `interval`), so the row finds the walk step by the interval that runs it.
- const walk=intervals.findIndex((_,index)=>ran(index).includes('walk'));
- assert.ok(walk>=0,'the walk step is registered');
- assert.equal(intervals[walk][1],250);assert.deepEqual(ran(walk),['walk']);
- assert.equal(intervals.filter(timer=>timer[1]===250).length,1,'no 250 ms rare tick');
- // Survival steps on report arrival and stage change, so no interval runs it.
- for(let index=0;index<intervals.length;index++){const run=ran(index);
-  assert.ok(!run.includes('anniversary'),'no timer runs the anniversary return');assert.ok(!run.includes('survival'),'no timer runs the survival step');}
-});
-
 // The events owner looks when its state changes: a member's report looks at that member's group, a
 // walk notice at the walk's group, a settings change at every group; the tasks owner's table gates each return,
 // and a walk notice fired inside a look starts no second look. Its own test: the install registers
 // into the realm's hook registry, which the clock fixture has no part of.
-test('K6 looks at a member report, a walk notice and a settings change, one look at a time', () => {
- const {installEvents} = require('../../runtime/events/coordinator/install.ts'), {partyHooks} = require('../../runtime/hooks/index.ts');
+test('K6 looks at a member report, a walk notice and a settings change, one look at a time', t => {
+ const {installEvents} = require('../../runtime/events/coordinator/install.ts');
+ const hooks = testRegistry(t), partyHooks = () => hooks;
+ restoreGlobals(t, ['__partyTaskAnswers', '__partyEventAnswers']);
  // The ingest asks 01 for the member's group (`tasks().groupOf`, 7ca7d4c1); these members walk in no group.
  require('../../runtime/tasks/api.ts').publishTasks({groupOf: () => null, live: () => null});
  const calls = [], runs = {'event-return': true, anniversary: true};

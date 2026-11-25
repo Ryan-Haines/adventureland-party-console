@@ -1,5 +1,4 @@
-const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm');
-const coordinator=require('./helpers/coordinator-source.cjs').coordinatorSource();
+const test=require('node:test'),assert=require('node:assert/strict');
 // The arena's fight evidence is the events owner's (runtime/events/character/attend.ts `arenaFight`): the
 // character on the event's map with a living catalog `targets.first` monster in view. One read stands until
 // the running code yields, since the client changes its entities only in its own handlers.

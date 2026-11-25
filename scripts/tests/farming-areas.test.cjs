@@ -48,9 +48,6 @@ test('real snake catalog ranks shared areas first and includes every multi-map s
   assert.ok(farmingAreas(catalog,['snake']).some(a=>a.map==='main'));
 });
 test('bestiary validates selection before releasing escape or changing farming state', () => {
-  const source=require('./helpers/coordinator-source.cjs').coordinatorSource();
-  const start=source.indexOf('express_inst.post("/party-api/navigate-to-monster"');
-  const route=source.slice(start,source.indexOf('express_inst.post("/party-api/focus"',start));
   let handler; const party={monsterChoices:[{id:'a',locations:[box([0,0,100,100])]}],leader:'warrior',statuses:{warrior:{seenAt:Date.now()}},combatMode:'scatter',targetMode:'hunt'};
   const context={express_inst:{post:(url,fn)=>{if(url==='/party-api/navigate-to-monster')handler=fn;}},party,validFarmingLocation,escapeControl:{release:()=>assert.fail('released on invalid input')},Date};
   handler=require('./helpers/coordinator-monster-selection.cjs').monsterRoutes(context).navigate;

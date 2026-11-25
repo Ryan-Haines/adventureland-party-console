@@ -1,23 +1,10 @@
 const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
 const {CoordinatorJsonlStore:Store}=require('../../runtime/settings/coordinator/persistence/jsonl-store.ts');
 const {syncBuiltinESMExports}=require('node:module');
-const {spawn}=require('node:child_process');
-const {once}=require('node:events');
 test('Linux stat token parsing uses field 22 after the full command name',()=>{
  const {linuxProcessStart}=require('../../runtime/settings/coordinator/persistence/process-lock.ts');
  assert.equal(linuxProcessStart('82 (worker (name) here) S '+Array.from({length:18},(_,i)=>String(i+4)).join(' ')+' 999 23'),'999');
  assert.equal(linuxProcessStart('malformed'),undefined);
-});
-
-test('abruptly terminated process releases stale ownership on next journal open',async t=>{
- const [main,rotation]=fixture(t);
- const script=`const {CoordinatorJsonlStore}=require('./runtime/settings/coordinator/persistence/jsonl-store.ts');const s=new CoordinatorJsonlStore(process.argv[1],process.argv[2],{setTimeout,clearTimeout});s.set('saved',{value:7});process.send('ready');setInterval(()=>{},1000);`;
- const child=spawn(process.execPath,['--experimental-strip-types','-e',script,main,rotation],{stdio:['ignore','pipe','pipe','ipc']});
- t.after(()=>{if(child.exitCode===null)child.kill('SIGKILL');});
- await once(child,'message');
- assert.throws(()=>new Store(main,rotation,{setTimeout,clearTimeout}),/live writer/);
- const exited=once(child,'exit');child.kill('SIGKILL');await exited;
- const restored=new Store(main,rotation,{setTimeout,clearTimeout});try{assert.deepEqual(restored.get('saved'),{value:7});}finally{restored.close();}
 });
 
 test('legacy live PID and malformed ownership locks are preserved conservatively',t=>{

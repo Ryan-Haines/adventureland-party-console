@@ -4,6 +4,7 @@
 // target. Both read the events owner's character facts with no event (helpers/character-events.cjs): the
 // targeting module installs them in the runner's context, and the combat steps in the geometry's.
 // A row reaches the three event movers through `c.characterEvents.movers`.
+const {settle}=require('../helpers/settle.cjs');
 const assert = require('node:assert/strict');
 const vm = require('node:vm');
 const { createMovementContext } = require('./movement-owner-callers.cjs');
@@ -13,7 +14,7 @@ const { routineModule } = require('../helpers/targeting-module.cjs');
 const { installCombatSteps } = require('../helpers/combat-steps.cjs');
 const { createMoverView } = require('../../../runtime/movement/character/movers.ts');
 const { movementTick } = require('../helpers/movement-tick.cjs');
-const flush = async () => { for (let i = 0; i < 12; i++) await Promise.resolve(); };
+const flush = settle;
 function runner(ctype = 'ranger', native = false, configure = () => {}) {
   let now = 1000, attacks = 0, moves = 0, ready = true, occupied = false;
   const intervals = [], timeouts = [];

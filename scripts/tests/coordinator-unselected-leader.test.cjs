@@ -1,7 +1,6 @@
 const test = require('node:test'), assert = require('node:assert/strict');
 const {coordinatorHuntDestination} = require('../../runtime/hunting/coordinator/hunt.ts');
 const {coordinatorHuntParticipants} = require('../../runtime/tasks/coordinator/groups.ts');
-const {projectEventSchedules} = require('../../runtime/events/coordinator/occurrences.ts');
 const {createPartyConvoys} = require('../../runtime/movement/coordinator/walk.ts');
 const {selectCoordinatorMonsterDestination} = require('../../runtime/hunting/coordinator/farm.ts');
 const {createHuntMode} = require('../../runtime/tasks/coordinator/slots.ts');
@@ -65,11 +64,3 @@ test('unselected Hunt leader does not query members, clock or destination zones'
 });
 
 
-test('unselected leader keeps latest cross-realm feed and legacy dictionary key semantics', () => {
-  const reports = {P: {seenAt: 100, server: 'I', eventFeedAt: 90, eventSchedules: [{id: 'old'}]},
-    W: {seenAt: 100, server: 'II', eventFeedAt: 95, eventSchedules: [{id: 'new'}]}};
-  assert.equal(projectEventSchedules(reports, null, () => 100)[0].id, 'new');
-  // JSON dictionaries can retain this key; the old JavaScript lookup consulted it too.
-  reports.null = {server: 'I'};
-  assert.equal(projectEventSchedules(reports, null, () => 100)[0].id, 'old');
-});

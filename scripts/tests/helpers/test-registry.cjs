@@ -24,4 +24,12 @@ function jobsReady(t,ready=[]){
  return {set(next){list=next;}};
 }
 
-module.exports={testRegistry,jobsReady};
+// Puts each named property of `target` (globalThis by default) back as the test found it when the
+// test ends, failed or not, and deletes the ones that were absent. A game global, publishTasks'
+// __partyTaskAnswers or publishEventAnswers' answers that a test plants then ends with the test.
+function restoreGlobals(t,names,target=globalThis){
+ const saved=names.map(name=>[name,Object.getOwnPropertyDescriptor(target,name)]);
+ t.after(()=>{for(const [name,was] of saved){if(was)Object.defineProperty(target,name,was);else delete target[name];}});
+}
+
+module.exports={testRegistry,jobsReady,restoreGlobals};

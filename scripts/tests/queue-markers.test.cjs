@@ -179,6 +179,9 @@ test('selected cooperative event boss stays attackable and yields a single red m
   e.dead=false;c.combatTargetId=null;assert.equal(c.queueMarkers().length,0);
   c.combatTargetId='boss';c.eventTargetTypes=[];assert.equal(c.queueMarkers().length,0);
  }
+ // A current marker is red at any queue index; a grouped third is double and the next is yellow.
+ for(let i=0;i<3;i++)assert.deepEqual(markerStyle({role:'current'},i),{color:0xef4444,css:'#ef4444',double:false});
+ assert.equal(markerStyle({role:'third'},0).double,true);assert.equal(markerStyle({role:'next'},0).css,'#facc15');
 });
 
 test('dashboard event with no selected marker does not resurrect the old game target ring',()=>{

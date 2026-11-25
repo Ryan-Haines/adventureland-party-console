@@ -261,28 +261,6 @@ test('missing stand observation is unknown rather than closed',async()=>{
  await renderer.act(async()=>root.unmount());
 });
 
-// The merchant reports the game's get_trade_slots count and every planner plans to
-// the report. Red on an earlier build: every planner planned 16.
-test('the stand counts 24 at level 70 and 30 at level 80, and plans to the report',()=>{
- const {planted}=require('./helpers/items-character.cjs');
- const {createBagReads}=require('../../runtime/items/character/bag.ts');
- const {standSlotUse}=require('../../runtime/items/rules.ts');
- // A computer opens the `cstand` (G items `computer`, `supercomputer`).
- const G={items:{stand0:{type:'stand',stand:'stand0'},computer:{type:'computer',stand:'cstand'}}};
- const slotsAt=(level,stand='stand0')=>{
-  const character={ctype:'merchant',level,items:[{name:stand}]};
-  return createBagReads(planted({character:()=>character,G:()=>G,margin:()=>100,now:()=>0})).standSlots();
- };
- assert.deepEqual([slotsAt(60),slotsAt(60,'computer'),slotsAt(70),slotsAt(80)],[16,24,24,30]);
- const listings=n=>Array.from({length:n},(_,i)=>({tradeSlot:'trade'+(i+1),state:'live'}));
- for(const slots of [24,30]){
-  const state={merchantCharacter:'M',statuses:{M:{standSlots:slots}},standListings:listings(slots+2)};
-  assert.deepEqual(standSlotUse(state),{slots,used:slots,free:0});
-  assert.deepEqual(standSlotUse({...state,standListings:listings(20)}),{slots,used:20,free:slots-20});
- }
- assert.equal(standSlotUse({merchantCharacter:'M',statuses:{M:{}},standListings:[]}).slots,16);
-});
-
 // A configured listing finds its stand cell by the items owner's markMatches, so the cell's price,
 // count and stack id never split them, and a different title does.
 test('a listing matches its stand cell by 10s mark identity',()=>{

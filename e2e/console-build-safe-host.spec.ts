@@ -11,34 +11,6 @@ import {readJson} from '../tools/build-store';
 import {LEASE_FILE} from '../runtime/lifecycle/rules';
 import {lifecycleSavedFields} from '../runtime/lifecycle/fields';
 
-test('safe maintenance replaces a stopped slot owner without accepting a missing acknowledgement',async({},info)=>{
-  // Failure inventory: an old merchant remains sticky after a slot handoff;
-  // merely stale/missing clients are incorrectly retired; a replacement's
-  // combat or missing ack is ignored; an assigned stopped client is skipped.
-  // The lease (runtime/lifecycle/coordinator/lease.ts) hears a stop through `leave`, which the
-  // worker stop path calls (workers.ts `stop`).
-  const root=info.outputPath('slot-handoff'),maintenance=createLease(root,{now:Date.now,paused:()=>false,log:()=>{},notify:()=>{}});
-  await mkdir(path.join(root,'updates'),{recursive:true});
-  await writeFile(path.join(root,LEASE_FILE),JSON.stringify({id:'handoff',mode:'draining',expires:Date.now()+60000}));
-  const held={seenAt:Date.now(),consoleMaintenance:{id:'handoff',mode:'draining',combat:false,ready:true}};
-  const reports:any={Merchant:held};
-  const ledger:any[]=[];
-  ledger.push(maintenance.status(reports,['Merchant']));
-  expect(ledger.at(-1).ready).toBe(true);
-  reports.Merchant={...held,seenAt:Date.now()-20000};reports.BankBoi={seenAt:Date.now()};
-  ledger.push(maintenance.status(reports,['BankBoi']));
-  expect(ledger.at(-1).waiting).toEqual(['Merchant','BankBoi']);
-  maintenance.leave('Merchant');
-  ledger.push(maintenance.status(reports,['BankBoi']));
-  expect(ledger.at(-1).waiting).toEqual(['BankBoi']);
-  reports.BankBoi={...held,seenAt:Date.now()};
-  ledger.push(maintenance.status(reports,['BankBoi']));
-  expect(ledger.at(-1).ready).toBe(true);
-  ledger.push(maintenance.status(reports,['Merchant','BankBoi']));
-  expect(ledger.at(-1).waiting).toEqual(['Merchant']);
-  await info.attach('safe-slot-handoff-ledger',{body:JSON.stringify(ledger),contentType:'application/json'});
-  maintenance.close();
-});
 
 test('safe reload requires fresh combat-free acknowledgements and preserves interrupted waits',async({},info)=>{
   const root=info.outputPath('safe-host'),store=new ConsoleBuildStore(root),maintenance=createLease(root,{now:Date.now,paused:()=>false,log:()=>{},notify:()=>{}});

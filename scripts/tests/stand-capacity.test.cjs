@@ -33,4 +33,16 @@ test('standSlots gives 30 at merchant level 80, 24 at level 70 or on a cstand, e
  const merchant=(level,stand)=>standSlots({ctype:'merchant',level,stand});
  assert.deepEqual([merchant(80,'stand0'),merchant(70,'stand0'),merchant(40,'cstand'),merchant(69,'stand0')],[30,24,24,16]);
  assert.equal(standSlots({ctype:'ranger',level:90,stand:'cstand'}),16,'only a merchant opens more than the base cells');
+ // The merchant's bag reads its stand item for the count; a computer opens the `cstand` (G items
+ // `computer`, `supercomputer`). Red on an earlier build: every planner planned 16.
+ const {planted}=require('./helpers/items-character.cjs');
+ const {createBagReads}=require('../../runtime/items/character/bag.ts');
+ const G={items:{stand0:{type:'stand',stand:'stand0'},computer:{type:'computer',stand:'cstand'}}};
+ const slotsAt=(level,stand='stand0')=>{
+  const character={ctype:'merchant',level,items:[{name:stand}]};
+  return createBagReads(planted({character:()=>character,G:()=>G,margin:()=>100,now:()=>0})).standSlots();
+ };
+ assert.deepEqual([slotsAt(60),slotsAt(60,'computer'),slotsAt(70),slotsAt(80)],[16,24,24,30]);
+ const {standSlotUse}=require('../../runtime/items/rules.ts');
+ assert.equal(standSlotUse({merchantCharacter:'M',statuses:{M:{}},standListings:[]}).slots,16,'a merchant with no count report plans the base cells');
 });

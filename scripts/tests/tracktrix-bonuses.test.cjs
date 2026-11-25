@@ -1,5 +1,5 @@
 const test = require('node:test'), assert = require('node:assert/strict');
-const { statusReport, gameReads } = require('./helpers/status-report.cjs');
+const { gameReads } = require('./helpers/status-report.cjs');
 // The account tracker scores rat 15 and goo 5 (report.ts reads `parent.tracker`).
 function fixture() {
   const c = { character: { name: 'Ranger', items: [{ name: 'tracker' }] },
@@ -25,10 +25,4 @@ test('banked Tracktrix does not display stale bonuses; missing data remains unkn
   assert.equal(report.tracktrix().active, false); assert.equal(Object.keys(report.tracktrix().bonuses).length, 0);
   c.character.items = [{ name: 'supercomputer' }]; delete c.parent.character.monster_stats; c.parent.tracker = {};
   assert.equal(report.tracktrix().bonuses, null);
-});
-// The report object carries only the members a production caller reads; the game reads are the
-// module's own exports.
-test('the report object leaves the game reads to the module', () => {
-  const report = statusReport(fixture().c);
-  assert.deepEqual(['tracktrix', 'runSpeed', 'characterDollHtml', 'dollHtml', 'classAppearanceChoices'].filter(key => key in report), []);
 });

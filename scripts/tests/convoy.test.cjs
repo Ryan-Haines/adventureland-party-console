@@ -77,7 +77,7 @@ scenarioTable('the character convoy runner holds, caps speed and walks the share
  // own journey ends. An escape that replaces the walk's journey is the walk's interruption;
  // an escape the walk waited behind ends as the escape's own, and the walk then starts.
  ['a walk marks an interruption only on its own journey, never on the journey it waited behind', async r=>{
-  const settled=async()=>{for(let i=0;i<5;i++)await settle();};
+  const settled=settle;
   const assemble={...command,phase:'assemble',rally:{map:'main',x:100,y:0},requester:{kind:'group-walk',tier:'farming'}};
   const escape={request:{kind:'escape',owner:'e2e-escape'}};
   await r.start(assemble);await settled();

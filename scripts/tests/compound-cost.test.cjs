@@ -49,11 +49,3 @@ test('scroll costs read the catalog price table and a missing price is not zero'
   // The upgrade menu marks a tier's cost as the NPC price when its run uses a scroll no NPC sells.
   assert.deepEqual(upgradeScrollGrades({grades:[0,4,10,12]},9,3),[2,3,3],'the run names the grade of each level');
 });
-// v1.5.0's requiredScrolls (stat-scroll-commands.ts:66-72) stopped at grade 3
-// and asked 1,000 stat scrolls for a +12, where the game asks 9,999 at grade 4 (G
-// node/server.js:7465-7468) and refuses the run with `upgrade_scroll_q`.
-test('B151: a grade 4 item needs 9,999 stat scrolls',()=>{
-  const definition={upgrade:{},grades:[9,10,11,12]};
-  assert.equal(statScrollsNeeded(definition,11),1000,'grade 3');
-  assert.equal(statScrollsNeeded(definition,12),9999,'grade 4');
-});

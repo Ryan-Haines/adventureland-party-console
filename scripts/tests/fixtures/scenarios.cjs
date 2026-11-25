@@ -8,6 +8,8 @@
 // has its own timeout, so a hung row fails alone and the rows after it still run.
 const test = require('node:test');
 
+// A named safety bound, not a measured one: it only fails a row that hangs, so the rows after it
+// still run, and never decides a result. helpers/settle.cjs `until` shares it.
 const ROW_TIMEOUT_MS = 60_000;
 
 function scenarioTable(title, build, rows) {
@@ -23,4 +25,4 @@ function scenarioTable(title, build, rows) {
   });
 }
 
-module.exports = { scenarioTable };
+module.exports = { scenarioTable, ROW_TIMEOUT_MS };

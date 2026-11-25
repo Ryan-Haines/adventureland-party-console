@@ -52,6 +52,7 @@ scenarioTable('the planner worker plans reported routes over the pinned games an
    assert.ok(result.plot.length);
    assert.equal(validateRoute(portsOf(native), from, to, result.plot, true), null);
    await assert.rejects(service.plan({ ...request, id: 'raw', fingerprint: geometryFingerprint(raw.G) }), /requested.*prepared/);
+   await assert.rejects(service.plan({ ...request, id: 'wrong', version: 17084 }), /compatible/, 'another game version is refused');
   } finally { service.dispose(); }
  }],
  ['a Winterland return includes a reachable transporter approach in both route candidates', async () => {

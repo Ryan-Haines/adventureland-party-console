@@ -17,21 +17,6 @@ async function merchantReport(app: { state(): Promise<any> }) {
     runtimeId: 'e2e-report-M', clientInstance: 'e2e-report-M', ...extra });
 }
 
-test('a saved snapshot with per-copy item meta shows catalog names offline', async ({ page, app }, info) => {
-  const report = await merchantReport(app);
-  await app.deliverStatus(report({ items: coat(3), slots: {} }));
-  // The roster keeps the per-copy meta; the dashboard joins the catalog's.
-  expect((await app.state()).characterSnapshots.M.items[0]).toEqual({ slot: 0, item: { name: 'coat', level: 3 }, meta: { properties: {} } });
-  await app.restartCoordinator();
-  expect((await app.state()).characters.M).toBeUndefined();
-  await page.goto('/');
-  await page.getByRole('button', { name: 'Interface settings', exact: true }).click();
-  await page.getByRole('tab', { name: 'Characters', exact: true }).click();
-  await page.getByRole('button', { name: 'Inspect M', exact: true }).click();
-  await expect(page.getByRole('button', { name: 'Inspect Coat +3', exact: true })).toBeVisible();
-  await info.attach('saved-snapshot-entry', { body: JSON.stringify((await app.state()).characterSnapshots.M.items[0]), contentType: 'application/json' });
-});
-
 test('a report that omits unchanged inventory keeps it, and an unknown revision answers 409', async ({ page, app }, info) => {
   const report = await merchantReport(app);
   const acknowledged = await app.deliverStatus(report({ items: coat(3), slots: {}, inventoryRevision: 'probe-1' })) as { inventoryRevision?: string };

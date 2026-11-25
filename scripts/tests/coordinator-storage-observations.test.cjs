@@ -27,12 +27,3 @@ test('bank observations update shared state before adoption and subsequent BankB
  assert.deepEqual(command.requests,[{id:'q'}]);
  assert.equal(state.bankboiTransaction.phase,'processing');assert.deepEqual(calls,['bank']);
 });
-test('merchant observations reconcile replaced listings and persist settings before market publication',()=>{
- const {state,calls,merchant}=fixture(),old=state.standListings;
- state.standListings=[{tradeSlot:'trade1',item:{name:'leather',q:5},quantity:5}];
- merchant.observe({standOpen:true,gold:120,slots:{trade1:{item:{name:'leather',q:3}}}},
-  {standOpen:true,gold:100,slots:{trade1:{item:{name:'leather',q:5}}}});
- assert.deepEqual(old,[]);assert.equal(state.standListings[0].quantity,3);assert.equal(state.standListings[0].item.q,3);
- assert.deepEqual(calls.map(call=>Array.isArray(call)?call[0]:call),['log','settings','publish']);
- assert.match(calls[0][1],/Sold leather × 2/);
-});

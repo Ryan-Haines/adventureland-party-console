@@ -3,11 +3,12 @@ const {settle}=require('./helpers/native-convoy-runtime.cjs');
 const {sharedRoute,publishSharedRoute}=require('../../runtime/movement/coordinator/route-store.ts');
 const {scenarioTable}=require('./fixtures/scenarios.cjs');
 const {partyEngine,travellingParty,eventPursuit,client,copy,publication}=require('./fixtures/shared-convoy-scenario.cjs');
-test('same-boss coordinate changes preserve cross-map progress until destination arrival',()=>{
+test('same-boss coordinate changes preserve cross-map progress until destination arrival',t=>{
  const {movingEventDestination}=require('../../runtime/movement/coordinator/arrivals.ts');
  // The pursuit reads the game's monster table, which the coordinator loads with the
- // movement geometry; the harness loads Mr. Pumpkin's entry.
- require('../../runtime/movement/coordinator/planner-service.ts').setGameMonsters({mrpumpkin:{name:'Mr. Pumpkin',speed:40}});
+ // movement geometry; the harness loads Mr. Pumpkin's entry for this test only.
+ const {setGameMonsters}=require('../../runtime/movement/coordinator/planner-service.ts');
+ setGameMonsters({mrpumpkin:{name:'Mr. Pumpkin',speed:40}});t.after(()=>setGameMonsters(null));
  const {p}=travellingParty(),c=p.activeConvoy,now=22000;
  Object.assign(c,{purpose:'shared-walk',walkingActivity:'event',walkingEvent:'mrpumpkin',routeServer:'USII',sharedStartedAt:1000,
   location:{map:'halloween',in:'halloween',x:0,y:0},walkingParents:{},runtimes:{}});

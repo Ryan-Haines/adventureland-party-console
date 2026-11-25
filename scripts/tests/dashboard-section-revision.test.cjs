@@ -89,11 +89,13 @@ test('a mutation still refetches an active bank query at once, and a changed ban
 test('auth loss and server errors behave as before', async () => {
   const client = createDashboardClient();
   client.setQueryData(key('core'), { referenceRevision: 'catalog-1' });
+  client.setQueryData(['party', 'character', 'A', 'inventory'], { items: [{ name: 'coat' }] });
   const failing = server({ logs: { status: 503, revision: 'x', body: {} } });
   await withFetch(failing.fetch, () => assert.rejects(client.fetchQuery({ ...domainOptions(client, 'logs'), staleTime: 0 }), /Reconnecting/));
   // Auth loss clears every cache, which also cancels the read in flight.
   const lost = server({ logs: { status: 401, revision: 'x', body: {} } });
   await withFetch(lost.fetch, () => assert.rejects(client.fetchQuery({ ...domainOptions(client, 'logs'), staleTime: 0 })));
   assert.equal(client.getQueryData(key('core')), undefined);
+  assert.equal(client.getQueryData(['party', 'character', 'A', 'inventory']), undefined, 'a character cache goes too');
   client.clear();
 });

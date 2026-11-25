@@ -291,6 +291,7 @@ test('held escape shows its reason and resumes only through an explicit action',
   await page.goto('/');
   const resume=page.getByRole('button',{name:'Resume',exact:true});
   await expect(page.getByText('No game data for the safe goal',{exact:true})).toBeVisible();
+  await expect(page.getByText(/^Escape failed./)).toBeVisible();
   await expect(resume).toBeVisible();
   await resume.scrollIntoViewIfNeeded();
   await info.attach('escape-held-reason',{body:await page.screenshot(),contentType:'image/png'});
@@ -305,25 +306,13 @@ test('held escape shows its reason and resumes only through an explicit action',
   await expect(resume).toHaveCount(0);
   await info.attach('escape-resume-actions',{body:JSON.stringify(requests),contentType:'application/json'});
   await info.attach('escape-active-rescue',{body:await page.screenshot(),contentType:'image/png'});
-});
-
-test('an escape that reached home reads as home and keeps the resume control', async ({page},info) => {
-  // Step 8a item 11 (e2e/movement-owner-failures.md): an escape that walked every member
-  // home holds in stage `home`; the button reads it as home, not as a failure, and the
-  // player still resumes automation by hand. A recovery convoy's end stays `failed-hold`.
-  let stage='home';
-  await page.route('**/party-api/escape', async route => {
-    if (route.request().method()!=='GET') {await route.continue();return;}
-    // The coordinated escape fell to independent recovery first, so the hold carries that note.
-    await route.fulfill({json:{escape:{id:'console-home-escape',stage,error:'Requested members need independent escape recovery',progress:{}},button:'resume',resumeAt:null}});
-  });
-  await page.goto('/');
-  await expect(page.getByText(/^Escaped home\./)).toBeVisible();
-  await expect(page.getByRole('button',{name:'Resume',exact:true})).toBeVisible();
-  await expect(page.getByText(/^Escape failed\./)).toHaveCount(0);
+  // Step 8a item 11: an escape that walked every member home holds in stage `home`; the button
+  // reads it as home, not as a failure, and the player still resumes automation by hand.
+  stage='home';await page.reload();
+  await expect(page.getByText(/^Escaped home./)).toBeVisible();
+  await expect(resume).toBeVisible();
+  await expect(page.getByText(/^Escape failed./)).toHaveCount(0);
   await info.attach('escape-home',{body:await page.screenshot(),contentType:'image/png'});
-  stage='failed-hold';await page.reload();
-  await expect(page.getByText(/^Escape failed\./)).toBeVisible();
 });
 
 test('Halloween events stay opt-in, show partial-feed timers, inherit and persist', async ({page,app},info) => {
@@ -1054,21 +1043,6 @@ test.describe('settings table', () => {
   consoleScenarioTable('settings: the rows that start from the console fixture', 600_000, settingsRowsReset, settingsRows);
 });
 
-test.describe('player mark menu', () => {
-test.use({ playerInventory: true });
-test('player context marks keep bank and upgrade pairs before merchant delivery marks', async ({ page }, info) => {
-  await page.goto('/');
-  const card = page.locator('article').filter({ has: page.getByRole('heading', { name: 'W', exact: true }) });
-  await card.getByText('sword', { exact: true }).click({ button: 'right' });
-  const menu = page.locator('[data-slot="context-menu-content"]');
-  const names = (await menu.getByRole('menuitem').allTextContents()).map(text => text.trim());
-  const expected = ['Mark for bank', 'Auto mark for bank', 'Mark for upgrade', 'Auto mark for upgrade', 'Mark for merchant', 'Auto mark for merchant'];
-  expect(names.filter(name => expected.includes(name))).toEqual(expected);
-  await expect(menu.getByRole('menuitem', { name: 'Mark for stand', exact: true })).toHaveCount(0);
-  await info.attach('player-paired-mark-order', { body: await page.screenshot(), contentType: 'image/png' });
-});
-});
-
 test('bank context marks pair automatic actions and retain a source-specific upgrade across restart', async ({ page, app }, info) => {
   const requests: unknown[] = [];
   page.on('request', request => { if (request.method() === 'POST') requests.push({ path: new URL(request.url()).pathname, body: request.postDataJSON() }); });
@@ -1121,6 +1095,9 @@ test('bank context marks pair automatic actions and retain a source-specific upg
   await info.attach('bank-auto-deconstruction-intents', { body: JSON.stringify((await app.state()).deconstructionMarks), contentType: 'application/json' });
 });
 
+// W carries a player inventory, so one run reads the merchant's menu and a player's.
+test.describe('player mark menu', () => {
+test.use({ playerInventory: true });
 test('inventory context menu and upgrade preview stay readable without queueing an upgrade', async ({ page, app }, testInfo) => {
   const previews: unknown[] = [];
   page.on('request', request => {
@@ -1205,6 +1182,18 @@ test('inventory context menu and upgrade preview stay readable without queueing 
   await expect(preview).not.toBeVisible();
   await page.keyboard.press('Escape');
   await expect(rootMenu).not.toBeVisible();
+  // A player's menu keeps each mark beside its automatic pair, bank and upgrade before the merchant
+  // delivery marks, and offers no stand mark.
+  const warrior = page.locator('article').filter({ has: page.getByRole('heading', { name: 'W', exact: true }) });
+  await warrior.getByText('sword', { exact: true }).click({ button: 'right' });
+  const playerMenu = page.locator('[data-slot="context-menu-content"]');
+  const names = (await playerMenu.getByRole('menuitem').allTextContents()).map(text => text.trim());
+  const expected = ['Mark for bank', 'Auto mark for bank', 'Mark for upgrade', 'Auto mark for upgrade', 'Mark for merchant', 'Auto mark for merchant'];
+  expect(names.filter(name => expected.includes(name))).toEqual(expected);
+  await expect(playerMenu.getByRole('menuitem', { name: 'Mark for stand', exact: true })).toHaveCount(0);
+  await testInfo.attach('player-paired-mark-order', { body: await page.screenshot(), contentType: 'image/png' });
+  await page.keyboard.press('Escape');
+});
 });
 
 

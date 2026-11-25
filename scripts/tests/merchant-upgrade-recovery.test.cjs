@@ -1,8 +1,6 @@
 const {productionHarness} = require('./helpers/items-character.cjs');
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const vm = require('node:vm');
-const coordinator = require('./helpers/coordinator-source.cjs').coordinatorSource();
 
 // A fighter's marked upgrade run (production.ts `merchantImprove`) over a twelve cell bag; each
 // upgrade the game answers raises the level, and `calls` keeps the slots in order.
@@ -175,20 +173,6 @@ test('finishing one batch preserves upgrade marks queued during that batch', () 
   assert.equal(party.upgrades.M[0].slot, 25);
 });
 
-// Step 10: the Town override is a rank 85 claim; the 100 ms watchdog that stopped movement went.
-test('the Town override never claims or stops a merchant, even with a stale global hold', async () => {
-  const stops = [], claims = [];
-  const r = vm.createContext({ escapeOwns: () => false, character: { ctype: 'merchant', map: 'main', x: -207, y: -220 },
-    root: {}, partyTownActive: true, townTraveling: false,
-    smart: { moving: true }, stop: kind => stops.push(kind), is_moving: () => true,
-    movement: { hold: request => { claims.push(request.owner); return 'granted'; } },
-  });
-  // The override is the movement requesters' (runtime/movement/character/owner.ts).
-  require('./helpers/requesters.cjs').installRequesters(r);
-  await r.enforcePartyTownOverride();
-  assert.deepEqual(stops, []);
-  assert.deepEqual(claims, []);
-});
 test('legacy manual bank pass identity survives normalization and an admitted old command',()=>{
  const {initialItemIntents}=require('../../runtime/items/saved-fields.ts');
  const {rememberUpgradeContinuation}=require('../../runtime/items/coordinator/production.ts');

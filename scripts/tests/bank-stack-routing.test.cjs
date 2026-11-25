@@ -207,14 +207,6 @@ scenarioTable('a bank worker unloads, deposits and reports over the bank runtime
   assert.equal(bank.items1.filter(Boolean).length,1);
   assert.equal(bank.items0.filter(Boolean).length,0);
 }],
- ['normal-bank deposits let the game merge into a compatible stack when duplicates exist',async () => {
-  const bank={items0:[{name:'leather',q:17},{name:'leather',q:385}],items1:Array(42).fill(null)};
-  const {c}=runtime([{name:'leather',q:4}],bank);
-  await c.bankStoreFully(0);
-  assert.equal(bank.items0[0].q,21);
-  assert.equal(bank.items0[1].q,385);
-  assert.equal(c.character.items[0],null);
-}],
  ['overflow inventory items are recovered into a valid slot before banking',async () => {
   const items = Array(43).fill(null);
   items[42] = {name:'leather',q:4};

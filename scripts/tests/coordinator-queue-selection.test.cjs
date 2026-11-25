@@ -70,6 +70,10 @@ test('queue ties use original enqueue time and an ineligible queue stays untouch
   assert.equal(take(state, pass(state, 100000)).queuedAt, 10); assert.deepEqual(state.merchantQueue, [newer]);
   newer.blockedOnBankboi = true; assert.equal(take(state, pass(state, 100000)), null);
   assert.equal(state.merchantQueue[0], newer);
+  // A delayed job waits in the queue until its retry time.
+  delete newer.blockedOnBankboi; newer.retryAt = 100001;
+  assert.equal(take(state, pass(state, 100000)), null); assert.equal(state.merchantQueue[0], newer);
+  assert.equal(take(state, pass(state, 100001)).queuedAt, 20);
 });
 
 // B02: b9b5c91e picked by priority, then queue time

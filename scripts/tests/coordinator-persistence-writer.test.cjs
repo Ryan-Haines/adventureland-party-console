@@ -83,16 +83,21 @@ test('a failed timed history save is reported, stays pending and succeeds on flu
  fail=false;writer.flush();
  assert.equal(writes.length,1);assert.equal(writes[0][1].combatLogs.W[0].message,'kept');
 });
-// The history timer belongs to the settings owner's run scope handle, so the run's stop clears it
-// and no pending save keeps the process alive.
+// The settings and history save timers belong to the settings owner's run scope handle, so the run's
+// stop clears them and no pending save keeps the process alive; the writer starts no timer of its own,
+// and an immediate save clears its pending timer.
 test('the run stop clears a pending history save',()=>{
  const {createCoordinatorRun}=require('../../runtime/lifecycle/character/run.ts');
  const started=[],cleared=[];
  const timers={setTimeout:(fn,ms)=>{const handle={fn,ms};started.push(handle);return handle;},clearTimeout:handle=>cleared.push(handle),setInterval,clearInterval};
  const run=createCoordinatorRun(timers);
- const writer=createCoordinatorPersistence({aldata:{},merchantActivity:[],settingsChanges:[],combatLogs:{}},{set(){}},run.scope('11','act'));
- writer.history();
- assert.deepEqual(started.map(handle=>handle.ms),[HISTORY_SAVE_MS]);
+ const writer=createCoordinatorPersistence({monsterFocus:[],production:{attempts:{}},aldata:{},merchantActivity:[],settingsChanges:[],combatLogs:{}},{set(){return true;}},run.scope('11','act'));
+ writer.scheduleSettings();writer.history();
+ assert.deepEqual(started.map(handle=>handle.ms),[hidden('settingsSaveDelayMs'),HISTORY_SAVE_MS]);
+ writer.settings();writer.historyNow();
+ assert.deepEqual(cleared,started,'an immediate save clears its pending timer');
+ cleared.length=0;started.length=0;
+ writer.scheduleSettings();writer.history();
  run.stop();
  assert.deepEqual(cleared,started);
 });
@@ -225,16 +230,4 @@ test('the saved notice hears only the documents the journal store appended',t=>{
  writer.settings();assert.deepEqual(heard,['selections','market','production','settings']);
  heard.length=0;writer.settings();assert.deepEqual(heard,[]);
  state.monsterFocus=['bat'];writer.settings();assert.deepEqual(heard,['selections']);
-});
-// The settings and history save timers go through the settings owner's run scope handle, so the
-// run's stop clears them; the writer starts no timer of its own.
-test('the save timers go through the run scope handle the writer is given',()=>{
- const set=[],cleared=[];let next=0;
- const timers={setTimeout:(callback,ms)=>{set.push(ms);return ++next;},clearTimeout:id=>{if(id!==undefined)cleared.push(id);}};
- const state={monsterFocus:[],production:{attempts:{}},aldata:{},merchantActivity:[],combatLogs:{},settingsChanges:[]};
- const writer=createCoordinatorPersistence(state,{set(){return true;}},timers);
- writer.scheduleSettings();writer.history();
- assert.deepEqual(set,[hidden('settingsSaveDelayMs'),hidden('historySaveMs')]);
- writer.settings();writer.historyNow();
- assert.deepEqual(cleared,[1,2]);
 });

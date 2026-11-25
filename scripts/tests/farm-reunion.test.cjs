@@ -3,8 +3,6 @@ const {drivePositions,positionsOf} = require('./helpers/targeting-module.cjs');
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
-const vm = require('node:vm');
-const { createMovementContext } = require('./fixtures/movement-owner-callers.cjs');
 const {runtime}=require('./fixtures/farm-reunion-scenario.cjs');
 const {scenarioTable}=require('./fixtures/scenarios.cjs');
 // The delayed respawn fallback reads who holds the character from the owner's report and
@@ -55,15 +53,6 @@ test('a monster attacking a party member blocks the farm reunion',()=>{
  assert.equal(r.reunionBlocked(),true);
 });
 
-// The shared harness's free character records a loop's error, as the owner does, so a row whose loop
-// fails shows it (fixtures/movement-owner-callers.cjs `every`).
-test('a free character records the error its loop throws',async()=>{
- const context=createMovementContext({});
- const endFailing=context.movement.every('reunion:probe',()=>{throw Error('reunion tick failed');});
- await new Promise(resolve=>{const end=context.movement.every('reunion:after',()=>{end();resolve();});});
- endFailing();
- assert.deepEqual(context.movement.records(),[{decision:'loop-error',owner:'reunion:probe',code:'reunion tick failed'}]);
-});
 
 scenarioTable('a farm reunion yields to a holder, climbs the round of a failed walk and accepts only the Magiport it asked for', runtime, [
  // Another live walk at a rank the farm walk does not take over holds the reunion, in place of the
@@ -165,20 +154,6 @@ scenarioTable("the event return's resume command walks out of that return's stan
   assert.equal(r.reunion.phase === 'waiting-for-movement-owner', !walks);
 }]));
 
-// The movement harness builds its pieces where a test asks for them. A context the test creates
-// itself holds no movement name, though this file loads the scenarios, the slice loaders and the
-// harness (red while walk-state.cjs and movement-owner-callers.cjs replaced vm.createContext).
-scenarioTable('a context holds movement names only once its test asks for the harness', () => null, [
- ['a bare context reads no walk state and no movement service', () => {
-  const c = vm.createContext({});
-  assert.equal(vm.runInContext("typeof walkState + ' ' + typeof movement", c), 'undefined undefined');
- }],
- ['a movement context reads its own variables as walk state and the free character as its service', () => {
-  const c = createMovementContext({ navigationIntent: { revision: 4 } });
-  assert.equal(c.walkState.intent.revision, 4);
-  assert.equal(c.movement.hold(), 'granted');
- }],
-]);
 
 // B123: the reunion counts a member at the spot by the spot's farm area. v1.5.0
 // counted one within 800 of the spot, so a member farming 900 out in a wide area

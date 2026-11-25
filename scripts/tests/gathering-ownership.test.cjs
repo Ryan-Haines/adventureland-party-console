@@ -1,5 +1,6 @@
 // Gathering as a holder of the runner's one record (runtime/merchant-jobs/character/gathering.ts): the module runs over the ports shared.js gives it in play
 // (helpers/merchant-gathering.cjs).
+const {settle,until}=require('./helpers/settle.cjs');
 const {installGathering} = require('./helpers/merchant-gathering.cjs');
 const {installEventAnniversary} = require('../../runtime/events/character/anniversary.ts');
 const test = require('node:test');
@@ -75,9 +76,9 @@ test('fishing and mining retain the broom across map travel and approach, equipp
   c.equipGatheringTool=async()=>{steps.push('equip');c.character.slots.mainhand={name:mode==='fishing'?'rod':'pickaxe'};};
   c.can_use=()=>{assert.equal(c.character.slots.mainhand.name,mode==='fishing'?'rod':'pickaxe');return true;};
   const work=g.gatheringTick();
-  for(let i=0;i<8;i++)await Promise.resolve();
+  await settle();
   assert.deepEqual(steps,['map']);assert.equal(c.character.slots.mainhand.name,'broom');
-  travel.resolve();for(let i=0;i<8;i++)await Promise.resolve();
+  travel.resolve();await settle();
   assert.deepEqual(steps,['map','approach','settle']);
   settled.resolve();await casting(c);assert.deepEqual(steps,['map','approach','settle','equip']);
   cast.resolve({found:false});await work;g.halt();
@@ -88,7 +89,7 @@ test('interrupted gathering travel never replaces the broom with a tool',async()
  const {c,g}=fixture(),travel=deferred();let equips=0,casts=0;
  c.character.map='bank';c.character.slots.mainhand={name:'broom'};
  c.smart_move=()=>travel.promise;c.equipGatheringTool=async()=>{equips++;};c.use_skill=async()=>{casts++;};
- const work=g.gatheringTick();for(let i=0;i<8;i++)await Promise.resolve();
+ const work=g.gatheringTick();await settle();
  c.root.__merchantHolder.cancelled='manual travel';travel.resolve();await work;g.halt();
  assert.equal(equips,0);assert.equal(casts,0);assert.equal(c.character.slots.mainhand.name,'broom');
 });
@@ -124,7 +125,7 @@ test('cancellation during equipment or settling prevents the skill from starting
   const {c,g}=fixture(), gate=deferred();let casts=0;
   if(step==='equip')c.equipGatheringTool=()=>gate.promise;else c.stop=action=>action==='smart'?gate.promise:Promise.resolve();
   c.use_skill=async()=>{casts++;};
-  const work=g.gatheringTick();for(let i=0;i<8;i++)await Promise.resolve();
+  const work=g.gatheringTick();await settle();
   c.root.__merchantHolder.cancelled='command travel';gate.resolve();await work;g.halt();
   assert.equal(casts,0);
  }
@@ -153,7 +154,7 @@ test('disabling gathering interrupts only the active attempt',async()=>{
  g.choose([]);await work;g.halt();
  // The hands go back to normal under the gathering holder's `restoring` phase, then it lets go.
  assert.equal(c.root.__merchantHolder?.phase,'restoring');
- for(let i=0;i<20 && c.root.__merchantHolder;i++) await new Promise(r=>setImmediate(r));
+ await until(()=>!c.root.__merchantHolder,'the gathering holder lets go');
  assert.equal(c.root.__merchantGatheringSession,null);assert.equal(c.root.__merchantHolder,null);
 });
 
@@ -357,7 +358,7 @@ test('one command id runs once, a command letting go runs the pass at once, and 
  c.merchantRunner.releaseCommand(31);assert.equal(c.merchantRunner.admit(31),true);c.merchantRunner.releaseCommand(31);
  for(let i=0;i<300 && !casts;i++) await new Promise(r=>setTimeout(r,5));
  assert.equal(casts,1);
- for(let i=0;i<20 && c.root.__merchantHolder;i++) await new Promise(r=>setImmediate(r));
+ await until(()=>!c.root.__merchantHolder,'the gathering holder lets go');
  // A mode choice while a command holds waits: the session keeps its mode and catch baseline, and the
  // hands stay with that command's settle. The command letting go runs the choice.
  c.merchantRunner.holdCommand({type:'travel',id:32});g.choose(['mining']);

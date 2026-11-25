@@ -1,3 +1,4 @@
+const {settle}=require('./helpers/settle.cjs');
 const {test}=require('node:test');
 const assert=require('node:assert/strict');
 const {ResourceLoader}=require('../../.caracal/node_modules/jsdom');
@@ -14,7 +15,7 @@ test('bridge download retries without another Engage, serializes requests, and r
     if(url.includes('steam-bridge.js')){attempts++;if(attempts===1)throw Error('temporary outage');return new Promise(resolve=>{release=()=>resolve({ok:true,text:async()=>`globalThis.bridgeReady();globalThis.__partySteamBridge={version:${steamBridgeVersion},server:globalThis.__partyServer};`})})}
     return {ok:true,text:async()=>url.includes('manifest.json')?JSON.stringify(manifestFor(code)):code};
   }}),w=l.w,until=l.until,interval=l.interval;
-  const flush=async()=>{for(let n=0;n<10;n++)await new Promise(r=>setImmediate(r));};
+  const flush=settle;
   try{
    if(mode==='stopped')w.localStorage.setItem('party-code-stopped:P','1');
    w.eval(loader);await flush();assert.equal(attempts,1);

@@ -13,6 +13,14 @@ import { DebugInstances } from '../tools/debug/service';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+// Each fixture wait that ends in time records how long it took, one JSON line per wait in the run's
+// output directory. The bounds below come from the slowest of these readings over a whole console
+// run, so each bound has a measured source and a later run's file shows when one should move.
+const waits = path.join(root, '.build/e2e-results/fixture-waits.jsonl');
+function recordWait(wait: string, began: number) {
+  mkdirSync(path.dirname(waits), { recursive: true });
+  appendFileSync(waits, JSON.stringify({ wait, ms: Date.now() - began }) + '\n');
+}
 export async function unusedPort(): Promise<number> {
   const server = createServer();
   await new Promise<void>((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolve); });
@@ -35,9 +43,10 @@ export async function stop(process: ChildProcess, graceful = false) {
   if (process.exitCode !== null || process.signalCode !== null) return;
   if (graceful && process.connected) process.send({ type: 'coordinator_shutdown' });
   else process.kill('SIGTERM');
-  const deadline = Date.now() + 10_000;
+  const began = Date.now(), deadline = began + 10_000;
   while (process.exitCode === null && process.signalCode === null && Date.now() < deadline) await delay(50);
-  if (process.exitCode === null && process.signalCode === null) {
+  if (process.exitCode !== null || process.signalCode !== null) recordWait(graceful ? 'stop-graceful' : 'stop', began);
+  else {
     await new Promise<void>((resolve, reject) => {
       const timer = setTimeout(() => reject(new Error('Owned E2E child did not terminate')), 5000);
       process.once('exit', () => { clearTimeout(timer); resolve(); });
@@ -46,13 +55,13 @@ export async function stop(process: ChildProcess, graceful = false) {
   }
 }
 async function ready(process: ChildProcess, url: string, log: string) {
-  const deadline = Date.now() + 90_000;
+  const began = Date.now(), deadline = began + 90_000;
   while (Date.now() < deadline) {
     if (process.exitCode !== null || process.signalCode !== null) break;
     try {
       const response = await fetch(url, { signal: AbortSignal.timeout(3000) });
       await response.body?.cancel();
-      if (response.ok) return;
+      if (response.ok) { recordWait('ready', began); return; }
     } catch { /* The owned server is still starting. */ }
     await delay(200);
   }
@@ -114,7 +123,7 @@ export const test = base.extend<{ app: App; merchantDialogs: boolean; merchantCo
     async function start() {
       coordinator = child(path.join(root, 'e2e/coordinator.cjs'), [], root,
         environment({ E2E_MAILBOX:String(mailbox), E2E_STATUS_CONDITIONS:String(statusConditions), E2E_FIXTURE_ADDON: String(fixtureAddon), E2E_STAND_BUY_ORDERS: String(standBuyOrders), E2E_MAP_CAPTURE: String(mapCapture), E2E_MARKET_STAND: String(marketStand), E2E_COORDINATOR_PORT: String(port), E2E_DATA_DIR: directory, E2E_MERCHANT_DIALOGS: String(merchantDialogs), E2E_MERCHANT_CONNECTED: String(merchantConnected), E2E_MANAGED_MERCHANT: String(merchantManaged), E2E_PLAYER_INVENTORY: String(playerInventory), ...(stateFields ? { PARTY_STATE_FIELDS: stateFields } : {}) }), log);
-      const started = coordinator;
+      const started = coordinator, began = Date.now();
       await new Promise<void>((resolve, reject) => {
         const output = () => existsSync(log) ? readFileSync(log, 'utf8') : 'No coordinator output';
         const cleanup = () => {
@@ -125,7 +134,7 @@ export const test = base.extend<{ app: App; merchantDialogs: boolean; merchantCo
         const exited = (code: number | null) => failed(new Error(`Coordinator exited (${code})\n${output()}`));
         const message = (message: any) => {
           if (message?.type !== 'ready') return;
-          cleanup(); resolve();
+          cleanup(); recordWait('coordinator-start', began); resolve();
         };
         const timeout = setTimeout(() => failed(new Error(`Coordinator startup timed out\n${output()}`)), 30_000);
         started.once('exit', exited); started.once('error', failed); started.on('message', message);

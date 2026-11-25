@@ -243,17 +243,21 @@ test('metrics frames reach disk before their answer, one part per bucket span, a
   expect(bucketMs, 'the metrics bucket holds the three rounds of posts').toBeGreaterThan(sendMs);
   while (Date.now() % bucketMs > bucketMs - sendMs) await page.waitForTimeout(200);
   const start = Date.now(), at = Math.floor(start / bucketMs) * bucketMs, before = lines().length;
-  const frame = (sequence: number) => {
+  // W's first frame carries one native kill, which a resent batch must not count again.
+  const kill = { id: 'metrics-native-death', at, monster: 'goo', actor: 'W' };
+  const frame = (sequence: number, character: string) => {
     const sample = { at: Math.min(at + bucketMs - 1000, Date.now()), gold: 1_000_000, luck: 100, ping: 40, level: 80, xp: 1000 + sequence, maxXp: 90_000_000 };
     return { at, sequence, observedMs: 1000, partial: false, first: sample, last: sample,
-      damage: [{ monster: 'goo', skill: 'attack', amount: 100, hits: 1 }], credits: [{ monster: 'goo', count: 1 }], kills: [], loot: [] };
+      damage: [{ monster: 'goo', skill: 'attack', amount: 100, hits: 1 }], credits: [{ monster: 'goo', count: 1 }],
+      kills: character === 'W' && sequence === 1 ? [kill] : [], loot: [] };
   };
+  const post = (character: string, sequence: number) => page.request.post(`${app.url}/party-api/metrics`, { headers: { Origin: app.url },
+    data: { character, server: 'USII', runtime: 'e2e-metrics-' + character, frames: [frame(sequence, character)] } });
   const ackMs: number[] = [], acknowledged: string[] = [];
   for (let sequence = 1; sequence <= 3; sequence++) {
     await Promise.all(characters.map(async character => {
       const sent = Date.now(), runtime = 'e2e-metrics-' + character;
-      const response = await page.request.post(`${app.url}/party-api/metrics`, { headers: { Origin: app.url },
-        data: { character, server: 'USII', runtime, frames: [frame(sequence)] } });
+      const response = await post(character, sequence);
       expect(response.status(), await response.text()).toBe(200);
       ackMs.push(Date.now() - sent);
       const receipt = JSON.stringify([character, runtime, sequence]);
@@ -275,11 +279,17 @@ test('metrics frames reach disk before their answer, one part per bucket span, a
   // The append runs inside the POST and holds no other request.
   expect(Math.max(...ackMs)).toBeLessThan(500);
   await app.restartCoordinator();
+  // The same batch sent again after the restart adds no sample and no kill.
+  expect((await post('W', 1)).status()).toBe(200);
   const metrics = await (await page.request.get(`${app.url}/party-api/metrics?from=${at - 60_000}&to=${Date.now()}`)).json();
   const samples = Object.fromEntries(characters.map(character => [character, metrics.points
     .flatMap((point: any) => point.values).filter((row: any) => row.character === character)
     .reduce((total: number, row: any) => total + row.samples, 0)]));
   expect(samples).toEqual({ W: 3, P: 3, M: 3 });
+  // The kill total is the saved lifetime count, so the restart keeps it.
+  const day = new Date(at); day.setHours(0, 0, 0, 0);
+  const kills = await (await page.request.get(`${app.url}/party-api/metrics/kills?from=${at - 60_000}&to=${Date.now()}&dayFrom=${day.getTime()}&dayTo=${Date.now()}`)).json();
+  expect(kills.monsters.find((row: any) => row.monster === 'goo')?.total).toBe(1);
 });
 
 test('the metrics collector drops a frame on its answer, and a coordinator crash after it loses none', async ({ page, app }, info) => {

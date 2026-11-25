@@ -1,5 +1,6 @@
 // Survival's steps that run on a signal: the character's death recovery, the passive pulse and the
 // coordinator's escape and recovery step.
+const {settle}=require('./helpers/settle.cjs');
 const test = require('node:test'), assert = require('node:assert/strict');
 const { EventEmitter } = require('node:events');
 const { needsWorld, installedSurvival } = require('./fixtures/survival-needs-scenario.cjs');
@@ -23,7 +24,6 @@ function recoveryWorld(t, respawns) {
   t.after(() => { s.stopAll(); delete globalThis.respawn; });
   return { w, s, socket, asked, farms, completeReport: () => report() };
 }
-const settle = async () => { for (let i = 0; i < 20; i++) await Promise.resolve(); };
 
 // The 250 ms respawn timer asked again on its next tick after the server's wait ended.
 test("the respawn asks again at the time the server's cant_respawn names", async t => {

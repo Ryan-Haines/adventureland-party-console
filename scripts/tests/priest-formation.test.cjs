@@ -2,6 +2,7 @@
 // as scenario tables split by sub-behaviour. The
 // setups live in the harness (fixtures/formation-scenario.cjs); sliced shared.js functions run on
 // the shared movement harness, so every combat step goes through the owner.
+const {settle}=require('./helpers/settle.cjs');
 const assert = require('node:assert/strict');
 const vm = require('node:vm');
 const { scenarioTable } = require('./fixtures/scenarios.cjs');
@@ -114,7 +115,7 @@ scenarioTable('formation solver: warrior approach and arcs (MOV-085c)', formatio
   for(const t of timers.filter(t=>!t.off&&t.at<=now)){t.off=true;t.fn();}
   // Each tick is one game update: the packets' and the timers' passes run once it lands (run.ts).
   await update();
-  for(let n=0;n<12;n++)await Promise.resolve();
+  await settle();
   const p=r.moves.at(-1);if(p){const d=Math.hypot(p.x-warrior.x,p.y-warrior.y);if(d){warrior.x+=(p.x-warrior.x)*Math.min(1,6/d);warrior.y+=(p.y-warrior.y)*Math.min(1,6/d);}}
  }
  try {
@@ -258,7 +259,7 @@ function wallFollower(r, follower, mover, directMessage) {
 scenarioTable('terrain recovery: followers and goals (MOV-086, MOV-087, MOV-088)', formationScenario, [
  ['peaceful recovery follower may take a safe wall detour away from priest',r=>wallFollower(r,r.warrior,r.priest,'direct visible route cannot bypass coverage')],
 ]);
-// Downloaded game geometry: each row skips when the geometry is not installed.
+// Downloaded game geometry at the pinned version: a missing client fails the row with its restore command.
 const geometry=c=>require('./helpers/game-geometry.cjs').installGameGeometry(c);
 scenarioTable('formation solver: real game geometry runs (MOV-085g)', () => formationScenario(true), [
 ['Winter Cave BBPom remains stationary while supporters regain sight and the party reaches melee',(_r,t)=>{
@@ -266,7 +267,7 @@ scenarioTable('formation solver: real game geometry runs (MOV-085g)', () => form
  Object.assign(f.target,{map:'winter_cave',mtype:'bbpompom',x:-117.2685,y:-95.5884,hp:6400,max_hp:6400,awidth:32,aheight:40});
  f.members.forEach((a,i)=>Object.assign(a,{map:'winter_cave',x:positions[i][0],y:positions[i][1],base:{h:8,v:7,vn:2},awidth:24,aheight:32}));
  for(const r of f.contexts){
-  if(!geometry(r.c))return t.skip('downloaded game geometry unavailable');
+  geometry(r.c);
   r.c.G.maps.winter_cave={};r.c.G.monsters.bbpompom={range:280};f.target.range=280;r.c.groupedFresh=()=>true;
   r.c.is_in_range=target=>r.c.combatDistance(target)<=r.c.character.range;
  }
@@ -283,7 +284,7 @@ scenarioTable('formation solver: real game geometry runs (MOV-085g)', () => form
  assert.equal(f.contexts[0].c.groupedAttackAllowed(f.target),true,'basic attack authorization resumes');
 }],
  ['Frozen Cave movement remains collision-safe with actual downloaded game geometry',(r,t)=>{
- if(!geometry(r.c))return t.skip('downloaded game geometry unavailable');
+ geometry(r.c);
  Object.assign(r.priest,{map:'winter_cave',x:-298,y:-132,base:{h:8,v:7,vn:2},awidth:24,aheight:32});
  Object.assign(r.warrior,{map:'winter_cave',x:-93,y:-117,awidth:24,aheight:32});
  Object.assign(r.monster,{map:'winter_cave',x:-51,y:-80,target:'W',awidth:32,aheight:40});
@@ -331,7 +332,7 @@ scenarioTable('combat movement hands back through the owner (MOV-096)', formatio
    for(const t of intervals.filter(t=>!t.off && [100,250].includes(t.ms)))t.fn();
    for(const fn of packets.entities??[])fn({});
    for(const t of timers.filter(t=>!t.off&&t.at<=now)){t.off=true;t.fn();}
-   for(let k=0;k<12;k++)await Promise.resolve();
+   await settle();
   }
   assert.ok(attacks>=2,'attacks must run while the planner or hold owns movement');assert.ok(support>0);
   assert.equal(r.moves.length,0);assert.equal(c.partyCombatState.error,null);

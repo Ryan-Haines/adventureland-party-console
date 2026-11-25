@@ -60,9 +60,11 @@ function run(directory,mode,{killAfter,closeAt,tear}){
  return new Promise((resolve,reject)=>{
   const child=spawn(process.execPath,[...flags,'-e',writer,directory,mode,String(closeAt||0)],{stdio:['ignore','ignore','pipe','ipc']});
   let stderr='';child.stderr.on('data',chunk=>{stderr+=chunk;});
-  const acks=[];let killedAt=0,timer;
+  const acks=[];let killedAt=0,timer,refused=null;
   const kill=()=>{if(!killedAt){killedAt=Date.now();child.kill('SIGKILL');}};
   child.on('message',message=>{
+   // While the writer lives, a second open of its journal is refused.
+   if(message.type==='ready')refused=liveRefusal(directory);
    if(message.type==='ready'&&killAfter!==undefined)timer=setTimeout(kill,killAfter);
    if(message.type==='ack')acks.push({n:message.n,at:Date.now()});
    if(message.type==='step')kill();
@@ -77,9 +79,14 @@ function run(directory,mode,{killAfter,closeAt,tear}){
    if(tear)tearTail(main);
    const started=Date.now();
    const result=spawnSync(process.execPath,[...flags,'-e',reader,directory],{timeout:REOPEN_LIMIT_MS,encoding:'utf8'});
-   resolve({acks,killedAt,lockLeft,reopenMs:Date.now()-started,result,directory});
+   resolve({acks,killedAt,lockLeft,refused,reopenMs:Date.now()-started,result,directory});
   });
  });
+}
+function liveRefusal(directory){
+ const {CoordinatorJsonlStore}=require(path.join(persistence,'jsonl-store.ts'));
+ try{new CoordinatorJsonlStore(path.join(directory,'state.jsonl'),path.join(directory,'state.new.jsonl'),{setTimeout,clearTimeout}).close();return 'opened';}
+ catch(error){return error.message;}
 }
 // Cuts the journal inside its last line, as a power loss mid-append can.
 function tearTail(main){
@@ -124,6 +131,7 @@ const cases=[
 for(const [name,mode,options] of cases)
  test('SIGKILL at '+name+' reopens in bounded time with every saved record (seed '+seed+')',async t=>{
   const outcome=await run(prepare(t),mode,options);
+  assert.match(outcome.refused,/live writer/);
   if(mode!=='shutdown')assert.ok(outcome.lockLeft,'the killed writer left its lock behind');
   check(outcome,options);
   assert.ok(outcome.reopenMs<REOPEN_LIMIT_MS);

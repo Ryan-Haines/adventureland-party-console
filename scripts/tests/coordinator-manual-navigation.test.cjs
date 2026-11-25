@@ -7,11 +7,13 @@ function fixture() {
     statuses: {W: {seenAt: 100000}, P: {seenAt: 100000}}, characterLocations: {}, commands: {},
     farmAreaState: {paused: true, failures: {old: 2}, pending: 'retry', message: 'blocked'}};
   const calls = [], timers = [], block = {realm: 'SR_EUI', connected: true};
-  const persist = () => calls.push(['persist']), stop = async worker => calls.push(['stop', worker]);
+  // A row plants a worker stop that fails through `failStop`.
+  let failure = null;
+  const persist = () => calls.push(['persist']), stop = async worker => { calls.push(['stop', worker]); if (failure) throw failure; };
   // Go home is the realm owner's command, built on its ports as application.ts builds it,
   // on the fixture's clock, which stands at the reports' time.
   const home = createMerchantHomeCommand(state, {now: () => state.statuses.W.seenAt, nextCommand: () => state.nextCommandId++, block: () => block,
-    realmExists: () => true, realmLabel: realm => realm, restart: stop, log: message => calls.push(['log', message]), persist});
+    realmExists: () => true, realmLabel: realm => realm, restart: stop, log: (message, level) => calls.push(['log', message, level]), persist});
   const service = createCoordinatorManualNavigation(state, {home,
     now: () => 100000, queue: (names, reason) => calls.push(['queue', names, reason]), releaseEscape: () => calls.push(['release']),
     navigation: {members: () => ['W', 'P'], invalidate: (...args) => calls.push(['invalidate', ...args]),
@@ -20,7 +22,7 @@ function fixture() {
     stop: async worker => calls.push(['stop', worker]), later: (callback, ms) => {timers.push(callback); calls.push(['later', ms]);},
     log: message => calls.push(['log', message]), persist: () => calls.push(['persist']),
   });
-  return {state, calls, timers, block, service};
+  return {state, calls, timers, block, service, failStop: error => { failure = error; }};
 }
 
 test('manual party travel resets recovery but keeps an event return deferred', () => {
@@ -43,9 +45,24 @@ test('individual travel and merchant home preserve command IDs and restart the w
   // Go home's reply goes to the dashboard, so the worker stops at the write (3.10 rule 5).
   assert.deepEqual(t.calls.slice(-2), [['persist'], ['stop', t.block]]);
   assert.equal(t.timers.length, 0);
+  // A repeated go home on the realm it already moved to restarts nothing; a member that is not the
+  // merchant cannot send it.
+  t.calls.length = 0;
+  assert.equal(t.service.handle({type: 'go-home', character: 'M'}), null);
+  assert.equal(t.calls.some(call => call[0] === 'stop'), false);
+  assert.equal(t.service.handle({type: 'go-home', character: 'P'}).status, 409);
   t.calls.length = 0;
   t.service.handle({type: 'character-travel', character: 'M', location: {map: 'bank', x: 0, y: 0}});
-  assert.equal(t.calls.some(call => call[0] === 'release'), false); assert.equal(t.state.commands.M.id, 22);
+  assert.equal(t.calls.some(call => call[0] === 'release'), false); assert.equal(t.state.commands.M.id, 23);
+});
+
+// Go home has no arrival window, so a worker stop that fails is logged as the command's failure.
+test('merchant home logs a worker stop that fails', async () => {
+  const t = fixture();
+  t.block.connected = false; t.failStop(Error('worker busy'));
+  t.service.handle({type: 'go-home', character: 'M'});
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(t.calls.at(-1), ['log', 'Could not restart M to return home: Error: worker busy', 'error']);
 });
 
 test('Town invalidates shared intent only for the party leader', () => {

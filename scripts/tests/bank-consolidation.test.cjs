@@ -38,10 +38,11 @@ test('unconfirmed cross-pane transfer preserves all stock for journal recovery',
   assert.equal(r.total(), 663);
 });
 
+// The deposit lets the game merge into the first compatible pile and leaves a duplicate pile as it is.
 for (const earlier of [false, true]) test('gem deposit preserves bank stock '+(earlier?'and an unmarked inventory stack':'with no other carried stack'),async()=>{
- const items=[earlier?{name:'gem0',q:10}:null,{name:'gem0',q:3}];const bank={items0:[{name:'gem0',q:20}]};let stores=0;
+ const items=[earlier?{name:'gem0',q:10}:null,{name:'gem0',q:3}];const bank={items0:[{name:'gem0',q:20},{name:'gem0',q:385}]};let stores=0;
  const r=bankRuntime(bank,items,{gem0:9999},{character:{isize:42}});
  r.game.bank_retrieve=async()=>{throw new Error('deposit must not retrieve bank stock');};
  r.game.bank_store=async(inv,pack,index)=>{assert.equal(index,undefined);bank[pack][0].q+=items[inv].q;items[inv]=null;stores++;};
- await r.bank.bankStoreFully(1);assert.equal(bank.items0[0].q,23);assert.equal(items[0]?.q,earlier?10:undefined);assert.equal(items[1],null);assert.equal(stores,1);assert.equal([...items,...bank.items0].filter(Boolean).reduce((n,x)=>n+x.q,0),earlier?33:23);
+ await r.bank.bankStoreFully(1);assert.equal(bank.items0[0].q,23);assert.equal(items[0]?.q,earlier?10:undefined);assert.equal(items[1],null);assert.equal(bank.items0[1].q,385);assert.equal(stores,1);assert.equal([...items,...bank.items0].filter(Boolean).reduce((n,x)=>n+x.q,0),earlier?418:408);
 });

@@ -1,3 +1,4 @@
+const {settle}=require('./helpers/settle.cjs');
 const {test}=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm');
 const policy=require('../../runtime/settings/coordinator/persistence/dashboard-import.ts');
 const {stateKeys}=require('../../runtime/settings/coordinator/persistence/snapshots.ts');
@@ -56,7 +57,6 @@ test('invalid JSON, malformed marks and unsafe keys reject the entire upload',()
 });
 
 function routes() {
- const source=require('./helpers/coordinator-source.cjs').coordinatorSource();
  const handlers={},writes=[],saved=[];
  const party={threshold:10,anniversary:{blacklist:[],round:7},merchantQueue:[{id:'keep'}]};
  const c={party,ownedCharacter:n=>n==='W',LOCALSTORAGE_PATH:'state.jsonl',
@@ -107,12 +107,6 @@ test('import metadata resolves the current installation path at request time',()
  assert.equal(metadata.canonicalPath,'C:/installation/localStorage/caraGarage.jsonl');
  assert.equal(metadata.dockerPath,'/data/localStorage/caraGarage.jsonl');assert.equal(metadata.maxBytes,128*1024*1024);
 });
-test('a persistence failure restores in-memory settings and reports the recovery backup',()=>{
- const f=routes(),data=source({threshold:25});const preview=f.call('/party-api/dashboard-state/preview',data);
- f.c.persistSettings=()=>{throw Error('disk full');};
- const failed=f.call('/party-api/dashboard-state/import',data,preview.body.digest);
- assert.equal(failed.status,500);assert.equal(f.party.threshold,10);assert.match(failed.body.error,/Backup:/);
-});
 
 // v1.5.0's failed apply answered 500 with no cause, and its
 // restore persisted again in a catch that dropped a second failure (http/dashboard-import.ts:41-50,
@@ -122,7 +116,7 @@ test('X1: a failed import names its cause and restores without another save',()=
  const f=routes(),data=source({threshold:25});const preview=f.call('/party-api/dashboard-state/preview',data);
  let saves=0;f.c.persistSettings=()=>{saves++;throw Error('disk full');};
  const failed=f.call('/party-api/dashboard-state/import',data,preview.body.digest);
- assert.equal(failed.status,500);assert.match(failed.body.error,/\(disk full\)/);
+ assert.equal(failed.status,500);assert.match(failed.body.error,/\(disk full\)/);assert.match(failed.body.error,/Backup:/);
  assert.equal(saves,1,'the restore saves nothing after the failed save');assert.equal(f.party.threshold,10);
 });
 
@@ -160,7 +154,7 @@ for(const metadataFailure of [false,true])test(metadataFailure ? 'loading import
  const processFetch=globalThis.fetch;globalThis.fetch=c.fetch;t.after(()=>{globalThis.fetch=processFetch;});
  vm.runInContext(code,c);const render=()=>{cursor=0;return c.DashboardStateImport();};
  const nodes=t=>t&&typeof t==='object'?[t,...t.children.flatMap(nodes)]:[];
- const flush=async()=>{for(let i=0;i<15;i++)await Promise.resolve();};
+ const flush=settle;
  let tree=render();effects.forEach(fn=>fn());await flush();tree=render();
  if(metadataFailure){
   const alert=nodes(tree).find(n=>n.props.role==='alert');assert.ok(alert);

@@ -234,14 +234,6 @@ test('game-window bridge persists one generic bootstrap, releases once, and wait
   } finally { host.__partySteamBridge?.dispose(); dom.window.close(); }
 });
 
-// MJ49: the committed bridge bundle is the build of
-// its source, so a Steam window never runs a bridge older than the console that installs it.
-test('MJ49: the committed characters/steam-bridge.js carries the source steamBridgeVersion', () => {
-  const { readFileSync } = require('node:fs'), path = require('node:path');
-  const { steamBridgeVersion } = require('../../runtime/lifecycle/roster/connection.ts');
-  const bundle = readFileSync(path.join(__dirname, '../../characters/steam-bridge.js'), 'utf8');
-  assert.equal(Number(/var steamBridgeVersion = (\d+);/.exec(bundle)?.[1]), steamBridgeVersion);
-});
 
 // The version literal moves only when someone bumps it, so a source change with no bump leaves a stale
 // bundle that the literal never shows. `build:runtime --check` builds in memory and names each

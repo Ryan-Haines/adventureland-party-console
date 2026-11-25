@@ -26,7 +26,7 @@ export const HOOKS = {
     returns: 'the spawn, the planned walk and its lead, the phase (scheduled, due, live) and the short window; or nothing' },
   // EVT-011's fact for the hunting owner's Hunt: the member's character reports `huntEventPending`.
   'event.pending': { side: 'coordinator', kind: 'request', part: 'events (06)', answers: 'one', core: true, addonMayAsk: true,
-    fixture: 'scripts/tests/coordinator-hunt-control.test.cjs#event.pending: a released Hunt waits while a member reports an event pending',
+    fixture: 'scripts/tests/coordinator-hunt-control.test.cjs#events-pending waits for one report per online participant after the hand-in, then releases',
     receives: 'a member name', returns: "true while the member's latest report says its Hunt waits on an event" },
   // EVT-043's hold for the hunting owner's rare: the staging and the cycle's own return run no 01 task.
   'event.cycle': { side: 'coordinator', kind: 'request', part: 'events (06)', answers: 'one', core: true, addonMayAsk: true,

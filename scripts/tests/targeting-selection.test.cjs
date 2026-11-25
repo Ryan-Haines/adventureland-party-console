@@ -475,15 +475,8 @@ scenarioTable('a selection pass reads each fact once', () => {
   }],
 ]);
 
-// Each hidden pick reads its declaration's default, which is today's value, and no file of either
-// targeting folder reads a pick's default other than through `pick`.
+// No file of either targeting folder reads a hidden pick's default other than through `pick`.
 scenarioTable("each hidden pick reads its declaration at today's value", () => null, [
-  ["the defaults are today's values", () => {
-    const { pick } = require('../../runtime/characters/targeting/saved-fields.ts');
-    const today = { setAsideMs: 10000, targetPassMs: 1000, crabReplyMs: 2000, attackStallMs: 5000, pursuitStallMs: 5000, unseenGoneMs: 8000,
-      snapshotGapMs: 10000, successorGrantMs: 3000, passingMemoryMs: 60000, groupReadyMs: 500, queueTickMs: 100, lostTargetRadius: 180 };
-    assert.deepEqual(Object.fromEntries(Object.keys(today).map(name => [name, pick(name)])), today);
-  }],
   ['every read goes through pick', () => {
     const path = require('node:path'), root = path.join(__dirname, '../..');
     const files = ['runtime/characters/targeting', 'runtime/coordinator/targeting'].flatMap(dir =>

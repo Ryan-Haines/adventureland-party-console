@@ -153,14 +153,12 @@ function runtimeWithEveryField() {
   return r;
 }
 
-test('every key the character script reports or the coordinator stamps appears in the field catalog', () => {
-  const missing = [...reportedKeys(), ...coordinatorKeys()].filter(key => !Object.hasOwn(catalog, key));
-  assert.deepEqual(missing, [], 'Add these report fields to table F in runtime/status/rules.ts');
-});
-
-test('the catalog lists no field the script and coordinator no longer produce', () => {
-  const produced = new Set([...reportedKeys(), ...coordinatorKeys()]);
-  assert.deepEqual(names.filter(name => !produced.has(name)), []);
+// One scan of the script and coordinator keys checks both directions against the catalog.
+test('every key the character script reports or the coordinator stamps appears in the field catalog, and the catalog lists no field they no longer produce', () => {
+  const produced = [...reportedKeys(), ...coordinatorKeys()];
+  assert.deepEqual(produced.filter(key => !Object.hasOwn(catalog, key)), [], 'Add these report fields to table F in runtime/status/rules.ts');
+  const keys = new Set(produced);
+  assert.deepEqual(names.filter(name => !keys.has(name)), []);
 });
 
 test('fields the coordinator consumes at ingestion are marked as not stored', () => {

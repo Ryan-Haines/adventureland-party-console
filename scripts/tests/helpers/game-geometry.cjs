@@ -2,11 +2,12 @@ const fs = require('node:fs'), path = require('node:path'), vm = require('node:v
 const manifest=require('../fixtures/game/manifest.json');
 const { sliceBetween } = require('./slice.cjs');
 function installGameGeometry(context, requestedVersion) {
+  // A missing client fails the row with the path and the command that restores the pinned versions
+  // (fixtures/game/manifest.json), as helpers/installed-game.cjs does.
   const base = path.resolve('.caracal/game_files');
-  if (!fs.existsSync(base)) return false;
   const candidates=requestedVersion===undefined?manifest.versions.map(entry=>entry.version).sort((a,b)=>Number(b)-Number(a)):[String(requestedVersion)];
   const version = candidates.find(n => fs.existsSync(path.join(base,n,'old_common_functions.js')) && fs.existsSync(path.join(base,n,'data.js')));
-  if (!version) return false;
+  if (!version) throw Error('Game geometry rows need client '+candidates.join(' or ')+' (data.js and old_common_functions.js) in '+base+'; run node scripts/ci/restore-game-fixtures.cjs');
   const data = fs.readFileSync(path.join(base, version, 'data.js'), 'utf8');
   const game = JSON.parse(data.slice(data.indexOf('{'), data.lastIndexOf('}') + 1));
   const common = fs.readFileSync(path.join(base, version, 'old_common_functions.js'), 'utf8');

@@ -1,9 +1,5 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const path = require('node:path');
-const vm = require('node:vm');
-const source = fs.readFileSync(path.join(__dirname, '../../characters/shared.js'), 'utf8');
 const {scenarioTable}=require('./fixtures/scenarios.cjs');
 const {fixture}=require('./fixtures/farming-navigation-client-scenario.cjs');
 

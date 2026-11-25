@@ -33,22 +33,10 @@ scenarioTable("a monster's death releases its id once, on one listener of each k
   installTargetingDeath(generation(),socket,ports);
   assert.deepEqual(['death','disappear','entities'].map(e=>socket.listeners(e).length),[1,1,1],'a reinstall leaves one listener of each kind');
  }],
- // TG21's live half: a goo's death comes to the client as a `death` packet and a lethal
- // `disappear`, and each listener reports it (in the live run, every goo of one window reached
- // the priest's queue twice with the step 3 handler), so `reportFightDeath` sends the queue
- // client a death only the first time it records one.
- ['TG21: a second packet for a death already recorded sends the queue client nothing',({source})=>{
-  const start=source.indexOf('  function reportFightDeath(id) {'),end=source.indexOf('  function groupedEntityReport(',start);
-  // The module's own queue client (state.queueClient, which installQueueClient sets).
-  const queue=[],flushes=[],queueClient={timing:{death(){}},reportEvidence(){},death:id=>queue.push(id),flush:()=>flushes.push(1)};
-  const c=targetingContext({root:{},queueClient,fightDeaths:[],groupedCombat:null,character:{map:'main',in:'main'},reunionRealm:()=>'US I',coordinatorClockOffset:0,Date,get_player:()=>null});
-  vm.runInContext(source.slice(start,end),c);
-  c.reportFightDeath('goo1');c.reportFightDeath('goo1');c.reportFightDeath('goo2');
-  assert.deepEqual(queue,['goo1','goo2'],'one queue death per death');
-  assert.equal(c.fightDeaths.length,2);
- }],
  // The farm death escape's cases C and B kill the warrior twice in the Arena 34 s apart, inside
- // the record's 60 s memory: the priest's queue client heard only the first.
+ // the record's 60 s memory: the priest's queue client heard only the first. A goo's death comes
+ // as a `death` packet and a lethal `disappear`, and each listener reports it (TG21's live half),
+ // so a monster's second report sends the queue client nothing.
  ["TG21: a character's second death in the same place reaches the queue client again",()=>{
   const queue=[],queueClient={timing:{death(){}},reportEvidence(){},death:id=>queue.push(id),flush(){}};
   const c=targetingContext({root:{},queueClient,fightDeaths:[],groupedCombat:null,character:{map:'arena',in:'arena'},reunionRealm:()=>'US I',coordinatorClockOffset:0,Date,

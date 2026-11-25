@@ -206,9 +206,9 @@ require('node:test')('targeting.groupView: the read names the queue ledger facts
   assert.equal(published.hooks['targeting.groupView']({ group: 'party:X' }), undefined);
 });
 
-// The group's anchor without an add-on (coordinator/targeting/queue.ts `healingAnchor`): the usable
-// healing priest, else the leader. The add-on's `group.anchor` answer stays in class-skills.test.cjs, whose
-// process holds no other answer to that hook.
+// The group's anchor (coordinator/targeting/queue.ts `healingAnchor`): the usable healing priest, else
+// the leader, unless an add-on's `group.anchor` answer names a member. This process registers no
+// other answer to that hook.
 scenarioTable("the group anchors on the usable healing priest, else the leader", ()=>undefined, [
  ['composition selects a usable priest deterministically, otherwise permits leader anchoring', ()=>{
   const {healingAnchor}=require('../../runtime/coordinator/targeting/queue.ts');
@@ -219,5 +219,31 @@ scenarioTable("the group anchors on the usable healing priest, else the leader",
   assert.equal(healingAnchor(members,10000,'P1').name,'P2');
   members[3].status.hp=100;assert.equal(healingAnchor(members,10000,'P2').name,'P2');
   assert.equal(healingAnchor(members,20000),undefined);
+ }],
+ // Movement step 9 items 5 and 11: the answer keeps the priest's healing range,
+ // the positioning it reads names a member stepping away, and an unavailable answer or a switched-off
+ // add-on leaves the healing anchor.
+ ['an add-on group.anchor answer centres the group on its member and keeps the priest range', ()=>{
+  const {evaluateGroup}=require('../../runtime/coordinator/targeting/queue.ts');
+  const {partyHooks}=require('../../runtime/hooks/index.ts');
+  const {registration,ANCHOR_ADDON}=require('./fixtures/anchor-addon.ts');
+  const hooks=partyHooks();
+  if(!hooks.registrations().some(r=>r.name===ANCHOR_ADDON))assert.deepEqual(hooks.register(registration),{ok:true});
+  const members=['W','P','M'].map((name,i)=>({name,ctype:['warrior','priest','mage'][i],revision:1,status:{seenAt:1000,hp:100,map:'main',in:'main',server:'USII',x:i*20,y:0,range:[40,200,120][i],
+   combatSelection:{runtimeId:name,id:null,revision:0,map:'main'},groupedCombat:{protocol:4,anchorVisible:true,ack:null,candidates:[],threats:[],evidence:[],deaths:[]}}}));
+  const group=()=>{const g=evaluateGroup(null,members,'W',1000);return [g.anchor.name,g.range,g.priest];};
+  try{
+   assert.deepEqual(group(),['P',180,'P']);
+   hooks.configure({[ANCHOR_ADDON]:{enabled:true,settings:{member:'W',second:'M'}}});
+   assert.deepEqual(group(),['W',180,'P']);
+   // The scope's placed value wins over the account's.
+   assert.equal(evaluateGroup(null,members,'W',1000,0,false,null,[],{addonSettings:{[ANCHOR_ADDON]:{member:'M'}}}).anchor.name,'M');
+   members[0].status.combat={positioning:{movementOwner:'addon:'+ANCHOR_ADDON,phase:'stepping-away'}};
+   assert.deepEqual(group(),['M',180,'P']);
+   members[0].status.combat=undefined;members[0].status.hp=0;
+   assert.deepEqual(group().slice(0,1),['P']);
+   members[0].status.hp=100;hooks.configure({[ANCHOR_ADDON]:{enabled:false,settings:{member:'W'}}});
+   assert.deepEqual(group(),['P',180,'P']);
+  }finally{hooks.configure({});}
  }],
 ]);

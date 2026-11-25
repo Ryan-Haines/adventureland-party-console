@@ -1,8 +1,7 @@
 const {withRunner}=require('./helpers/merchant-runner.cjs');
 const {scenarioTable}=require('./fixtures/scenarios.cjs');
 const {productionFunctions} = require('./helpers/production-functions.cjs');
-const test=require('node:test');const assert=require('node:assert/strict');const fs=require('node:fs');const vm=require('node:vm');
-const source=require('./helpers/coordinator-source.cjs').coordinatorSource();
+const test=require('node:test');const assert=require('node:assert/strict');const vm=require('node:vm');
 const {createMerchantObservation}=require('../../runtime/items/coordinator/market.ts');
 const {createMerchantIdleRoute}=require('../../runtime/merchant-jobs/coordinator/routes.ts');
 function fixture(){const party={merchantCharacter:'M',statuses:{M:{map:'bank',x:0,y:-37,seenAt:Date.now()}},merchantQueue:[{reason:'marked items'}],gatheringModes:['fishing'],gatheringCooldowns:{fishing:Date.now()+60000},commands:{},standListings:[],nextCommandId:1,withdrawals:{},bankbois:{}};
@@ -42,7 +41,6 @@ scenarioTable('the merchant idle dispatch gives the stand return or yields to it
 test('ready collection and ready gathering retain priority over stand return',()=>{for(const mode of ['collection','gathering']){const {r,party}=fixture();if(mode==='collection')r.markedCollectionReady=()=>true;else party.gatheringCooldowns.fishing=0;r.dispatchMerchantIdle();assert.equal(party.commands.M,undefined);}});
 
 test('stand-open log checks coordinates before claiming arrival',()=>{const logs=[];const observer=createMerchantObservation({listings:[]},{log:(...args)=>logs.push(args),persist(){},publish(){}});const body={standOpen:true,map:'bank',x:0,y:-37},previous={standOpen:false,map:'bank'};observer.observe(body,previous);assert.equal(logs[0][0],'Stand opened away from market');body.map='main';body.x=-63;body.y=100;observer.observe(body,previous);assert.equal(logs[1][0],'At stand');});
-const shared=fs.readFileSync('characters/shared.js','utf8');
 // The stand return in the runner: a walk that resolves on the wrong map is no arrival. The game's
 // open_stand and close_stand flip the character's stand.
 function standContext(extra){const c=vm.createContext(Object.assign({request:async()=>{},root:{},character:{name:'M',map:'bank',x:0,y:-37,items:[]},

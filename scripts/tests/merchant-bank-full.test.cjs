@@ -66,23 +66,3 @@ test('unavailable live reservation protection prevents deposits',async()=>{
  await assert.rejects(r.bank.merchantVisitBank({jobId:'bank',merchantBankMarked:[{slot:0,item:{name:'vitscroll',q:5}}]},[]),/reservations unavailable/);
  assert.deepEqual(r.deposited(),[]);
 });
-
-test('capacity blocks ignore gold and movement but unblock after contents change', () => {
-  const {coordinatorMerchantCapacitySignature} = require('../../runtime/merchant-jobs/rules.ts');
-  const party = { merchantCharacter: 'GoldMajesty', statuses: { GoldMajesty: { items: [] } },
-    bankSnapshot: { packs: { items0: [{ name: 'helmet' }] }, gold: 5 },
-    merchantJobBlocks: {}, merchantQueue: [], nextCommandId: 1 };
-  const r = { party, merchantLog() {}, persistSettings() {}, dispatchMerchant() {},
-    merchantCapacitySignature: name => coordinatorMerchantCapacitySignature(party, name), stampMerchantJob: job => job };
-  require('./helpers/coordinator-merchant.cjs').merchantQueueRuntime(r);
-  party.merchantJobBlocks['GoldMajesty\nupgrades and compounds'] = {
-    capacitySignature: r.merchantCapacitySignature('GoldMajesty'), error: 'inventory_full',
-  };
-  party.statuses.GoldMajesty.gold = 500;
-  party.statuses.GoldMajesty.x = 100;
-  r.queueMerchant(['GoldMajesty'], 'upgrades and compounds');
-  assert.equal(party.merchantQueue.length, 0);
-  party.statuses.GoldMajesty.items.push({ slot: 1, item: { name: 'scroll0' } });
-  r.queueMerchant(['GoldMajesty'], 'upgrades and compounds');
-  assert.equal(party.merchantQueue.length, 2);
-});

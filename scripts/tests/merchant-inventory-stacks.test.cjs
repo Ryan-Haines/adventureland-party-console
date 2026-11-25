@@ -71,19 +71,6 @@ test('merge endpoint plans with current reservations rather than the old dispatc
  party.marked={M:[{slot:15,item:s.items[1].item}]};check();assert.equal(merge.source.name,'gem1');
 });
 
-// The composed route plans the bag the merchant sent, not the stored report's, and a bag with a
-// malformed cell plans nothing.
-test('the composed stack merge route plans the sent bag',()=>{
- const {createCoordinatorInventoryActions}=require('../../runtime/items/coordinator/routes/inventory.ts');
- const stored={name:'M',seenAt:Date.now(),items:[{slot:0,item:{name:'gem1',q:1}},{slot:1,item:{name:'gem1',q:1}}]};
- const state={merchantCharacter:'M',statuses:{M:stored},nextCommandId:1,merchantCatalog:{allItems:[{id:'gem1',meta:{definition:{s:9999}}}]}};
- const actions=createCoordinatorInventoryActions(state,{offline:()=>false,now:()=>Date.now(),anniversary:()=>({}),bankboiBusy:()=>false,plan,reconcile(){}});
- let answer;const send=items=>{actions.merge({body:{character:'M',items}},{json:body=>{answer=body.merge;}});return answer;};
- const merge=send([{slot:4,item:{name:'gem1',q:2}},null,{slot:6,item:{name:'gem1',q:3}}]);
- assert.deepEqual([merge.to,merge.from,merge.quantity],[4,6,3]);
- assert.equal(send([{slot:4,item:{name:'gem1',q:2}},{item:{name:'gem1',q:3}}]),null);
-});
-
 // Failure inventory: a per-copy report carries no definition, so the stack
 // limit falls to 1 and the merchant never merges partial stacks.
 test('per-copy reports read the stack limit from the catalog',()=>{
@@ -161,4 +148,6 @@ test('the composed merge route plans the bag the merchant sends, not the stored 
  const ask=items=>{let merge;actions.merge({body:{character:'M',items}},{json:body=>{merge=body.merge;},status(){return this;}});return merge;};
  assert.equal(ask(stored),null,'the stored bag holds nothing to merge');
  const merge=ask(sent);assert.deepEqual([merge.from,merge.to],[1,0]);
+ // A bag with a malformed cell, a copy with no slot, plans nothing.
+ assert.equal(ask([{slot:0,item:{name:'gem1',q:5},meta},{item:{name:'gem1',q:7},meta}]),null);
 });

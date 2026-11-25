@@ -1,3 +1,4 @@
+const {settle}=require('./helpers/settle.cjs');
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const {startRecovery, recoveryDelay, probeDashboard, clearRecoveryHistory, clearWhenUp, recoveryStoragePrefix} = require('../../dashboard/lib/dashboard-recovery.ts');
@@ -17,7 +18,7 @@ function fixture(probe = async () => null, claimed = () => false, claim = null) 
       const next=[...timers].filter(([,t])=>t.at<=end).sort((a,b)=>a[1].at-b[1].at)[0];
       if(!next) break;
       now=next[1].at; timers.delete(next[0]); next[1].fn();
-      for(let i=0;i<8;i++) await Promise.resolve();
+      await settle();
     }
     now=end;
   }

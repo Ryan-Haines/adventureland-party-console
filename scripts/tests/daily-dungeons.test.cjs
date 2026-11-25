@@ -206,9 +206,17 @@ scenarioTable('a daily dungeon entry, exit and route pause stay under the dungeo
   assert.equal(f.party.dailyDungeons.phase, 'exiting');
  }],
  // The visit changes phase only through record.ts `caveStep`, along H7's edges. One visit
- // runs from entry to the release in v1.5.0's order with no step outside the table.
+ // runs from entry to the release in v1.5.0's order with no step outside the table. `cave.phase`
+ // tells each step once (6 part 2): the last member out steps exiting to held and held to idle in
+ // one reconcile, and the live Cave owner rows' event exit missed `held`.
  ['a visit walks its phases from entry to release along H7 edges', f=>{
   const { CAVE_EDGES } = require('../../runtime/hunting/coordinator/record.ts');
+  const { partyHooks: hooks } = require('../../runtime/hooks/index.ts');
+  const heard = [];
+  const registered = hooks().register({ name: 'cave-phase-fixture', folder: 'addons', author: 'test', summary: 'Hears the Cave phase notices.',
+   hooks: { 'cave.phase': payload => heard.push(payload.from + ' -> ' + payload.to) } });
+  assert.ok(registered.ok, registered.message);
+  hooks().configure({ 'cave-phase-fixture': { enabled: true } });
   const steps = []; let phase = 'idle';
   f.party.dailyDungeons = { protectFromEvents: true, participants: [], commands: {}, operations: [] };
   Object.defineProperty(f.party.dailyDungeons, 'phase', { enumerable: true, get: () => phase, set: to => { if (to !== phase) steps.push(phase + ' -> ' + to); phase = to; } });
@@ -218,28 +226,13 @@ scenarioTable('a daily dungeon entry, exit and route pause stay under the dungeo
    f.action({ action: 'exit' });
    for (const name of ['W', 'P', 'M']) f.party.statuses[name].dungeon.cave = null;
    f.service.reconcile();
-  } finally { console.error = error; }
+  } finally { console.error = error; hooks().configure({ 'cave-phase-fixture': { enabled: false } }); }
   assert.deepEqual(steps, ['idle -> gathering', 'gathering -> entering', 'entering -> active', 'active -> exiting', 'exiting -> held', 'held -> idle']);
+  assert.deepEqual(heard, steps, 'cave.phase tells each step once');
   for (const step of steps) { const [from, to] = step.split(' -> '); assert.ok(CAVE_EDGES[to].from.includes(from), step + ' is an H7 edge'); }
   assert.deepEqual(errors, []);
  }],
- // `cave.phase` tells each step once (6 part 2). The last member out steps exiting to held and held
- // to idle in one reconcile, and the live Cave owner rows' event exit missed `held`.
- ['an exit that ends in one reconcile tells held and idle', f=>{
-  const { partyHooks: hooks } = require('../../runtime/hooks/index.ts');
-  const heard = [];
-  const registered = hooks().register({ name: 'cave-phase-fixture', folder: 'addons', author: 'test', summary: 'Hears the Cave phase notices.',
-   hooks: { 'cave.phase': payload => heard.push(payload.from + ' -> ' + payload.to) } });
-  assert.ok(registered.ok, registered.message);
-  hooks().configure({ 'cave-phase-fixture': { enabled: true } });
-  try {
-   f.active();
-   f.action({ action: 'exit' });
-   for (const name of ['W', 'P', 'M']) f.party.statuses[name].dungeon.cave = null;
-   f.service.reconcile();
-   assert.deepEqual(heard, ['idle -> gathering', 'gathering -> entering', 'entering -> active', 'active -> exiting', 'exiting -> held', 'held -> idle']);
-  } finally { hooks().configure({ 'cave-phase-fixture': { enabled: false } }); }
- }],
+
  ['coordinator restart preserves entry identity instead of creating another entry', f=>{
   f.action({ action: 'enter' });
   for (const name of ['W', 'P', 'M']) f.party.statuses[name].dungeon.action = { id: f.party.dailyDungeons.commands[name].id, status: 'complete' };

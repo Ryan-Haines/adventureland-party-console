@@ -125,35 +125,6 @@ test.describe('the character card and the top bar', () => {
   });
 });
 
-// The mode rows: row 1 holds the
-// combat modes and sends `combatMode` only, row 2 the target modes and sends `targetMode` only, each
-// button from its slot entry's declared data, with one button pressed in each row.
-test('the mode rows: the combat modes in row 1 and the target modes in row 2, each sending its own field, one pressed per row', async ({ page, app }) => {
-  const post = (endpoint: string, data: unknown) => page.request.post(app.url + '/party-api' + endpoint, { data, headers: { Origin: app.url } });
-  const pair = async () => { const p = (await app.state()).farmingProfiles?.W ?? {}; return [p.combatMode, p.targetMode]; };
-  // W starts on Default with Hunt, the pair a Hunt press leaves after its setup.
-  expect((await post('/settings', { changes: [{ field: 'combatMode', character: 'W', value: 'default' }, { field: 'targetMode', character: 'W', value: 'hunt' }] })).status()).toBe(200);
-  await page.goto(app.url);
-  const card = page.locator('article').filter({ has: page.getByRole('heading', { name: 'W', exact: true }) });
-  await card.locator('button[aria-expanded]').filter({ hasText: 'Farming settings' }).click();
-  const combat = card.getByRole('group', { name: 'Combat mode' }), target = card.getByRole('group', { name: 'Target mode' });
-  // Today's labels and colours, and FARMING beside HUNT.
-  await expect(combat.getByRole('button')).toHaveText(['Auto', 'Default', 'Scatter']);
-  await expect(target.getByRole('button')).toHaveText(['Farming', 'Hunt']);
-  for (const [row, label, color] of [[combat, 'Auto', 'cyan'], [combat, 'Default', 'emerald'], [combat, 'Scatter', 'violet'], [target, 'Farming', 'sky'], [target, 'Hunt', 'amber']] as const)
-    await expect(row.getByRole('button', { name: label, exact: true })).toHaveClass(new RegExp(`border-${color}-600 bg-${color}-950`));
-  const pressed = async () => [await combat.locator('[aria-pressed="true"]').allTextContents(), await target.locator('[aria-pressed="true"]').allTextContents()];
-  await expect.poll(pressed).toEqual([['Default'], ['Hunt']]);
-  // SCATTER while hunting changes only the formation.
-  await combat.getByRole('button', { name: 'Scatter', exact: true }).click();
-  await expect.poll(pair).toEqual(['scatter', 'hunt']);
-  await expect.poll(pressed).toEqual([['Scatter'], ['Hunt']]);
-  // FARMING leaves Hunt and keeps the combat mode.
-  await target.getByRole('button', { name: 'Farming', exact: true }).click();
-  await expect.poll(pair).toEqual(['scatter', 'farming']);
-  await expect.poll(pressed).toEqual([['Scatter'], ['Farming']]);
-});
-
 // A settings control stays locked until the dashboard's
 // first config read; a select's keyboard typeahead changes nothing; a write refused as
 // out of date shows the console's notice. W's Combat section in the settings menu is the settings

@@ -37,6 +37,7 @@ test('events-pending waits for one report per online participant after the hand-
  delete statuses.P.huntEventPending;statuses.P.seenAt=9950;
  assert.equal(eventsPending(hunt,statuses),true,'a silent member 13 holds online keeps the quest held');
  offline.add('P');assert.equal(eventsPending(hunt,statuses),false,'13 answering the silent member offline releases it');
+ assert.equal(pendingFor({...hunt,eventReleaseAt:null},{P:{seenAt:20000,huntEventPending:true}},()=>true,()=>true),false,'an unreleased Hunt asks nothing');
 });
 // The `hunt` source answers for combat groups only, so a Hunt never holds the merchant group's
 // event travel.
@@ -47,18 +48,6 @@ test('the Hunt source asks nothing for the merchant group during a Hunt',()=>{
  const ask=kind=>hunt.hooks['task.request']({group:kind+':W',groupKind:kind,members:['W'],live:null,tick:1});
  assert.deepEqual(ask('merchant'),[]);
  assert.equal(ask('party')[0].ask.kind,'hunt-turn-in');
-});
-// `event.pending` (the events owner's for the hunting owner's Hunt): the events owner answers from
-// the member's latest report, and a released Hunt holds its next quest while any participant reports
-// its Hunt waits on an event.
-test('event.pending: a released Hunt waits while a member reports an event pending',()=>{
- const {eventsPending}=require('../../runtime/hunting/coordinator/hunt.ts');
- const statuses={W:{seenAt:20000},P:{seenAt:20000,huntEventPending:true}};
- const answer=name=>!!statuses[name]?.huntEventPending,online=()=>true;
- const hunt={stage:'at-daisy',participants:['W','P'],eventReleaseAt:10000};
- assert.equal(eventsPending(hunt,statuses,answer,online),true);
- statuses.P.huntEventPending=false;assert.equal(eventsPending(hunt,statuses,answer,online),false);
- assert.equal(eventsPending({...hunt,eventReleaseAt:null},{P:{seenAt:20000,huntEventPending:true}},()=>true,online),false,'an unreleased Hunt asks nothing');
 });
 // The cycle changes stage only through record.ts `huntStep`, along its edges. One
 // Hunt runs from its quest check through a pickup, the mission and the turn-in, and its stages

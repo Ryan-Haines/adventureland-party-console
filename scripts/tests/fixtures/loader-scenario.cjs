@@ -1,7 +1,7 @@
 // A game window for the built CODE loader (.build/runtime/universal-loader.js), in the shared harness
 //: jsdom on adventure.land with WebCrypto, a captured
 // setInterval and the row's `fetch` stub.
-const assert=require('node:assert/strict');
+const {until:waitUntil}=require('../helpers/settle.cjs');
 const fs=require('node:fs');
 const {createHash,webcrypto}=require('node:crypto');
 const {JSDOM}=require('../../../.caracal/node_modules/jsdom');
@@ -17,8 +17,8 @@ function loaderWindow({fetch,globals={},resources}){
  Object.defineProperty(w.crypto,'subtle',{value:webcrypto.subtle});
  Object.assign(w,{TextEncoder,AbortSignal,AbortController,character:{name:'P',ctype:'warrior'},game_log(){},
   setInterval:fn=>{interval=fn;return 1;},clearInterval(){},fetch},globals);
- // WebCrypto completes on a worker thread, so `until` waits on real 10 ms timers, not event-loop turns.
- const until=async predicate=>{for(let i=0;i<200&&!predicate();i++)await new Promise(r=>setTimeout(r,10));assert.ok(predicate());};
+ // WebCrypto completes on a worker thread; each event-loop turn of `until` lets its answer in.
+ const until=predicate=>waitUntil(predicate);
  return {w,until,interval:()=>interval(),close(){w.__partyCodeLoader?.dispose();w.close();}};
 }
 module.exports={loaderWindow,loaderSource,manifestFor,sha};

@@ -8,7 +8,7 @@ require('./helpers/core-hooks.cjs');
 const {createRegistry}=require('../../runtime/hooks/registry.ts');
 const {coreRegistrations}=require('../../runtime/hooks/core.ts');
 const {itemsSince}=require('./helpers/items-notices.cjs');
-const {testRegistry}=require('./helpers/test-registry.cjs');
+const {testRegistry,restoreGlobals}=require('./helpers/test-registry.cjs');
 const {scenarioTable}=require('./fixtures/scenarios.cjs');
 const {createTaskOwner}=require('../../runtime/tasks/coordinator/owner.ts'),{tasksRegistration}=require('../../runtime/tasks/coordinator/install.ts');
 // The real task owner with the registry as its notice port.
@@ -120,11 +120,12 @@ const {withDoor}=require('./helpers/coordinator-merchant.cjs');
 // S9.5b rides on item 5: the real movement owner (movement-service-scenario.cjs) holds the
 // add-on's walk when its switch turns off, and the core `addon.off` listener ends it there.
 const {fixture:ownerFixture}=require('./fixtures/movement-service-scenario.cjs');
-test('item 5: a switched-off add-on answers nothing, its walk ends, and switching it on needs no restart',async()=>{
+test('item 5: a switched-off add-on answers nothing, its walk ends, and switching it on needs no restart',async t=>{
   // The switch is written through the settings writer. Since the add-on system's step 1 the
   // registry hears it as any reader hears a change (core:settings' settings.changed listener), on
   // the realm's registry.
-  const r=loaded(),realm=globalThis.__partyHooks;let asked=0;globalThis.__partyHooks=r;
+  restoreGlobals(t,['__partyHooks']);
+  const r=loaded();let asked=0;globalThis.__partyHooks=r;
   const addons={},writer=settingsWriter(addons,{hooks:r}),configure=value=>assert.equal(writer.write({changes:[{field:'addons',value}],by:'dashboard:addons'}).ok,true);
   r.register(addon('t',{'movement.request':[mover('m','formation',()=>{asked++;return {kind:'hold',reason:'t'};})],'group.anchor':()=>'T'},
     {settings:{tank:{label:'Tank',kind:'character',default:null}}}));
@@ -175,7 +176,6 @@ test('item 5: a switched-off add-on answers nothing, its walk ends, and switchin
   batch.notices.length=0;
   assert.equal(batch.write({changes:[{field:'addons',value:{t:{enabled:true}}},{field:'targetMode',value:'hunt'}],by:'dashboard:farming'}).ok,true);
   assert.deepEqual(batch.notices.map(n=>n.off?'off '+n.off:n.field),['addons','off u','targetMode']);
-  globalThis.__partyHooks=realm;
 });
 
 // Every entry declares its button, an add-on's target mode entry its status line, and a colour
@@ -1171,20 +1171,20 @@ const {fixture:completionFixture}=require('./helpers/coordinator-completion.cjs'
 const MERCHANT_NOTICES=['merchant.job.queued','merchant.job.started','merchant.job.paused','merchant.job.resumed','merchant.job.ended','merchant.job.blocked',
   'merchant.job.unblocked','merchant.slot.written','merchant.slot.held','merchant.slot.refused','merchant.gathering.noTool'];
 const merchantHeard=[];
+function installHoldOwners(t){
+  restoreGlobals(t,['__partyTaskAnswers','__partyEventAnswers']);
+  require('./helpers/tasks-owner.cjs').installTasksOver({leader:'W',followers:{}},{hooks:partyHooks(),now:()=>100});
+  require('../../runtime/events/api.ts').publishEventAnswers({deferredReturn:()=>false});
+}
 // A row's own registry hears the notices, so the listener ends with the row.
 function merchantListener(t){
   testRegistry(t).register({name:'core:merchant-notices-fixture',folder:'core',author:'test',summary:'Hears the job owner\'s notices.',
       hooks:Object.fromEntries(MERCHANT_NOTICES.map(n=>[n,payload=>merchantHeard.push({notice:n,...payload})]))});
 }
-function merchantDispatch(pick,idle=()=>{}){
-  // The event hold reads the tasks owner's and the events owner's answers; the real install publishes both, and
-  // an earlier row of this file may already have.
-  const tasksApi=require('../../runtime/tasks/api.ts'),eventsApi=require('../../runtime/events/api.ts');
-  // The task owner installs once per process; its Cave reads go on the row's own registry each time.
-  const taskHelper=require('./helpers/tasks-owner.cjs');
-  let installed=true;try{tasksApi.tasks();}catch{installed=false;}
-  if(installed)taskHelper.publishCaveReads(partyHooks());else taskHelper.installTasksOver({leader:'W',followers:{}},{hooks:partyHooks(),now:()=>100});
-  try{eventsApi.eventDeferredReturn('M');}catch{eventsApi.publishEventAnswers({deferredReturn:()=>false});}
+function merchantDispatch(t,pick,idle=()=>{}){
+  // The event hold reads the tasks owner's and the events owner's answers. Each row installs both on its
+  // own registry, and their answers end with the row.
+  installHoldOwners(t);
   const state={merchantQueue:[],merchantCurrent:null,nextCommandId:7,merchantCharacter:'M',bankbois:{},bankboiTransaction:null,commands:{},gatheringModes:[],
     gatheringCooldowns:{},statuses:{M:{seenAt:100,server:'USII'}},activeRealm:'SR_USII',aldata:{key:'fixture'},threshold:100,merchantCargo:{},npcSaleMarks:[],
     standListings:[],standBids:{},marked:{},upgrades:{},purchases:{},compounds:{},autoCompounds:{},withdrawals:{},statScrolls:{},merchantDeliveries:{},goldTargets:{},production:{attempts:{}}};
@@ -1203,11 +1203,12 @@ function merchantDispatch(pick,idle=()=>{}){
 
 // C1's merchant doors (rows/08-merchant.ts ACTIONS): the stand opens and closes only while nothing
 // holds the merchant or inside the add-on's own job, and a giveaway joins only in reach.
-test('C1: 08 opens the stand only for a free merchant or the add-on job that holds it, and joins a giveaway only in reach',async()=>{
+test('C1: 08 opens the stand only for a free merchant or the add-on job that holds it, and joins a giveaway only in reach',async t=>{
   const {createMerchantRunner}=require('../../runtime/merchant-jobs/character/runner.ts'),{createMerchantVisits}=require('../../runtime/merchant-jobs/character/visits.ts');
   const api=require('../../runtime/merchant-jobs/api.ts');
   // The call budget answers the job band and refuses the background band, as near the limit.
-  const budget=partyHooks().calls,{band,window}=budget;
+  const budget=partyHooks().calls;
+  restoreGlobals(t,['band','window'],budget);restoreGlobals(t,['join_giveaway']);
   budget.band=ask=>ask.band==='job'?'send':'not now';budget.window=()=>0;
   const root={},me={name:'M',map:'main',x:0,y:0,stand:false},calls=[];
   createMerchantRunner({root:()=>root,character:()=>me,standOpen:()=>me.stand,
@@ -1227,7 +1228,6 @@ test('C1: 08 opens the stand only for a free merchant or the add-on job that hol
   assert.equal((await api.joinGiveaway({seller:'H',slot:'trade1'},{id:'t1',action:'giveaway.join',band:'job',addon:'a',character:'M',reason:'test'})).outcome,'sent');
   assert.deepEqual(await api.joinGiveaway({seller:'H',slot:'trade2'},{id:'t1',action:'giveaway.join',band:'job',addon:'a',character:'M',reason:'test'}),{outcome:'refused',by:'08',reason:'H has no open giveaway in trade2'});
   assert.deepEqual(joined,[['H','trade1','r1']]);
-  delete globalThis.join_giveaway;budget.band=band;budget.window=window;
 });
 scenarioTable("the job owner's add-on kinds, steps, routine and notices, each row on a registry of its own",()=>undefined,[
  ['an add-on kind at 90 runs at 74 with a ring entry; an undeclared kind, a PVP and a blacklisted listing are refused',(_,t)=>{
@@ -1237,7 +1237,7 @@ scenarioTable("the job owner's add-on kinds, steps, routine and notices, each ro
        'merchant.jobKind':()=>[{kind:'polish',command:'merchant-self-restock',realm:'listing',priority:90},{kind:'teleport',command:'teleport',realm:'here',priority:5}],
        'merchant.job':()=>asks.shift()}}),{ok:true});
    partyHooks().configure({'kinds-fixture':{enabled:true}});
-   const f=merchantDispatch();
+   const f=merchantDispatch(t);
    for(let pass=0;pass<4;pass++) f.service.dispatch();
    const entries=merchantRecords('M').filter(e=>['kind-clamped','kind-refused','job-refused'].includes(e.decision));
    assert.deepEqual(entries.map(e=>[e.decision,e.code]),[['kind-refused','no core command type teleport'],['kind-clamped','90 runs at 74'],
@@ -1267,11 +1267,8 @@ scenarioTable("the job owner's add-on kinds, steps, routine and notices, each ro
  ['C2: an addon-steps job carries its fields and steps whole; a donate-then-buy chain runs with consent and a send to any recipient runs',async (_,t)=>{
    testRegistry(t);
    const {routineEnabled,addonKind}=require('../../runtime/merchant-jobs/rules.ts'),{runAddonSteps}=require('../../runtime/merchant-jobs/character/steps.ts');
-   // The event hold reads the tasks owner's and the events owner's answers, as P14 below
-   // publishes them.
-   const eventsApi=require('../../runtime/events/api.ts');
-   try{require('../../runtime/tasks/api.ts').tasks();}catch{require('./helpers/tasks-owner.cjs').installTasksOver({leader:'W',followers:{}},{hooks:partyHooks(),now:()=>100});}
-   try{eventsApi.eventDeferredReturn('M');}catch{eventsApi.publishEventAnswers({deferredReturn:()=>false});}
+   // The event hold reads the tasks owner's and the events owner's answers.
+   installHoldOwners(t);
    const donate={action:'gold.donate',args:{gold:'all above working gold'},reason:'Ron restocks'};
    const ron={kind:'ron',target:'M',fields:{item:'offering',quantity:2},steps:[donate]};
    const asks=[ron];
@@ -1279,7 +1276,7 @@ scenarioTable("the job owner's add-on kinds, steps, routine and notices, each ro
        'merchant.jobKind':()=>[{kind:'ron',command:'addon-steps',realm:'home',priority:30,spends:true}],
        'merchant.job':()=>asks.shift()}}),{ok:true});
    partyHooks().configure({'steps-fixture':{enabled:true}});
-   const f=merchantDispatch(),reason='addon:steps-fixture:ron';
+   const f=merchantDispatch(t),reason='addon:steps-fixture:ron';
    // Switched off by default, the declared kind's job leaves the queue unsent; the player's switch sends it.
    for(let pass=0;pass<2;pass++) f.service.dispatch();
    assert.equal(f.state.commands.M,undefined);
@@ -1335,7 +1332,7 @@ scenarioTable("the job owner's add-on kinds, steps, routine and notices, each ro
    partyHooks().configure({'routine-fixture':{enabled:true}});
    assert.deepEqual(partyHooks().entries('merchant-routine').map(e=>e.mode),['built-in','restock-first'],'the built-in entry comes first');
    const picked=[];
-   const f=merchantDispatch((state,facts,run)=>{const job=takeCoordinatorMerchantJob(state,facts,run);picked.push(job&&job.reason);return null;},()=>idled++);
+   const f=merchantDispatch(t,(state,facts,run)=>{const job=takeCoordinatorMerchantJob(state,facts,run);picked.push(job&&job.reason);return null;},()=>idled++);
    Object.assign(f.state,{merchantRoutinePriorities:{},standBids:{},routines:{M:{'merchant-routine':'restock-first'}}});
    const job=(id,reason,priority,fields={})=>({id,target:'M',reason,priorityOverride:priority,queuedAt:1,...fields});
    const upgrade=()=>job('up','manual upgrades',60),restock=()=>job('rs','addon:routine-fixture:restock',20);
@@ -1504,15 +1501,6 @@ scenarioTable("the items owner's hooks and notices, each row on a registry of it
    assert.equal(character.items[0].name,'pickaxe');
    assert.equal(await bank.fetch('rod'),true,'the bank was read; nothing was found');
    assert.deepEqual(retrieved,[0]);
- }],
- ['items.bag: the bag facts of the holder record',()=>{
-   const {createBag}=require('../../runtime/items/character/owner.ts');
-   const bag=createBag();
-   bag.connect({freeCells:()=>7,lucky:()=>false,map:()=>'main'});
-   bag.take('stocking');
-   assert.deepEqual([bag.facts().holder,bag.facts().stocking,bag.facts().banking],['stocking',true,false]);
-   bag.release('stocking');
-   assert.equal(bag.facts().holder,null);
  }],
  ['items.produced: an upgrade result is reported once',()=>{
    const state={production:{attempts:{a1:{name:'blade',level:3,kind:'upgrade'}}}},since=itemsSince('merchant');

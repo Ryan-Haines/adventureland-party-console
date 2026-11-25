@@ -17,6 +17,11 @@ test('unavailable listing is not evidence to blacklist the seller or cancel othe
  const t=fixture();t.state.merchantCurrent.listings.push({...t.listing,key:'b'});
  assert.equal(t.send('aldata',{success:false,failureCode:'listing_not_available'}).body.cancelSeller,null);
  assert.deepEqual(t.state.merchantCurrent.completedListingKeys,['a']);assert.equal(t.calls.some(x=>x[0]==='blacklist'),false);
+ // An unreachable destination blacklists nothing either; a seller not visible or a closed stand does.
+ for(const failureCode of ['destination_unreachable','seller_not_visible','stand_not_open']){
+  const f=fixture();f.send('aldata',{success:false,failureCode});
+  assert.equal(f.calls.filter(x=>x[0]==='blacklist').length,failureCode==='destination_unreachable'?0:1,failureCode);
+ }
 });
 test('missing seller cancels that realm-specific seller in current and queued work while retaining other sellers',()=>{
  const t=fixture(),same={...t.listing,key:'b'},different={...same,key:'c',serverIdentifier:'I'};

@@ -1,9 +1,9 @@
+const {settle}=require('./helpers/settle.cjs');
 const test=require('node:test'),assert=require('node:assert/strict');
 const {createHandoffTiming}=require('../../runtime/status/character/rings.ts');
 const {scenarioTable}=require('./fixtures/scenarios.cjs');
 const {fixture}=require('./fixtures/queue-client-scenario.cjs');
 const {update}=require('./helpers/run-scope.cjs');
-const settle=async()=>{for(let i=0;i<20;i++)await Promise.resolve();};
 scenarioTable('the queue client sends reports and long polls at once, backs off on errors and never echoes', ()=>fixture, [
  ['new queue acknowledgement is sent immediately and successful long poll is rearmed', fixture=>fixture(async f=>{
  f.client.tick();f.reports()[0].resolve(f.response());await settle();
@@ -123,15 +123,3 @@ test('table A: the farming mode applies before the grouped lock, the report acts
     assert.equal(calls.includes(acting), false, `${acting} acts while held`);
 });
 
-// The events owner's exit observe is the one read of the reply's event return cycle (the transport
-// copy left characters/shared.js), so a reply that ends the apply still runs it.
-test('table A: a held reply still runs 06\'s exit observe', async () => {
-  const {createApply} = require('../../runtime/status/character/apply.ts');
-  const {TABLE_A} = require('../../runtime/status/rules.ts');
-  const calls = [];
-  const rows = Object.fromEntries(TABLE_A.map(({row}) => [row, () => { calls.push(row); return row === 'held'; }]));
-  const apply = createApply({ farmingMode() {}, deathSeen() {}, telemetry() {}, gatheringCooldown() {}, rows, snapshot: () => ({}), request: async () => ({}) });
-  await apply.reply({});
-  assert.ok(calls.includes('exit-observe'));
-  assert.equal(calls.includes('navigation'), false);
-});

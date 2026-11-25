@@ -1,5 +1,6 @@
 const test=require('node:test'),assert=require('node:assert/strict');
 const {fixture}=require('./helpers/coordinator-workers.cjs');
+const {until}=require('./helpers/settle.cjs');
 // Table W's realm row: the retry waits on the account's answer, never on a timer.
 test('an unresolved realm refreshes and retries without choosing a different realm',async()=>{
  const f=fixture(),asked=[];let refreshed=0,resolves=false;
@@ -24,7 +25,7 @@ test('bootstrap repair finishes before replacement scheduling',async()=>{
  const w=f.manager.start('W');
  w.emit('message',{type:'bootstrap_failed'});assert.equal(f.lifecycle.W,'repairing');w.emit('exit',1,null);
  await new Promise(setImmediate);assert.equal(f.timers.length,0);repair();
- for(let turn=0;turn<4;turn++)await new Promise(setImmediate);
+ await until(()=>f.timers.length,'the replacement restart timer');
  assert.equal(f.timers[0].ms,lifecycleSavedFields.settings.workerRestartMs.default);f.timers[0].callback();assert.equal(f.workers.length,2);
 });
 test('retired worker messages cannot deploy characters or write storage',()=>{

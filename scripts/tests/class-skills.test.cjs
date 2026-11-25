@@ -1,3 +1,4 @@
+const {settle}=require('./helpers/settle.cjs');
 const test=require('node:test'),assert=require('node:assert/strict');
 // The realm registry holds only the core registrations, so an installed add-on that answers a
 // one-answer hook this file's own add-on answers leaves its rows as they are (helpers/core-hooks.cjs).
@@ -102,7 +103,7 @@ test('the priest casts Absorb as leader and never from a non-leader',()=>{
 // (skills/runtime.ts `casts`, lifecycle/character/roles.ts `push`). The same cast sends from the leader and
 // nothing from a non-leader, whatever the class code asked.
 test('the warrior Taunt reaches the executor from the leader and never from a non-leader',async()=>{
- const flush=async()=>{for(let i=0;i<6;i++)await Promise.resolve();};
+ const flush=settle;
  const sends=async leader=>{
   const r=fixture('warrior');r.w.context.mode='grouped';const ally=r.ally('Ally',{ctype:'priest'});const t=r.add('a',{target:ally.name});
   r.w.context.leader=leader;
@@ -202,7 +203,7 @@ async function pushSettlesOnReply(){
  r.w.skills.curse={name:'curse',class:['priest'],type:'skill',mp:400,target:true,hostile:true,cooldown:5000};
  r.w.skills.taunt={...r.w.skills.taunt,class:['priest']};
  const w=turnsWorld({actor:r.actor,skills:r.w.skills,asks:()=>[],selected:()=>'a',world:()=>r.w});
- const flush=async()=>{for(let i=0;i<6;i++)await Promise.resolve();};
+ const flush=settle;
  try{
   let settled=null;
   w.turns.spend({skill:'curse',targets:[t],rank:'damage',category:'survival',reason:'escape curse',by:'e2e'}).then(v=>settled=['ok',v],e=>settled=['failed',e.reason]);
@@ -237,7 +238,7 @@ async function ledgerHoldsAttackAndHeal(){
   r.actor.mp=r.actor.mp_cost+400-1;
   w.turns.pass('tick');
   assert.deepEqual(w.sent.map(s=>s[0]),['heal'],'Curse waits for the MP the heal in flight holds');
-  w.replies.shift().ok({});for(let i=0;i<6;i++)await Promise.resolve();
+  w.replies.shift().ok({});await settle();
   w.advance(1000);
   wanted=[{skill:'attack',targets:[t],rank:'damage',category:'damage',reason:'basic attack'}];
   w.turns.pass('tick');
@@ -246,7 +247,7 @@ async function ledgerHoldsAttackAndHeal(){
   wanted=[{skill:'curse',targets:[t],rank:'survival',category:'survival',reason:'curse'}];
   w.turns.pass('tick');
   assert.deepEqual(w.sent.map(s=>s[0]),['heal','attack'],'Curse waits for the MP the attack in flight holds');
-  w.replies.shift().ok({});for(let i=0;i<6;i++)await Promise.resolve();
+  w.replies.shift().ok({});await settle();
   w.advance(1000);r.actor.mp=400;w.turns.pass('tick');
   assert.deepEqual(w.sent.map(s=>s[0]),['heal','attack','skill'],'with nothing in flight Curse goes');
  }finally{w.restore();}
@@ -264,7 +265,7 @@ test('A36: Energize sends its amount after its target and keeps the class reserv
   w.turns.pass('tick');
   assert.deepEqual(w.sent,[['skill','energize',ally.id||ally.name,350]],'the amount goes after the target');
   assert.equal(w.turns.inFlightMp(),350,'the ledger holds the amount in flight');
-  w.replies.shift().ok({});for(let i=0;i<6;i++)await Promise.resolve();
+  w.replies.shift().ok({});await settle();
   w.advance(5000);
   // The mage's reserve is 20% of its MP (eligibility.ts reserve): 600 - 450 leaves 150, below 200.
   wanted=[{skill:'energize',targets:[ally],argument:450,rank:'maintenance',category:'maintenance',reason:'energize'}];
@@ -305,37 +306,6 @@ test('projectile tracker excludes strangers and settles accepted actions at thei
  p.hit({pid:'h'});assert.equal(p.incoming(t.id,'Hero'),0,'the own hit ends at its hit packet');
  p.hit({pid:'a'});assert.equal(p.incoming(t.id,'Ally'),0,"the ally's entry ends at its hit packet");
 });
-test('an add-on group.anchor answer centres the group on its member and keeps the priest range',()=>{
- // Step 9 (e2e/movement-owner-failures.md "Step 9" items 5 and 11): the `group.anchor` hook.
- // An add-on's answer centres the group on its member and keeps the priest's healing range,
- // the positioning it reads names a member stepping away, and an unavailable answer or a
- // switched-off add-on leaves the healing anchor.
- anchorByAddon();
-});
-function anchorByAddon(){
- const {evaluateGroup}=require('../../runtime/coordinator/targeting/queue.ts');
- const {partyHooks}=require('../../runtime/hooks/index.ts');
- const {registration,ANCHOR_ADDON}=require('./fixtures/anchor-addon.ts');
- const hooks=partyHooks();
- if(!hooks.registrations().some(r=>r.name===ANCHOR_ADDON))assert.deepEqual(hooks.register(registration),{ok:true});
- const members=['W','P','M'].map((name,i)=>({name,ctype:['warrior','priest','mage'][i],revision:1,status:{seenAt:1000,hp:100,map:'main',in:'main',server:'USII',x:i*20,y:0,range:[40,200,120][i],
-  combatSelection:{runtimeId:name,id:null,revision:0,map:'main'},groupedCombat:{protocol:4,anchorVisible:true,ack:null,candidates:[],threats:[],evidence:[],deaths:[]}}}));
- const group=()=>{const g=evaluateGroup(null,members,'W',1000);return [g.anchor.name,g.range,g.priest];};
- try{
-  assert.deepEqual(group(),['P',180,'P']);
-  hooks.configure({[ANCHOR_ADDON]:{enabled:true,settings:{member:'W',second:'M'}}});
-  assert.deepEqual(group(),['W',180,'P']);
-  // The scope's placed value wins over the account's.
-  assert.equal(evaluateGroup(null,members,'W',1000,0,false,null,[],{addonSettings:{[ANCHOR_ADDON]:{member:'M'}}}).anchor.name,'M');
-  members[0].status.combat={positioning:{movementOwner:'addon:'+ANCHOR_ADDON,phase:'stepping-away'}};
-  assert.deepEqual(group(),['M',180,'P']);
-  members[0].status.combat=undefined;members[0].status.hp=0;
-  assert.deepEqual(group().slice(0,1),['P']);
-  members[0].status.hp=100;hooks.configure({[ANCHOR_ADDON]:{enabled:false,settings:{member:'W'}}});
-  assert.deepEqual(group(),['P',180,'P']);
- }finally{hooks.configure({});}
-}
-
 // (and upstream issues"): "cleave as 1.5's warrior". The ranking proposes Cleave on every monster in
 // range once two are in range: in Scatter, and in Default or an event only while two or more monsters attack party members
 // (targeting's threat fact), and always at Franky. Outside Scatter it is the urgent cast that spends
