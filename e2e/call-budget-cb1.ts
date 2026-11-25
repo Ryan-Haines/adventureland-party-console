@@ -71,8 +71,11 @@ export function callMeasures(samples: CallSample[], name: string) {
   const above = reads.length ? samples.flatMap(s => {
     const value = s.server[name];
     // A sample is judged only where reads cover one margin on both sides of it: the last samples
-    // of a run can precede a door's new_map that no read after them saw.
-    if (!Number.isFinite(value) || !reads.some(r => r.at >= s.at + margin) || !reads.some(r => r.at <= s.at - margin)) return [];
+    // of a run can precede a door's new_map that no read after them saw. The read after it falls
+    // within the window, while the entries the server counts at the sample are still in the
+    // ledger: CB26's stop retired the install 250 ms after a tracker read, and the next read came
+    // after the reload, past the window.
+    if (!Number.isFinite(value) || !reads.some(r => r.at >= s.at + margin && r.at <= s.at + CALL_WINDOW_MS) || !reads.some(r => r.at <= s.at - margin)) return [];
     const most = mostWithin(s.at - margin, s.at + margin);
     // The sample's server entries beside the ledger's within the window, so the call the ledger
     // did not hold is named.

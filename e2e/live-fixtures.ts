@@ -840,6 +840,17 @@ export async function peacefulLineup(live:LiveGame){
 }
 
 
+// A Goobrawl row that fails while its event is live leaves the event running, and the next
+// Goobrawl row's seed refuses a live event ("Seed Goobrawl before activating it"). The reset
+// ends it the way the rows do, and the party's own event return takes it home. It goes before
+// deathReset, whose move to Main the live event's walk undoes: the end run on 367447e73 found
+// both fighters off Main 60 s after the finished Goobrawl row failed, and no row after it ran.
+async function endLeftGoobrawl(live:LiveGame){
+  await live.admin(`output=(()=>{if(events.goobrawl)timers.goobrawl=new Date(0);return true;})()`);
+  await expect.poll(()=>live.admin(`output=!events.goobrawl&&!E.goobrawl&&!Object.values(players).some(p=>p.map==='goobrawl')`),
+    {timeout:180_000,message:'A Goobrawl a row left must end before the next row'}).toBe(true);
+}
+
 // What the Hunt rows of the default fixture's table leave, put back by defaultFixtureReset:
 // their seeded rares and definitions (cleanupEvents), the formation with the priest following
 // and nobody on Manual, both fighters' mode and the merchant's stand, the passive rare rules the
@@ -847,12 +858,6 @@ export async function peacefulLineup(live:LiveGame){
 let huntStartRules: {rules: Record<string, any>; useFieldGenerators: boolean} | null = null;
 async function huntRowsReset(live:LiveGame){
   const W='E2EWarrior',P='E2EPriest';
-  // A Goobrawl row that fails while its event is live leaves the event running, and the next
-  // Goobrawl row's seed refuses a live event ("Seed Goobrawl before activating it"). The reset
-  // ends it the way the rows do, and the party's own event return takes it home.
-  await live.admin(`output=(()=>{if(events.goobrawl)timers.goobrawl=new Date(0);return true;})()`);
-  await expect.poll(()=>live.admin(`output=!events.goobrawl&&!E.goobrawl&&!Object.values(players).some(p=>p.map==='goobrawl')`),
-    {timeout:180_000,message:'A Goobrawl a row left must end before the next row'}).toBe(true);
   // A Goobrawl row ends once the party is back on Main, before its event return ends; the gate
   // run's next Goobrawl row then started under that return.
   await expect.poll(async()=>{const s=await live.state();return !s.eventReturn&&!Object.keys(s.deferredEventReturns??{}).length;},
@@ -910,6 +915,7 @@ async function huntRowsReset(live:LiveGame){
 export async function defaultFixtureReset(live:LiveGame){
   const W='E2EWarrior';
   await peacefulLineup(live);
+  await endLeftGoobrawl(live);
   // The death rows' recovery ends first, as before the Hunt rows joined: with the Hunt cleanup
   // first, the merged run's reset after cant_join still found a party recovery live.
   await deathReset(live);

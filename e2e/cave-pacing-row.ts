@@ -1,4 +1,5 @@
 import {expect,type LiveGame} from './live-fixtures';
+import {ARRIVAL_TOLERANCE} from '../runtime/protocol/ladder.ts';
 import type {Page,TestInfo} from '@playwright/test';
 import {taskSeq,taskTrail} from './task-records';
 import {killNativeCharacter} from './hunt-interruption-helpers';
@@ -6,16 +7,31 @@ import {caveView,caveAct,voteAndSettle} from './cave-harness';
 
 // The Cave pacing row, moved in the tasks owner step 8 (the test cut) from live-cave.spec.ts into the default
 // fixture's table, last, because it narrows the Cave's encounters (G.events.dreams) for the rest
-// of the run. It first moves the trio to the spot live-cave.spec.ts's fixture logs them in at.
+// of the run. It first walks the two fighters, the Cave's members, to the spot live-cave.spec.ts's
+// fixture logs them in at.
 const caveSpot={map:'main',x:816,y:1180};
 export async function cavePacingRow(live:LiveGame,info:TestInfo,page:Page){
-  const names=['E2EWarrior','E2EPriest','E2EMerchant'];
-  await live.admin(`output=(()=>{for(const n of ${JSON.stringify(names)}){const p=get_player(n);transport_player_to(p,'${caveSpot.map}',[${caveSpot.x},${caveSpot.y}]);}return true;})()`);
-  for(const name of names)await expect.poll(async()=>live.clients[name].run(`character.map==='${caveSpot.map}'&&Math.hypot(character.real_x-(${caveSpot.x}),character.real_y-(${caveSpot.y}))<=20`),
-    {timeout:60_000,message:'The trio must stand at the Cave spot'}).toBe(true);
-  await live.admin("Dev=true;Prod=false;G.events.dreams.disabled=false;G.events.dreams.encounters=G.events.dreams.encounters.filter(e=>['e11','e20','e31','e50'].includes(e.id));output=true");
+  const fighters=['E2EWarrior','E2EPriest'];
   await live.post('/formation',{leader:'E2EWarrior'});
   await live.post('/formation',{character:'E2EPriest',follow:true});
+  // The party travel, the dashboard's Travel that the default reset also sends, makes the spot the
+  // party's farm destination, so the farm approach holds the fighters there. The row's admin
+  // teleport left the reset's square as the destination: in the end run at a699982a7 the leader's
+  // farm approach walked it from the spot back toward the square within a second, and the idle
+  // merchant's stand return cast Town to the market. The merchant is no Cave member and stays out.
+  await live.post('/travel',caveSpot);
+  await expect.poll(async()=>!(await live.state()).activeConvoy,{timeout:180_000,message:'The party travel to the Cave spot must end'}).toBe(true);
+  // The trip task ends one task tick after its walk arrives (defaultFixtureReset waits the same way).
+  await expect.poll(async()=>(await live.tasks()).groups.find((g:any)=>g.id==='party:E2EWarrior')?.live?.kind,{timeout:30_000,message:'The trip task must end before the visit'}).not.toBe('manual');
+  for(const name of fighters)await expect.poll(async()=>live.clients[name].run(`character.map==='${caveSpot.map}'&&Math.hypot(character.real_x-(${caveSpot.x}),character.real_y-(${caveSpot.y}))<=${ARRIVAL_TOLERANCE}`),
+    {timeout:60_000,message:'The fighters must stand at the Cave spot'}).toBe(true).catch(async error=>{
+      // A miss reading: where each fighter stands, its farm destination and its movement ring.
+      const read=Object.fromEntries(await Promise.all(fighters.map(async n=>[n,await live.clients[n].run(`({at:[character.map,Math.round(character.real_x),Math.round(character.real_y)],
+        live:(l=>l?{kind:l.kind,owner:l.owner}:null)(__partyMovement.live()),partyLocation:__partyMovement.state.partyLocation??null,
+        moves:__partyMovement.records().slice(-30).map(r=>[r.at,r.decision,r.kind,r.owner,r.code??null,r.cause??null])})`).catch(e=>String(e))])));
+      console.log('CAVE-SPOT-MISS '+JSON.stringify(read).slice(0,8000));
+      throw error;});
+  await live.admin("Dev=true;Prod=false;G.events.dreams.disabled=false;G.events.dreams.encounters=G.events.dreams.encounters.filter(e=>['e11','e20','e31','e50'].includes(e.id));output=true");
   const view=caveView(live,page),act=caveAct(live);
   await expect.poll(async()=>{
     const v=await view();

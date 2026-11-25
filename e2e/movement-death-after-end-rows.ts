@@ -2,9 +2,9 @@ import {expect,type LiveGame} from './live-fixtures';
 import type {TestInfo} from '@playwright/test';
 import {killNativeCharacter} from './hunt-interruption-helpers';
 import {taskSeq,taskTrail} from './task-records';
-import {W,P,fighters,peacefulWorld,seedBoss,endEvent,probe,harvest,respawnedAt,idleRuns,routeMs,attach,partyReady,hitBy,inZone,answers,expectInvariants,FARM_MONSTER} from './event-death-helpers';
+import {W,P,fighters,peacefulWorld,seedBoss,endEvent,installProbe,harvest,respawnedAt,idleRuns,routeMs,attach,partyReady,hitBy,inZone,answers,expectInvariants,FARM_MONSTER} from './event-death-helpers';
 import {location,prepareHunt,start,cycle as huntCycle} from './game/hunt-lifecycle';
-import {deathRecordHolds,escapeSpendProbe,escapeSpendRead,sv26Holds} from './survival-rows';
+import {deathRecordHolds,installEscapeSpendProbe,escapeSpendRead,sv26Holds} from './survival-rows';
 
 // UP-3: after a
 // respawn, a character does not go back to its activity. The priest dies at Mr. Green
@@ -38,10 +38,10 @@ export const up3Row=(mode:'farm'|'hunt')=>async(live:LiveGame,info:TestInfo)=>{
       try{
         await expect.poll(async()=>(await Promise.all(fighters.map(n=>hitBy(live,n,boss,selectedAt)))).every(Boolean),
           {timeout:300_000,message:'Both fighters must damage Mr. Green'}).toBe(true);
-        for(const name of fighters)await live.clients[name].run(probe);
+        for(const name of fighters)await installProbe(live,name);
         // The priest's respawns, their asks and the
         // server's replies.
-        await live.clients[P].run(escapeSpendProbe);
+        await installEscapeSpendProbe(live,P);
         const tasksFrom=await taskSeq(live,`party:${W}`);
         const death=await killNativeCharacter(live,P);
         // The event ends while the priest is still dead.

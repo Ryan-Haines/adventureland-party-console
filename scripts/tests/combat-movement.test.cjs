@@ -134,5 +134,11 @@ scenarioTable("combat range and kiting geometry: approach, retreat, kite and Das
   try {
     assert.equal(await dashToward(target, turn), false);
     c.character.x = 80; assert.equal(await dashToward(target, turn), true); assert.equal(casts, 1);
+    // A grouped formation with a priest holds the Dash (v1.5.0 shared.js:13956), the goo windows'
+    // setup in e2e/movement-steps-rows.ts.
+    Object.assign(turn.facts, { groupedFarming: () => true, formationMembers: () => [{ ctype: 'priest' }] });
+    assert.equal(await dashToward(target, turn), false, 'the grouped formation with a priest holds the Dash');
+    turn.facts.formationMembers = () => [{ ctype: 'warrior' }];
+    assert.equal(await dashToward(target, turn), true, 'a formation with no priest lets it go'); assert.equal(casts, 2);
   } finally { Object.assign(global, kept); }}],
 ]);

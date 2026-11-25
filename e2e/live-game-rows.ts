@@ -50,9 +50,10 @@ export const goobrawlRows: Row[] = (['plain', 'restart', 'finished'] as const).m
     }
     await start(live);
     // Through the staging lead and before the walk no member is at the event, so no
-    // attendance task holds the party.
+    // attendance task holds the party. The finished variant's event is live before start(), so
+    // its walk can start, and its presence show, before this read.
     const before = hunt(await live.state());
-    expect((await live.tasks()).presence?.[W] ?? null, 'no presence before the event walk').toBeNull();
+    if (variant !== 'finished') expect((await live.tasks()).presence?.[W] ?? null, 'no presence before the event walk').toBeNull();
     if (variant !== 'finished') {
       await live.post('/formation', { character: W, eventSelections: ['goobrawl'] });
       await live.admin(`events.goobrawl=true;delete timers.goobrawl;output=true`);

@@ -32,3 +32,14 @@ test('CB1: a call the server dates one clock step after the client booked it sta
   const planted=samples.map(s=>s.at===14_250?{...s,server:{[P]:8},calls:{[P]:[...s.calls[P],[14_250,'attack',2]]}}:s);
   assert.deepEqual(callMeasures(planted,P).above.map(a=>a.at),[14_250],'an unbooked call fails');
 });
+// A read after a sample holds the ledger entries the server counts at the sample only while they
+// stay in the window. Live row A's Tracktrix credit read went 250 ms before CB26's stop retired the
+// install, and the next read came after the reload, past the window: no read held the entry, and
+// the model judged the server's sum above it.
+test('CB1: a sample with no read in the window after it is not judged',()=>{
+  const at=12_000,samples=[];
+  for(let t=9_000;t<=11_750;t+=250)samples.push({at:t,server:{[P]:0},calls:{[P]:[]},used:{[P]:{at:t,used:0,margin:MARGIN,cc:null,ccAt:null,ledger:[]}}});
+  samples.push({at,server:{[P]:50},calls:{[P]:[[at,'tracker',50]]},used:{[P]:null}});
+  samples.push({at:at+6_000,server:{[P]:0},calls:{[P]:[]},used:{[P]:{at:at+6_000,used:0,margin:MARGIN,cc:null,ccAt:null,ledger:[]}}});
+  assert.deepEqual(callMeasures(samples,P).above,[],'no read could hold the call');
+});

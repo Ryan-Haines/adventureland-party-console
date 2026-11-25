@@ -65,24 +65,29 @@ export const spendLog=`(()=>{const g=parent,code=globalThis;if(g.__e2eTurns&&g._
           return {attacked:Object.values(g.entities||{}).some(e=>e&&e.type==='monster'&&e.visible&&!e.dead&&r.targeting.isAttackingPartyMember(e)),
             partyTarget:!!(r.targeting.getNearestPartyTarget&&r.targeting.getNearestPartyTarget()),farm:!!r.survival.atFarm(),selected:s.selectedTarget??null,rejection:s.targetRejection??null,view:{me:[Math.round(me.real_x),Math.round(me.real_y),me.map],members:(r.survival.shared.roster()||[]).filter(n=>n!==me.name).map(n=>{const e=code.get_player(n);return [n,e?Math.round(e.x):null,e?Math.round(e.y):null,e?!!e.rip:null];})}};}catch(e){return String(e);}})()}:{}),
         ...(method==='skill'?(()=>{try{const r=code.__partyTurns&&code.__partyTurns.ready(data.name);return r?{reserve:r.reserve,cost:r.cost}:{};}catch(e){return {};}})():{}),
-        // The character's own walk and the hold's last answer at a skill's send.
-        // isOccupied has side effects, so the log reads the answer the farm walk row's wrapper
-        // kept from the character's own last call, never calling it.
-        ...(method==='skill'?(()=>{try{const h=code.__e2eHeld;return {walk:(code.__partyMovement&&code.__partyMovement.live&&code.__partyMovement.live()||{}).kind||null,
-          held:h?h.held:null,heldAt:h?h.at:null};}catch(e){return {};}})():{}),
+        // The character's own walk and the hold the skill went out under. A console skill goes out
+        // inside a turns pass, where \`skills.allows\` answers from that pass's spend table read and
+        // reads no fact again, so the log asks the original the farm walk row keeps
+        // (\`__e2eOccupied\`). The status report asks it once a report, so its last answer is up to one
+        // report old: the end run on 367447e73 read a Warcry as held from an answer 998 ms before it.
+        ...(method==='skill'?(()=>{try{const o=code.__e2eOccupied;return {walk:(code.__partyMovement&&code.__partyMovement.live&&code.__partyMovement.live()||{}).kind||null,
+          held:o?!!o.call(code.__partyHooks.skills,{rank:'damage',occupied:true}):null,heldAt:o?Date.now():null};}catch(e){return {};}})():{}),
         // What the heal choice asks at an attack's send: the HP share of the member it would heal, or
         // null, from the survival owner's choice.
         // The grouped lock target at an attack's send and whether the attacked monster targets a
         // party member.
         ...(method==='attack'?{lock:(()=>{const q=code.__partyGroupedCombat;return q&&q.target?String(q.target.id):null;})(),
-          threat:(()=>{const e=data&&g.entities[data.id];return !!(e&&names.includes(e.target));})()}:{}),
+          threat:(()=>{const e=data&&g.entities[data.id];return !!(e&&names.includes(e.target));})(),
+          // Whether this character's own "Don't hit with magic" list holds the attacked monster at the send (TG11).
+          magicListed:(()=>{try{const e=data&&g.entities[data.id],t=code.__partyTargeting;return e&&t?t.reflect().magic.includes(e.mtype):null;}catch(e){return null;}})()}:{}),
         // The attack gate's inputs at the send: whether the grouped
         // rule applies (groupedFarming()), the farming mode the client holds, the passing target
         // the gate exempts, and the newest status reply the client has received.
         ...(method==='attack'?(()=>{try{const r=code.sharedRoutine,p=r.targeting.passingTarget&&r.targeting.passingTarget();
           return {grouped:!!code.partyHunting.farm.grouped(),mode:code.partyHunting.farm.mode(),passing:p?String(p.id):null,reply:log.statusSeq};}catch(e){return {grouped:String(e)};}})():{}),
-        ...(method==='attack'?{healAsk:(()=>{try{const s=code.__partySurvival,line=Number(code.partyTurns.healFirstBelow.read())||${HEAL_FIRST_BELOW_PERCENT};
-          const c=s.healChoice({healFirstBelow:line,regularOnly:false});return c?c.ratio:null;}catch(e){return null;}})()}:{})});}
+        // TC38 also keeps the "Heal first below" line an attack or a heal went out under.
+        ...(method==='attack'||method==='heal'?(()=>{let line=null;try{line=Number(code.partyTurns.healFirstBelow.read())||${HEAL_FIRST_BELOW_PERCENT};}catch(e){}
+          return method==='heal'?{line}:{line,healAsk:line===null?null:(()=>{try{const c=code.__partySurvival.healChoice({healFirstBelow:line,regularOnly:false});return c?c.ratio:null;}catch(e){return null;}})()};})():{})});}
     const out=emit.apply(this,[method,data,...rest]);
     if(method==='attack'&&log.resetOnAttack){log.resetOnAttack=false;const old=data&&String(data.id);
       queueMicrotask(()=>{code.partyRoleRunner.resetTargeting();log.resets.push({at:Date.now(),old});});}
@@ -126,7 +131,7 @@ export const spendLog=`(()=>{const g=parent,code=globalThis;if(g.__e2eTurns&&g._
     keep(log.samples,{at:Date.now(),cooldown:1000/(Number(me.frequency)||1),target:target(),inRange:!!(target()&&typeof is_in_range==='function'&&is_in_range(t)),mpAttacks:f==null||me.mp-f>=(me.mp_cost||0),party:party(),
       tid,skip:skip?{target:skip.target,damage:skip.damage,hp:skip.hp,last:skip.last}:null,lock:(()=>{const q=code.__partyGroupedCombat;return q&&q.target?String(q.target.id):null;})()});},100);
   return true;})()`;
-type Spend={lock?:string|null;threat?:boolean;grouped?:boolean|string|null;mode?:string|null;passing?:string|null;reply?:number;at:number;method:string;name?:string;id?:string;edge?:number;item?:string;mp:number;maxMp:number;range:number;target:boolean;party:Record<string,{hp:number;max:number;dist:number}>;reserve?:number;cost?:number;healAsk?:number|null;town?:boolean;healOut?:number;fight?:unknown};
+type Spend={lock?:string|null;threat?:boolean;magicListed?:boolean|null;grouped?:boolean|string|null;mode?:string|null;passing?:string|null;reply?:number;at:number;method:string;name?:string;id?:string;edge?:number;item?:string;mp:number;maxMp:number;range:number;target:boolean;party:Record<string,{hp:number;max:number;dist:number}>;reserve?:number;cost?:number;healAsk?:number|null;line?:number|null;town?:boolean;healOut?:number;fight?:unknown};
 type Diag={at:number;skill:string;category:string;status:string;by:string|null;rank:string|null;reserve:number};
 type Reply={at:number;place:string|null;response:string|null;failed:boolean;reason:string|null;ms:number|null;id?:string;target?:string};
 type Packet={at:number;event:string;type?:string;name:string;hp?:number;reason?:string|null};
@@ -447,11 +452,24 @@ export async function turnsSlotRow(live:LiveGame,info:TestInfo){
     // five heals, no partyheal at 70%), so the plant goes in under the
     // console Pause, and Play follows once the priest's client reads both members planted.
     const held=(on:boolean)=>expect.poll(()=>live.clients[P]!.run('!!__partyHooks.ask("lifecycle.held")'),{timeout:60_000,message:`SV10: the console Pause ${on?'holds':'releases'} the priest`}).toBe(on);
+    const inRange=`(()=>{const e=parent.entities[${JSON.stringify(W)}];return !!e&&!e.rip&&Math.hypot(e.real_x-character.real_x,e.real_y-character.real_y)<=character.range;})()`;
+    // The Pause holds new steps but not a walk already sent: in confirm-52f254a4b the priest's kite
+    // step (steps.ts `kiteIfNeeded`, 0.6 of its speed) went out in the Pause's own clock step and
+    // carried it from 469 to 532 from the warrior, which left the priest's view (`disappear`,
+    // outside) before the plant. The range read therefore comes once both members stand still
+    // under the Pause. A Pause that settles them out of range gives way to Play until the next one.
+    const pauseInRange=async()=>{
+      for(;;){
+        await expect.poll(()=>live.clients[P]!.run(inRange),
+          {timeout:60_000,intervals:[50],message:`${W} in the priest's view and heal range before the SV10 plant`}).toBe(true);
+        const at=await clock(live,P);
+        await live.post('/console-control/pause',{});await held(true);
+        await expect.poll(()=>live.clients[P]!.run(`(()=>{const e=parent.entities[${JSON.stringify(W)}];return !character.moving&&!(e&&e.moving);})()`),
+          {timeout:60_000,intervals:[50],message:'SV10: the walks in flight at the Pause end'}).toBe(true);
+        if(await live.clients[P]!.run(inRange))return at;
+        await live.post('/console-control/play',{});await held(false);}};
     const plant=async(ratio:number)=>{
-      await expect.poll(()=>live.clients[P]!.run(`(()=>{const e=parent.entities[${JSON.stringify(W)}];return !!e&&!e.rip&&Math.hypot(e.real_x-character.real_x,e.real_y-character.real_y)<=character.range;})()`),
-        {timeout:60_000,intervals:[50],message:`${W} in the priest's view and heal range before the SV10 plant`}).toBe(true);
-      const at=await clock(live,P);
-      await live.post('/console-control/pause',{});await held(true);
+      const at=await pauseInRange();
       await live.admin(`output=(()=>{for(const n of ${JSON.stringify([P,W])}){const p=get_player(n);p.hp=Math.max(1,Math.round(p.max_hp*${ratio}));resend(p,'u+cid');}return true;})()`);
       await expect.poll(()=>live.clients[P]!.run(`(()=>{const e=parent.entities[${JSON.stringify(W)}];return !!e&&e.hp<=e.max_hp*${ratio}+1&&character.hp<=character.max_hp*${ratio}+1;})()`),
         {timeout:15_000,intervals:[50],message:"SV10: the priest's client reads both members planted"}).toBe(true);
@@ -553,18 +571,29 @@ export async function turnsSlotRow(live:LiveGame,info:TestInfo){
   const setting=(value:number)=>writeDelivered(live,'healFirstBelow',P,value,'partyTurns.healFirstBelow.read()','TC38');
   result.tc38={written60:await setting(60)};
   if(result.tc38.written60===true){
-    const at=await clock(live,P);await plantSeen(live,W,{hp:0.7});await waitForGameplay(Math.ceil(3*margin));
-    result.tc38.attacksAt70=(await readLog(live,P,at)).spends.filter(s=>s.method==='attack'&&below(s,W,0.75)&&inRange(s,W)).length;
+    // The window holds only while the warrior stays in the priest's range, as the SV10 plants do: in
+    // fix14-tc38's run the priest stood 488 to 586 from the warrior through the whole window, so no
+    // attack there could tell the line. A window the warrior leaves gives way to the next plant,
+    // which starts with it in range (`plantSeen`). The range is the priest's own `character.range`.
+    let at=0;
+    for(;;){
+      at=await clock(live,P);await plantSeen(live,W,{hp:0.7});await waitForGameplay(Math.ceil(3*margin));
+      const l=await readLog(live,P,at),reach=await live.clients[P]!.run('character.range') as number;
+      if(!l.samples.every(s=>!!s.party[W]&&s.party[W]!.dist<=reach))continue;
+      result.tc38.attacksAt70=l.spends.filter(s=>s.method==='attack'&&s.line===60&&below(s,W,0.75)&&inRange(s,W)).length;break;}
     result.tc38.written80=await setting(80);
     const back=await clock(live,P);await plantSeen(live,W,{hp:0.7});await waitForGameplay(Math.ceil(margin)+500);
     const l=await readLog(live,P,back);
     result.tc38.healedAt80=l.replies.some(r=>accepted(r,'heal'));
-    result.tc38.attacksAt80=l.spends.filter(s=>s.method==='attack'&&below(s,W,HEAL_FIRST_BELOW)&&inRange(s,W)).length;
-    // A miss's reading: from the 60 half on, the priest's sends, replies, executor records, samples
+    // The gameplay clock moves in 250 ms steps, so an attack can share `back`'s step and still go out
+    // before the reply that carries 80 (fix13-sv10's run: the attack at `back`, with the heal ask still
+    // at maintenance). The check counts each attack by the line it went out under.
+    result.tc38.attacksAt80=l.spends.filter(s=>s.method==='attack'&&s.line===80&&below(s,W,HEAL_FIRST_BELOW)&&inRange(s,W)).length;
+    // A miss's reading: from the 60 half on, the priest's sends with their lines, replies, executor records, samples
     // of the warrior and the heal need's answers.
-    if(!result.tc38.healedAt80){const all=await readLog(live,P,at);
+    if(!result.tc38.healedAt80||result.tc38.attacksAt80>0){const all=await readLog(live,P,at);
       console.log('TURNS-TC38-VIEW '+JSON.stringify({back:back-at,end:(await clock(live,P))-at,
-        spends:all.spends.map(s=>[s.at-at,s.method,s.name??s.id??s.item,s.party[W]?Math.round(s.party[W]!.hp/s.party[W]!.max*1000)/10:null,s.party[W]?Math.round(s.party[W]!.dist):null]),
+        spends:all.spends.map(s=>[s.at-at,s.method,s.name??s.id??s.item,s.party[W]?Math.round(s.party[W]!.hp/s.party[W]!.max*1000)/10:null,s.party[W]?Math.round(s.party[W]!.dist):null,s.line??null]),
         replies:all.replies.map(r=>[r.at-at,r.place,r.response,r.failed]),ring:all.ring.map((r:any)=>[r.at-at,r.kind,r.family,r.skill,r.reason??r.waitedMs??null]),
         samples:all.samples.filter((_,i)=>i%2===0).map(s=>[s.at-at,s.target?1:0,s.party[W]?Math.round(s.party[W]!.hp/s.party[W]!.max*1000)/10:null,s.party[W]?Math.round(s.party[W]!.dist):null]),
         needs:((await needsSince(live,P,at)) as any)?.calls?.filter((c:any[])=>c[1]==='heal')}));}
@@ -656,11 +685,21 @@ export async function turnsSlotRow(live:LiveGame,info:TestInfo){
 }
 
 // One spend each of the turns executor's
-// methods, pushed through `__partyTurns.spend` while the console Pause holds both fighters, its
-// server entries against the call budget's ledger. The executor's own call budget question books
-// each, so a question whose method or data differs from the call's shows here.
+// methods, pushed through `__partyTurns.spend` while both fighters stand on Manual with Combat and
+// Use potions on, its server entries against the call budget's ledger. The executor's own call
+// budget question books each, so a question whose method or data differs from the call's shows
+// here. The console Pause refuses every spend, a push included, since a Pause stops all console
+// code (13-lifecycle-design LF1): its hold field carries Combat and Use potions off (runtime/tasks/
+// coordinator/holds.ts `response`). Manual moves nobody, and in the town square with no focus and
+// full vitals the console has nothing of its own to spend on, so each call's quiet window holds.
 const push=(ask:string)=>`(globalThis.__e2eTc15=globalThis.__e2eTc15||[],globalThis.__partyTurns.spend({rank:'survival',category:'survival',reason:'TC15',by:'e2e:TC15',...${ask}}).then(()=>__e2eTc15.push('accepted'),e=>__e2eTc15.push(e&&(e.reason||e.response)||String(e))),true)`;
 async function turnsCallCosts(live:LiveGame){
+  const manual=async(on:boolean)=>{for(const n of [W,P]){await live.post('/formation',{character:n,handControl:{on}});
+    await expect.poll(()=>live.clients[n]!.run(`partyTasks.holds.handControl()?.by??null`),{timeout:30_000,message:`TC15: ${n} ${on?'on':'off'} Manual`}).toBe(on?'manual':null);}};
+  await manual(true);
+  try{return await callCosts(live);}finally{await manual(false);}
+}
+async function callCosts(live:LiveGame){
   const results:any[]=[];
   const report=async()=>console.log('TURNS-TC15 '+JSON.stringify({calls:results.map(r=>[r.label,r.server,r.ledger,r.refused]),answers:await live.clients[W]!.run('globalThis.__e2eTc15??null'),priest:await live.clients[P]!.run('globalThis.__e2eTc15??null'),ring:await live.clients[W]!.run('(globalThis.__partyTurns?.records?.()??[]).slice(-6)')}));
   results.push(await oneCall(live,P,'heal (the executor)','heal',push(`{skill:'heal',targets:[parent.entities['${W}']]}`)));
@@ -784,14 +823,13 @@ export async function turnsPotionRow(live:LiveGame,info:TestInfo){
     const answer=await live.clients[P]!.run(`heal(parent.entities['${W}']).then(r=>({accepted:true,reply:r&&{response:r.response,place:r.place}}),e=>({accepted:false,reason:e&&(e.reason||e.response||e.message)}))`);
     const after=await live.admin(`output=(()=>{const w=get_player('${W}'),p=get_player('${P}');return {w:w.hp,p:p.mp};})()`);
     result.tc13={planted:{mp:planted.mp,mp_cost:planted.mp_cost},before,answer,after,healed:after.w>before.w,mpAfter:after.p};
-    await plantVitals(live,P,{hp:0.9,mp:0.8});await plantVitals(live,W,{hp:0.6,mp:0.8});
-    try{result.tc15=await turnsCallCosts(live);}catch(error){result.tc15error=String(error).slice(0,300);console.log('TURNS-TC15-ERROR '+result.tc15error);}
   }catch(error){result.tc13={error:String(error).slice(0,400)};console.log('TURNS-T2-TC13 '+result.tc13.error);}
   finally{
     await live.post('/console-control/play',{}).catch(()=>{});
     await expect.poll(()=>live.clients[P]!.run('!__partyHooks.ask("lifecycle.held")'),{timeout:60_000,message:'Play releases the priest'}).toBe(true).catch(()=>{});
     await plantVitals(live,P,{hp:1,mp:1});await plantVitals(live,W,{hp:1});
   }
+  try{result.tc15=await turnsCallCosts(live);}catch(error){result.tc15error=String(error).slice(0,300);console.log('TURNS-TC15-ERROR '+result.tc15error);}
   try{(result.tc15??=[]).unshift(await attackCallCost(live));}catch(error){result.tc15error=String(error).slice(0,300);console.log('TURNS-TC15-ERROR '+result.tc15error);}
   console.log('TURNS-TC15-ATTACK '+JSON.stringify(result.tc15?.[0]&&[result.tc15[0].label,result.tc15[0].server,result.tc15[0].ledger]));
   // TC9: MP at 15% and HP at 45% while the priest walks to the goo field and fights.

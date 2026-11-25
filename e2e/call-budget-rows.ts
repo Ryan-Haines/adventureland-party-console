@@ -23,12 +23,16 @@ const budgetView=(live:LiveGame,name:string)=>live.clients[name]!.run('globalThi
 const attach=(info:TestInfo,name:string,body:unknown)=>info.attach(name,{body:JSON.stringify(body,null,1),contentType:'application/json'});
 
 // A Tracktrix in the character's bag, the tracker read's condition (3.7). A headless character has
-// no page (`page` false), so the server's packet alone gives it.
+// no page (`page` false), so the server's packet alone gives it. The default fixture turns the
+// merchant's inventory cleanout off, so a fighter's loot fills its bag over a long table: the
+// confirming table at fdc770fc6 reached the M2 row with the priest's 42 cells full. A bag with no
+// empty cell gives its last cell to the Tracktrix, and the helper returns the item it took out.
 export async function holdTracktrix(live:LiveGame,name:string,page=true){
-  await live.admin(`output=(()=>{const p=get_player('${name}');if(p.items.some(i=>i&&i.name==='tracker'))return true;
-    const slot=p.items.findIndex((i,k)=>!i&&k<p.isize);if(slot<0)throw Error('No free slot for the Tracktrix');p.items[slot]={name:'tracker'};
-    cache_player_items(p);resend(p,'reopen+cid');return true;})()`);
+  const displaced=await live.admin(`output=(()=>{const p=get_player('${name}');if(p.items.some(i=>i&&i.name==='tracker'))return null;
+    const free=p.items.findIndex((i,k)=>!i&&k<p.isize),slot=free<0?p.isize-1:free,taken=p.items[slot]||null;p.items[slot]={name:'tracker'};
+    cache_player_items(p);resend(p,'reopen+cid');return taken;})()`);
   if(page)await expect.poll(()=>live.clients[name]!.run(`character.items.some(i=>i&&i.name==='tracker')`),{timeout:15_000}).toBe(true);
+  return displaced;
 }
 // The Tracktrix taken from the bag, as banking it would.
 async function dropTracktrix(live:LiveGame,name:string){
@@ -71,8 +75,15 @@ async function trackerChecks(live:LiveGame){
     out.manual={manualFrom,windows:(await log()).windows.filter(at=>at>=manualFrom),replies:await replies(manualFrom)};
     await page.run('(parent.hide_modal?.(),true)').catch(()=>null);
     // CB16 and CB30: with replies lost, a gained Tracktrix asks at once, again one margin later,
-    // then at the 30 s refresh.
+    // then at the 30 s refresh. Each request is a background question, which goes when the window
+    // has room for it. The gained and manual reads above sit in the merchant's window, so the
+    // section starts once the window has room for a request and its retry with no wait above the
+    // read: the triage run started 250 ms after the manual read, and the retry waited for the
+    // gained read to leave the window.
     await dropTracktrix(live,M);
+    const cost=Number(await live.admin('output=CC.tracker'));
+    await expect.poll(()=>page.run(`(()=>{const v=globalThis.__partyCalls?.view?.();return !!v&&v.used+2*${cost}<=v.limits.background&&!v.waiting.length;})()`),
+      {timeout:15_000,intervals:[250],message:"CB30: the merchant's window has room for a request and its retry"}).toBe(true);
     await live.admin(`output=(()=>{const s=get_player('${M}').socket;globalThis.__e2eTrackerListeners=s.listeners('tracker');s.removeAllListeners('tracker');return globalThis.__e2eTrackerListeners.length;})()`);
     try{
       const lostFrom=await now();
@@ -84,7 +95,10 @@ async function trackerChecks(live:LiveGame){
       await waitForGameplay(Math.max(0,first+margin+TRACKER_REFRESH_MS+WINDOW_MS-await now()));
       out.lost={lostFrom,margin,asks:(await log()).asks.filter(at=>at>=lostFrom),replies:await replies(lostFrom)};
     }finally{
-      await live.admin(`output=(()=>{const s=get_player('${M}').socket;for(const l of globalThis.__e2eTrackerListeners||[])s.on('tracker',l);delete globalThis.__e2eTrackerListeners;return s.listeners('tracker').length;})()`);
+      // The server's own `socket.on` wraps each handler in its call charge (server.js:4966-5058),
+      // and the kept listener is that wrapper, so the restore registers it through socket.io's
+      // `on`: a second wrap charged each later tracker request twice (50 and 51, row A of fix3).
+      await live.admin(`output=(()=>{const s=get_player('${M}').socket;for(const l of globalThis.__e2eTrackerListeners||[])Object.getPrototypeOf(s).on.call(s,'tracker',l);delete globalThis.__e2eTrackerListeners;return s.listeners('tracker').length;})()`);
     }
     // CB30: a `kill_credit` raises its monster's count by 1 on the reply the game client holds as
     // its `tracker`, with no read. The server sends the packet to the credited socket as its kill
@@ -452,7 +466,9 @@ async function stopRetires(live:LiveGame){
     stopped=await frame.evaluate((key:string)=>{
       const w=window as any,record=w.__partyCallBudget,install=record.install,socket=w.socket;
       // The run scope puts its own wrapper of each listener on the socket, so the row counts the
-      // socket's listeners per event, as CB17 does: the stop takes off as many as the install owns.
+      // socket's listeners per event, as CB17 does. `stop_runner` ends the whole CODE runtime, so
+      // the other owners' run scope listeners leave with the install's (the status owner's
+      // `kill_credit`, telemetry.ts): the stop takes off at least as many as the install owns.
       const own:Record<string,number>={};
       for(const [event] of install.listeners as [string,unknown][])own[event]=(own[event]??0)+1;
       const count=()=>Object.fromEntries(Object.keys(own).map(event=>[event,socket.listeners(event).length]));
@@ -462,7 +478,7 @@ async function stopRetires(live:LiveGame){
       w.stop_runner();
       const after=count();
       return {at,held,installAfter:record.install===undefined?null:'live',retired:install.retired,before,after,
-        listenersLeft:Object.keys(own).filter(event=>after[event]!==before[event]-own[event]),
+        listenersLeft:Object.keys(own).filter(event=>after[event]>before[event]-own[event]),
         wrapperOnTop:socket.emit===install.wrapper};
     },key);
   }finally{await live.plantCallCost(M,0);}

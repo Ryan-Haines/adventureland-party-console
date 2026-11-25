@@ -56,9 +56,13 @@ export function tc11(log:Tc11Log,from:number,to:number,step:number,cooldown:numb
     const edge=!reply.failed?free+cooldown-rtt:reply.response==='cooldown'&&Number.isFinite(reply.ms)?free+Number(reply.ms)-rtt:free;
     const ready=Math.max(free,edge),gap=next.at-ready,inGap=(at:number)=>at>ready&&at<next.at;
     if(gap<=0)continue;
-    const samples=log.samples.filter(s=>inGap(s.at)),skip=skipStretch(samples,SELECTION_MS+(Number.isFinite(step)?step:0));
-    // A skipped edge: the skip held from within a pass of the edge to within a pass of the send.
-    const covered=!!skip&&skip.first.at-ready<=slot&&next.at-skip.last.at<=slot;
+    const pass=SELECTION_MS+(Number.isFinite(step)?step:0),samples=log.samples.filter(s=>inGap(s.at)),skip=skipStretch(samples,pass);
+    // A skipped edge: the skip held from within a pass of the edge to within a pass of the send. The
+    // samples run every 100 ms off the clock's steps, so the skip ends at the selection pass after its
+    // last record, or at the first sample that no longer holds it if that comes first.
+    const after=skip&&samples.find(s=>s.at>skip.last.at&&!skipHeld(s,pass));
+    const end=skip?Math.max(skip.last.at,Math.min(skip.last.skip!.last+pass,after?after.at:Infinity)):0;
+    const covered=!!skip&&skip.first.at-ready<=slot&&next.at-end<=slot;
     if(covered){skipHeldMs+=gap;if(gap>slot)skipped.push({at:ready-from,gap,target:skip!.first.skip!.target,damage:skip!.first.skip!.damage,hp:skip!.first.skip!.hp});continue;}
     if(gap<=slot)continue;
     if(log.ring.some(e=>(e.kind==='wait'||e.kind==='refusal')&&e.family==='attack'&&e.at>=free&&e.at<=next.at+slot))continue;

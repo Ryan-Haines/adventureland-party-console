@@ -183,12 +183,15 @@ async function gooWindows(live:LiveGame,info:TestInfo){
           if(reply)stack.push({skill:r.skill,at:r.at,waitedMs:waited,replyAfterCountMs:reply[0]-waited});else other.push(r.skill);}
         if(stack.length)console.log('TURNS-TRNQ33 '+JSON.stringify({name:n,stack}));
         expect.soft(other,`TRN-Q24: ${n}'s lost replies in the windows`).toEqual([]);}
-      // TC17: the warrior's Dash and the priest's Curse are the A36 casts the
-      // goo field reaches (no basher, no mage: 13.2 "Before measures").
+      // TC17: the priest's Curse is the A36 cast the goo field reaches (no basher, no mage: 13.2
+      // "Before measures"). The warrior's approach Dash waits while a grouped formation holds a
+      // priest (warrior-combat.ts `dashToward`, as v1.5.0 shared.js:13956), and the windows farm
+      // grouped with the priest, so they reach no Dash: its count is a reading, and
+      // combat-movement.test.cjs "Dash cannot overshoot the weapon range boundary" holds its reach
+      // and that hold. PR #159's final run and the end run on 367447e73 each read 0.
       const a36=Object.fromEntries(await Promise.all(fighters.map(async n=>[n,await a36Casts(live,n,a36From[n]!)])));
       console.log('TURNS-TC17 '+JSON.stringify(a36));
-      const [W17,P17]=fighters;
-      expect.soft(a36[W17!]!.casts.dash??0,'TC17: the warrior Dashes').toBeGreaterThan(0);
+      const [,P17]=fighters;
       // The priest's Curse goes where its setup allows it: a Curse decision
       // the class reserve, the cooldown or the range refuses is the engine's rule, not a stopped cast
       //. TRN-Q-DPS's ranking replaced the sustained damage

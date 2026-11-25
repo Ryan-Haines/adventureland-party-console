@@ -273,7 +273,10 @@ async function targetingHuntCase(live:LiveGame,info:TestInfo,geometry:any){
 //. After a CODE reload the list still blocks it. With sparkbot off the list again the
 // attacks resume. The plant's attack is 1, so the reflected hits are the priest's own damage.
 const REFUSAL='Monster reflection: magical basic attacks disabled',HOLD_MS=8_000;
-const priestAttacks=(id:string,from:number)=>`(()=>{const l=parent.__e2eTurns;return l?l.spends.filter(s=>s.method==='attack'&&String(s.id)===${JSON.stringify(id)}&&s.at>=${from}).length:-1;})()`;
+// `listed` counts only the attacks sent while the priest's own list held the sparkbot: on ChronAL's
+// virtual clock the reply that delivers the list and an attack sent before it can share one
+// millisecond, and a time cut alone counted that earlier attack as one after the list.
+const priestAttacks=(id:string,from:number,listed=false)=>`(()=>{const l=parent.__e2eTurns;return l?l.spends.filter(s=>s.method==='attack'&&String(s.id)===${JSON.stringify(id)}&&s.at>=${from}&&(!${listed}||s.magicListed!==false)).length:-1;})()`;
 export async function reflectListRow(live:LiveGame,info:TestInfo){
   const result:any={};
   const clock=()=>live.clients[P]!.run('Date.now()') as Promise<number>;
@@ -290,7 +293,7 @@ export async function reflectListRow(live:LiveGame,info:TestInfo){
     await expect.poll(async()=>(await lists())?.magic??[],{timeout:20_000,message:'TG11: the next reply delivers the list'}).toEqual(['sparkbot']);
     from=await clock();
     await new Promise(r=>setTimeout(r,HOLD_MS));
-    result.blocked={attacks:await live.clients[P]!.run(priestAttacks(id,from)),plant:await plant(),
+    result.blocked={attacks:await live.clients[P]!.run(priestAttacks(id,from,true)),plant:await plant(),
       refusals:await live.clients[P]!.run(`(globalThis.__partyTurns?.records?.()??[]).filter(r=>r.kind==='refusal'&&r.reason===${JSON.stringify(REFUSAL)}).length`)};
     // TG39: a CODE reload of the priest keeps the edited list.
     const runtime=(await live.state()).characters[P]?.dashboardRuntime;
@@ -301,7 +304,7 @@ export async function reflectListRow(live:LiveGame,info:TestInfo){
     await expect.poll(async()=>(await lists())?.magic??[],{timeout:20_000,message:'TG39: the reloaded runtime reads the edited list'}).toEqual(['sparkbot']);
     from=await clock();
     await new Promise(r=>setTimeout(r,HOLD_MS));
-    result.reloaded={attacks:await live.clients[P]!.run(priestAttacks(id,from)),plant:await plant()};
+    result.reloaded={attacks:await live.clients[P]!.run(priestAttacks(id,from,true)),plant:await plant()};
     // Off the list again (the defaults' three monsters), the attacks resume.
     await write(['slenderman','tiger','goblin'],P);
     await expect.poll(async()=>(await lists())?.magic??[],{timeout:20_000}).toEqual(['slenderman','tiger','goblin']);

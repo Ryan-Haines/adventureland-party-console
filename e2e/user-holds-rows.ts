@@ -218,11 +218,11 @@ export async function pauseHeadlessRow(live:LiveGame,info:TestInfo){
   // CB16 headless: caracAL runs the Tracktrix read
   // too, so a Tracktrix planted in the headless priest's bag puts one tracker charge on its socket.
   const plantedAt=await live.admin('output=Date.now()') as number;
-  await holdTracktrix(live,P,false);
+  const displaced=await holdTracktrix(live,P,false);
   const trackerCharges=()=>live.admin(`output=get_player('${P}').socket.calls.filter(c=>c[1]==='tracker'&&+c[0]>=${plantedAt}).map(c=>[+c[0]-${plantedAt},c[2]])`) as Promise<[number,number][]>;
   let charges:[number,number][]=[];
   await expect.poll(async()=>(charges=await trackerCharges()).length,{timeout:15_000,intervals:[250],message:'CB16: the headless priest asks for its Tracktrix data'}).toBeGreaterThan(0);
-  await attach(info,'cb16-headless',{plantedAt,charges});
+  await attach(info,'cb16-headless',{plantedAt,charges,displaced});
   expect(charges,"CB16: one tracker charge of 50 on the headless priest's socket").toEqual([[charges[0]![0],50]]);
   // The budget bound on the headless priest before its Pause starts: its server sum stays within the budget's used that its status reports carry.
   await headlessBound(live,info,P,30_000);

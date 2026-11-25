@@ -6,7 +6,7 @@ import {taskDeathBaseline,expectTaskDeath,taskTrail} from './task-records';
 import {W,P,fighters,peacefulWorld,seedBoss,endEvent,installProbe,harvest,respawnedAt,idleRuns,routeMs,attach,partyReady,hitBy,inZone,answers,expectInvariants,stuckNamed,FARM_MONSTER} from './event-death-helpers';
 import {location} from './game/hunt-lifecycle';
 import {bandsRead,survivalWaits,type BandsRead} from './call-budget-rows';
-import {deathRecordHolds,escapeSpendProbe,escapeSpendRead,sv26Holds} from './survival-rows';
+import {deathRecordHolds,installEscapeSpendProbe,escapeSpendRead,sv26Holds} from './survival-rows';
 
 // CB21: no survival question of either fighter
 // waits in an UP-1 row, on the socket it starts with or on any it gets after.
@@ -61,7 +61,7 @@ export const up1Row=(type:'mrgreen'|'horseman')=>async(live:LiveGame,info:TestIn
       try{
         const deathBase=await taskDeathBaseline(live,P);
         // The priest's death record, its notice, its respawns.
-        await live.clients[P].run(escapeSpendProbe);
+        await installEscapeSpendProbe(live,P);
         const death=await killNativeCharacter(live,P);
         await expectTaskDeath(live,P,deathBase);
         // Back in boss range while the event lives, with nobody stepping in.

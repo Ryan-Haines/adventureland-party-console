@@ -34,12 +34,17 @@ test('Cave talk reopens a merchant after a later encounter, buys its item, and R
   }
   const shopPoint=()=>view().then(v=>v.members[0].observation.cave.points.find((p:any)=>p.room==='0:shop'));
   const shopShown=(v:any)=>v.members.some((m:any)=>m.observation?.cave?.choice?.shop?.room==='0:shop');
+  // The merchant is answered once every member shows its vote resolved. The entry seed can place
+  // the party inside the merchant's reach, so its vote opens on entry, and one member's report
+  // can show it before the leader's does. The vote swap below keeps the run paused when it lands
+  // on an unanswered vote: cave_begin_vote pauses the run and only cave_resolve_vote resumes it.
+  const shopAnswered=(v:any)=>v.members.every((m:any)=>{const choice=m.observation?.cave?.choice;return choice?.shop?.room==='0:shop'&&choice.resolved;});
   // Answer the merchant once, near it.
   await expect.poll(async()=>{
     const v=await view(),c=v.members[0].observation.cave;
-    if(c.choice&&!c.choice.resolved)return shopShown(v)?(await voteAndSettle(view,act,v.members[0]?.observation?.cave),true):(await voteAndSettle(view,act,v.members[0]?.observation?.cave),false);
-    if(shopShown(v))return true;
-    if(!v.state.travel&&!Object.values(v.state.commands).some((x:any)=>x.action==='move'))await act({action:'move',run:c.run,target:(await shopPoint()).id});
+    if(shopAnswered(v))return true;
+    if(c.choice&&!c.choice.resolved){await voteAndSettle(view,act,c);return false;}
+    if(!shopShown(v)&&!v.state.travel&&!Object.values(v.state.commands).some((x:any)=>x.action==='move'))await act({action:'move',run:c.run,target:(await shopPoint()).id});
     return false;
   },{timeout:180_000,message:'The party must reach and answer the merchant'}).toBe(true);
   // Another encounter becomes the run's current vote, as walking on does natively.

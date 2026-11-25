@@ -3,7 +3,8 @@ import {holdTracktrix} from '../../../../e2e/call-budget-rows';
 import type {Page,TestInfo} from '@playwright/test';
 import type {App} from '../../../../e2e/fixtures';
 import {fighters,warrior as W,location,party} from '../../../../e2e/game/hunt-lifecycle';
-import {contains,distance} from '../../../hunting/zones';
+import {distance} from '../../../hunting/zones';
+import {standsAt} from '../../../hunting/rules';
 import {CALL_WINDOW_MS,READ_PICKS} from '../../../characters/call-budget-limits';
 import {taskTrail} from '../../../../e2e/task-records';
 
@@ -31,7 +32,7 @@ const probe=`(()=>{if(globalThis.__e2eAchievement)return true;const s=globalThis
   // The walk's phases as the executor reports them, merged into segments, so an idle stretch
   // inside a walk names what the character stood in.
   setInterval(()=>{const r=__partyMovement.report(),p=r?.progress,key=r?[p?.phase,__partyMovement.live()?.kind??null,!!character.moving].join('|'):'none',last=s.segments.at(-1);
-    if(last&&last.key===key){last.ms=Date.now()-last.at;return;}s.segments.push({key,at:Date.now(),ms:0,x:Math.round(character.real_x),y:Math.round(character.real_y),step:p?.step??null,remaining:r?.remaining??null});
+    if(last&&last.key===key){last.ms=Date.now()-last.at;return;}s.segments.push({key,at:Date.now(),ms:0,x:Math.round(character.real_x),y:Math.round(character.real_y),step:p?.step??null,remaining:r?.remaining??null,speed:character.speed});
     if(s.segments.length>600)s.segments.shift();},100);
   setInterval(()=>{const l=__partyMovement.last();if(l?.id&&!s.journeys[l.id])s.journeys[l.id]={endAt:Date.now(),elapsedMs:l.elapsedMs,plannerMs:l.plannerMs,walking:Number(l.walkingDistance)||0,idleMs:Number(l.progress?.durations?.idle)||0,end:l.end};
     if(character.rip&&!dead)s.deaths.push({at:Date.now(),cause:globalThis.__partyLastDeathInfo?.message??null});dead=!!character.rip;},250);return true;})()`;
@@ -88,7 +89,7 @@ async function achievementHuntRow(live:LiveGame,info:TestInfo){
           idle=h.started.reduce((t:number,j:any)=>t+(j.idleMs||0),0);
         return [n,{pausedMs:h.pausedMs,idleMs:idle,firstWalkAfterMs:h.started[0]?h.started[0].at-switchedAt[n]!:null,routeMs:Math.round(walking/h.speed*1000),plannerMs:Math.round(planner),
           walking:Math.round(walking),speed:h.speed,journeys:h.started.map((j:any)=>[j.at-switchedAt[n]!,j.kind,String(j.owner??'').split(':')[0],Math.round(j.walking||0),j.elapsedMs??null,j.end??null]),
-          segments:h.segments.map((g:any)=>[g.at-switchedAt[n]!,g.ms,g.key,g.x,g.y,g.step,g.remaining]),
+          segments:h.segments.map((g:any)=>[g.at-switchedAt[n]!,g.ms,g.key,g.x,g.y,g.step,g.remaining,g.speed]),
           moves:h.moves.map((m:any)=>[m.at-switchedAt[n]!,m.from,m.to,m.by])}];})));
       // The leader's navigation log since the switch (13.5a item 1): the convoy's history and the
       // farming engagement with its position age, so a second group walk names whether the
@@ -101,17 +102,25 @@ async function achievementHuntRow(live:LiveGame,info:TestInfo){
     // The party reaches the target's spawn; the time limit is checked at the end. Each poll keeps
     // both fighters' server positions and their distance to the spawn box, so a miss names where
     // each one stood (13.5a's miss kept none).
+    // A fighter has reached it once it stands inside the area plus its own attack range, the farm's
+    // arrival rule (hunting/rules.ts `standsAt`, which the farm engagement reads to end the walk).
+    // The confirming table run on fdc770fc6 read a fixed 150 margin: the walk handed the warrior to
+    // its fight 169 from the area, inside its 179 range, and the row read it as still walking.
     result.positions=[];
-    await expect.poll(async()=>{const players=await live.admin(`output=${JSON.stringify(fighters)}.map(n=>{const p=get_player(n);return {name:n,map:p.map,x:p.x,y:p.y,rip:!!p.rip}})`);
-      result.positions.push([Date.now()-switchedAtTest,...players.map((p:any)=>[p.name,p.map,Math.round(p.x),Math.round(p.y),p.rip,p.map===area.map?Math.round(distance(area,p)):null])]);
-      return players.every((p:any)=>!p.rip&&contains(area,p,150,500));},{timeout:300_000,intervals:[1000],message:'Both fighters reach the goo spawn'}).toBe(true)
+    await expect.poll(async()=>{const players=await live.admin(`output=${JSON.stringify(fighters)}.map(n=>{const p=get_player(n);return {name:n,map:p.map,x:p.x,y:p.y,range:p.range,rip:!!p.rip}})`);
+      result.positions.push([Date.now()-switchedAtTest,...players.map((p:any)=>[p.name,p.map,Math.round(p.x),Math.round(p.y),p.rip,p.map===area.map?Math.round(distance(area,p)):null,p.range])]);
+      return players.every((p:any)=>!p.rip&&standsAt(area,p,500));},{timeout:300_000,intervals:[1000],message:'Both fighters reach the goo spawn'}).toBe(true)
       .catch(async error=>{await readReach().catch(e=>{result.reachError=String(e);});
         console.log('ACHIEVEMENT-HUNT-MISS '+JSON.stringify({area:{map:area.map,x:area.x,y:area.y},positions:result.positions,navigation:result.navigation,reach:result.reach,reachError:result.reachError}));
         throw error;});
     const reachedMs=Date.now()-switchedAtTest;
     await readReach();
-    // The party walks as one group at its slowest member's pace.
-    const pace=Math.min(...fighters.map(n=>result.reach[n].speed));
+    // The party walks as one group at its walk's pace, which every member's speed reads while the
+    // walk travels (RR13). fix3-surv's run3 read the speeds after the walk as 117 and 99, against
+    // 97 and 79 in the other runs, and that limit came out 227 ms under its reach.
+    const paces=fighters.flatMap(n=>result.reach[n].segments.filter((g:any)=>/^walking\|group-walk\|/.test(g[2])).map((g:any)=>Number(g[7])));
+    expect(paces.length,'segments the walk travelled in').toBeGreaterThan(0);
+    const pace=Math.min(...paces);
     result.reachMs=reachedMs;
     result.limitMs=Math.round(Math.max(...fighters.map(n=>result.reach[n].walking))/pace*1000+result.settleMs+1000);
     // The party kills the target over one window, with the add-on still holding the group.

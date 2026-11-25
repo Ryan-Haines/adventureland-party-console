@@ -10,7 +10,7 @@ import {taskSeq,taskTrail} from './task-records';
 import {quests,start,profile} from './game/hunt-lifecycle';
 import {bandsHold,bandsRead,CB20_P95,chargesHold,mageCosts,meterOf} from './call-budget-rows';
 import {cb20Windows,CB20_TURNS_BEFORE} from './call-budget-cb20';
-import {caseASpendsHold,deathRecordHolds,escapeSpendProbe,escapeSpendRead,sv16Holds,sv26Holds,survivalHitProbe} from './survival-rows';
+import {caseASpendsHold,deathRecordHolds,escapeSpendRead,installEscapeSpendProbe,installSurvivalHitProbe,sv16Holds,sv26Holds} from './survival-rows';
 
 // UP-2, ledger bug 5 and queue D7: step 3 of the movement owner migration.
 // Failure inventory: e2e/movement-owner-failures.md, "Step 3".
@@ -217,7 +217,7 @@ const survival=true;
         try{
           await farmArena(live,names);
           const home=await expectedHome(live,'arena');
-          for(const n of names)await live.clients[n].run(escapeSpendProbe);
+          for(const n of names)await installEscapeSpendProbe(live,n);
           // A monster planted on the living warrior and the priest; for Scare,
           // the warrior holds a jacko, put in its bag and equipped by its
           // own client, as the turns row equips the basher.
@@ -286,7 +286,7 @@ async function caseBRow(live:LiveGame,info:TestInfo){
           // (survival-rows.ts `survivalHitProbe`). farmArena places the party at once: one run
           // started the probe 1000 ms before the plant. Its red plant starts it at the plant, as
           // an earlier run did.
-          if(!red('sv24'))await live.clients[W].run(survivalHitProbe);
+          if(!red('sv24'))await installSurvivalHitProbe(live,W);
           await farmArena(live,names);
           if(!red('sv24'))await waitForGameplay(Math.max(0,15_000-(await live.clients[W].run('Date.now()-globalThis.__e2eSurvivalHitsFrom') as number)));
           // CB11 and CB21: every question the priest asks, with
@@ -295,7 +295,7 @@ async function caseBRow(live:LiveGame,info:TestInfo){
             calls.band=q=>{const a=band(q);log.push({at:Date.now(),band:q.band,method:q.method,kind:__partyMovement.live()?.kind??null,answer:a});return a;};return Date.now();})()`) as number;
           const home=await expectedHome(live,'arena');
           await live.clients[P].run(armWalkHome(true));
-          for(const n of names)await live.clients[n].run(escapeSpendProbe);
+          for(const n of names)await installEscapeSpendProbe(live,n);
           const tasksFrom=await taskSeq(live,`party:${W}`);
           // K1's check: no page
           // error on any member from the death to the resume. The death recovery's role loop hold
@@ -309,7 +309,7 @@ async function caseBRow(live:LiveGame,info:TestInfo){
           await live.clients[P].run(`(()=>{const q=globalThis.partyQueueClient,log=globalThis.__e2eQueueDeaths=[];if(!q||!q.death)return false;const d=q.death;
             q.death=function(id,...rest){log.push({at:Date.now(),id:String(id)});return d.call(this,id,...rest);};
             if(${red('tg21')})parent.socket.on('death',x=>{if(x&&x.id&&x.id!==character.name)globalThis.partyQueueClient.death(x.id);});return true;})()`);
-          if(red('sv24'))await live.clients[W].run(survivalHitProbe);
+          if(red('sv24'))await installSurvivalHitProbe(live,W);
           // The sampler starts at the death plant, after the 15 s farm, so its windows hold the
           // death and the escape as in the runs that recorded UP-2's executor figure.
           sampler=live.sampleCalls(names);
@@ -644,7 +644,7 @@ async function caseERow(live:LiveGame,info:TestInfo){
   await hold(live,'skeletor');
   try{
     await farmArena(live,names);
-    for(const n of names)await live.clients[n].run(escapeSpendProbe);
+    for(const n of names)await installEscapeSpendProbe(live,n);
     const home=await expectedHome(live,'arena'),started={at:Date.now()};
     await live.post('/escape',{});
     const samples=await observe({live,info,names,survival,until:({escape})=>escape?.stage==='home'},started);

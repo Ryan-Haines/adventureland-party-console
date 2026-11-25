@@ -41,6 +41,17 @@ test('a skip that ends more than one pass before the send leaves a wait',()=>{
   const r=tc11(gapLog(at=>at<=2000?held(at):null),0,5000,STEP,COOLDOWN,RTT,true);
   assert.equal(r.waitsWithoutNotNow.length,1,'the stretch after the skip is a fault');
 });
+// fix15-tc38's run: the samples come every 100 ms off the clock's steps, so the last one that read
+// the skip came 48 ms before the selection pass that replaced the target, and the send went one
+// step after that pass. The skip holds until one selection after its last pass, not until its last
+// sample.
+test('a skip holds to the selection pass after its last record, not to its last sample',()=>{
+  const offStep=send=>({ring:[],spends:[{at:0,method:'attack',edge:0},{at:send,method:'attack',edge:0}],
+    replies:[{at:1000,place:'attack',response:'data',failed:false,ms:null}],
+    samples:[2050,2150,2250,2350].map(at=>({at,target:true,inRange:true,mpAttacks:true,party:{},tid:'goo1',skip:held(1000)}))});
+  assert.deepEqual(tc11(offStep(1000+SELECTION+2*STEP),0,5000,STEP,COOLDOWN,RTT,true).waitsWithoutNotNow,[],'one step after the selection pass');
+  assert.equal(tc11(offStep(1000+SELECTION+3*STEP),0,5000,STEP,COOLDOWN,RTT,true).waitsWithoutNotNow.length,1,'two steps after it');
+});
 test('a send 200 ms past its edge on a 0 ms clock step is a wait, with no role loop tick to excuse it',()=>{
   const log={ring:[],replies:[{at:1000,place:'attack',response:'data',failed:false,ms:null}],
     spends:[{at:0,method:'attack',edge:0},{at:2150,method:'attack',edge:0}],samples:[2000,2100].map(at=>({at,target:true,inRange:true,mpAttacks:true,party:{},tid:'goo1',skip:null}))};

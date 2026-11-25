@@ -73,11 +73,18 @@ async function plantOwn(live:LiveGame,name:string,vitals:{hp?:number;mp?:number;
 // (server.js:12042-12048). In a fight regeneration may run until a fighter reads below 80%
 //, so a plant that lands inside its lock waits for it; the potion's window starts
 // when the family frees.
-async function familyFree(live:LiveGame,name:string,seenAt:number,potionCooldown:number){
-  const before=((await spendsSince(live,name,seenAt-REGEN_COOLDOWN_MS)).spends as Spend[]).filter(s=>s.at<seenAt&&family(s)).at(-1);
+// The gameplay clock moves in 250 ms steps, so a send can share the plant's first reading and still
+// precede it: the end run on 367447e73 read the ranger's `regen_mp` at the same reading as its MP
+// plant, and the potion group held `use_mp` 4000 ms. `preceded` names such a send by the vitals it
+// read at its send, which were still above the plant.
+async function familyFree(live:LiveGame,name:string,seenAt:number,potionCooldown:number,preceded:(s:Spend)=>boolean=()=>false){
+  const before=((await spendsSince(live,name,seenAt-REGEN_COOLDOWN_MS)).spends as Spend[]).filter(s=>(s.at<seenAt||s.at===seenAt&&preceded(s))&&family(s)).at(-1);
   if(!before)return seenAt;
   return Math.max(seenAt,before.at+(regen(before)?REGEN_COOLDOWN_MS:potionCooldown));
 }
+// Whether a send read its own vitals above a plant: its MP, or its own HP in the party read.
+const above=(name:string,planted:{hp?:number;mp?:number},vitals:{hp?:number;mp?:number})=>(s:Spend)=>
+  vitals.mp!==undefined?s.mp>Number(planted.mp)+1:(s.party?.[name]?.hp??-Infinity)>Number(planted.hp)+1;
 // The member's own HP share as its client read it at `at`, from the spend log's 100 ms samples. A
 // heal can lift a planted fighter above its line before the potion family frees, and then no HP
 // potion is due.
@@ -108,7 +115,7 @@ export async function survivalNeedsRow(live:LiveGame,info:TestInfo){
   for(const n of fighters){
     const planted=await plantOwn(live,n,{hp:0.4}),limit=await bound(n);
     await waitForGameplay(REGEN_COOLDOWN_MS+limit+500);
-    const first=(await sends(n,planted.seenAt)).find(s=>potion(s)==='use_hp'),free=await familyFree(live,n,planted.seenAt,windows[n]!.cooldown);
+    const first=(await sends(n,planted.seenAt)).find(s=>potion(s)==='use_hp'),free=await familyFree(live,n,planted.seenAt,windows[n]!.cooldown,above(n,planted,{hp:0.4}));
     const list=await sends(n,planted.seenAt),share=await shareAt(live,n,free);
     result.sv1[n]={planted:planted.hp,max:planted.max_hp,limit,pollLagMs:planted.polledAt-planted.seenAt,freeAfterMs:free-planted.seenAt,afterMs:first?first.at-free:null,
       shareAtFree:share,due:share===null||share<HP_LINE,wrong:wrongWhileLow(list,n).map(([at,...r])=>[Number(at)-planted.seenAt,...r])};
@@ -119,7 +126,7 @@ export async function survivalNeedsRow(live:LiveGame,info:TestInfo){
   for(const n of fighters){
     const planted=await plantOwn(live,n,{mp:0.15}),limit=await bound(n);
     await waitForGameplay(REGEN_COOLDOWN_MS+limit+500);
-    const first=(await sends(n,planted.seenAt)).find(s=>potion(s)==='use_mp'),free=await familyFree(live,n,planted.seenAt,windows[n]!.cooldown);
+    const first=(await sends(n,planted.seenAt)).find(s=>potion(s)==='use_mp'),free=await familyFree(live,n,planted.seenAt,windows[n]!.cooldown,above(n,planted,{mp:0.15}));
     result.sv3[n]={planted:planted.mp,max:planted.max_mp,limit,pollLagMs:planted.polledAt-planted.seenAt,freeAfterMs:free-planted.seenAt,afterMs:first?first.at-free:null};
     await restore(live);await waitForGameplay(2_500);
   }
@@ -219,7 +226,7 @@ export async function survivalNeedsRow(live:LiveGame,info:TestInfo){
   {const townFrom=await clock(live,P),answer=await live.post('/town-party',{}).catch((error:Error)=>String(error.message).slice(0,300));
     // A miss's reading (13.5a item 3: run G's channel never showed and the log held nothing of the
     // priest): the route's answer, the priest's state, its game replies and turns ring since the post,
-    // and its town skill's cooldown.
+    // its town skill's cooldown and movement's last records.
     await expect.poll(()=>live.clients[P]!.run('!!(character.c&&character.c.town)'),{timeout:30_000,intervals:[50],message:"SV11: the priest's Town channel"}).toBe(true)
       .catch(async error=>{const l=await spendsSince(live,P,townFrom);
         console.log('SURVIVAL-SV11-VIEW '+JSON.stringify({answer,replies:l.replies.map((r:any)=>[r.at-townFrom,r.place,r.response,r.failed,r.reason]),
@@ -228,6 +235,8 @@ export async function survivalNeedsRow(live:LiveGame,info:TestInfo){
             moving:!!character.moving,townReady:parent.next_skill&&parent.next_skill.town?+parent.next_skill.town-Date.now():null,hand:partyTasks.holds.handControl()??null,
             occupied:!!__partyHooks.skills.allows({rank:'damage',occupied:true}),held:__partyHooks.ask('lifecycle.held')??null,live:globalThis.__partyMovement?.live?.()?.owner??null,
             command:(()=>{try{const c=partyTasks.convoyState().command;return c?JSON.stringify(c).slice(0,400):null;}catch(e){return String(e).slice(0,100);}})()})`),
+          // The movement owner's ring names each Town crossing and how it ended.
+          moves:await live.clients[P]!.run('__partyMovement.records().slice(-20).map(r=>[r.at,r.decision,r.kind,r.owner,r.code,r.cause])'),
           tasks:((await live.tasks()).groups??[]).map((g:any)=>[g.id,g.members,g.live?.kind??null,g.live?.owner??null])}).slice(0,8000));
         throw error;});
     const planted=await plantOwn(live,P,{hp:0.4,mp:0.15});
@@ -241,8 +250,11 @@ export async function survivalNeedsRow(live:LiveGame,info:TestInfo){
     await fightingAtGoo(live);}
   // Out of a fight: both fighters sent north of the town square walk back to the goo field with
   // no monster on them, and the warrior, planted to 70% HP with the transport, regenerates within one
-  // regeneration cooldown. The potion family starts free: a regeneration sent before the transport
-  // locks it for 4 s (server.js:12047). The plant rides the transport, so the need's first pick on the
+  // regeneration cooldown once the potion family is free. The fight up to the transport keeps the
+  // family locked: each attack spends MP, so the need sends `regen_mp` at every 4 s edge
+  // (server.js:12047) and the family is never free between two (fix3-surv run5, MP 595 of 1050).
+  // `familyFree` reads the end of the lock from the last family send before the plant, as SV1 and
+  // SV3 do. The plant rides the transport, so the need's first pick on the
   // walk is `regen_hp` (needs.ts `regenerationOrder` reads HP before MP above half): in an earlier run
   // the warrior, set full at the transport, cast Warcry as the walk began (MP 1050 to 730), the need
   // sent `regen_mp`, its lock ran to the plant, and by then the walk had reached the farm, where the regeneration
@@ -255,8 +267,6 @@ export async function survivalNeedsRow(live:LiveGame,info:TestInfo){
   {const lock=async()=>{if(!red('sv5lock'))return;await live.admin(`output=(()=>{const p=get_player(${JSON.stringify(W)});p.mp=Math.round(p.max_mp*0.7);resend(p,'u+cid');return true;})()`);
       await expect.poll(()=>live.clients[W]!.run('character.mp<character.max_mp'),{timeout:10_000,intervals:[50]}).toBe(true);
       await live.clients[W]!.run(`parent.socket.emit('use',{item:'mp'})`);};
-    await expect.poll(()=>live.clients[W]!.run(`!(parent.next_skill&&['use_hp','use_mp','regen_hp','regen_mp'].some(k=>+parent.next_skill[k]>Date.now()))`),
-      {timeout:15_000,intervals:[100],message:"SV5: the warrior's potion family is free before the walk"}).toBe(true);
     let planted:Awaited<ReturnType<typeof plantOwn>>;
     if(red('sv5old')){
       await live.admin(`output=(()=>{for(const n of ${JSON.stringify(fighters)}){const p=get_player(n);p.hp=p.max_hp;p.mp=p.max_mp;transport_player_to(p,'main',[0,0]);}return true;})()`);
@@ -271,11 +281,11 @@ export async function survivalNeedsRow(live:LiveGame,info:TestInfo){
       planted=await plantOwn(live,W,{hp:0.7,mp:1,transport:['main',-85,-389]});
     }
     const limit=REGEN_COOLDOWN_MS+windows[W]!.rtt+await step(W,rowFrom);
-    await waitForGameplay(limit+500);
+    await waitForGameplay(REGEN_COOLDOWN_MS+limit+500);
     const list=await sends(W,planted.seenAt);
-    const first=list.find(s=>regen(s)==='regen_hp');
+    const first=list.find(s=>regen(s)==='regen_hp'),free=await familyFree(live,W,planted.seenAt,windows[W]!.cooldown,above(W,planted,{hp:0.7}));
     const threatened=await live.clients[W]!.run(`Object.values(parent.entities).some(e=>e.type==='monster'&&[${JSON.stringify(W)},${JSON.stringify(P)}].includes(e.target))`);
-    result.sv5out={limit,afterMs:first?first.at-planted.seenAt:null,threatened,family:list.filter(s=>family(s)).map(s=>[s.at-planted.seenAt,family(s)])};
+    result.sv5out={limit,freeAfterMs:free-planted.seenAt,afterMs:first?first.at-free:null,threatened,family:list.filter(s=>family(s)).map(s=>[s.at-planted.seenAt,family(s)])};
     // The needs' times read from 3000 ms before the plant (`needsFrom`); an earlier run read them as from the plant.
     console.log('SURVIVAL-SV5-OUT '+JSON.stringify({planted,needsFrom:-3000,needs:((await needsSince(live,W,planted.seenAt-3000)) as any)?.calls?.filter((c:any[])=>c[1]!=='heal').slice(0,120),
       before:(await sends(W,planted.seenAt-5000)).filter(s=>family(s)).map(s=>[s.at-planted.seenAt,family(s)]),
@@ -341,16 +351,21 @@ export async function survivalNeedsRow(live:LiveGame,info:TestInfo){
 // monster's name, and this character's own deaths. A row whose character can be hit before its
 // death plant starts the probe 15 s before it: UP-2's arena goos hit the warrior before its plant.
 // The UP-1 and UP-3 rows run in a peaceful world, where escapeSpendProbe starts it at the plant.
+// The game window's socket holds its listeners past the CODE frame that adds them, so
+// `parent.__e2eSurvivalHitsUndo` takes them off from whichever frame runs it.
 export const survivalHitProbe=`(()=>{const g=globalThis;if(g.__e2eSurvivalHits)return true;const hits=g.__e2eSurvivalHits=[],killers=g.__e2eSurvivalKillers=[],deaths=g.__e2eSurvivalDeaths=[];g.__e2eSurvivalHitsFrom=Date.now();
-  parent.socket.on('hit',d=>{if(!d||d.id!==character.name||!(Number(d.damage)>0))return;const e=d.hid&&get_entity(String(d.hid));
-    hits.push({at:Date.now(),hid:d.hid??null,source:d.source??null,name:e&&e.type==='monster'?(G.monsters[e.mtype]?.name||String(e.mtype)):null});});
-  parent.socket.on('game_response',d=>{if(d&&d.response==='defeated_by_a_monster'&&d.monster)killers.push({at:Date.now(),monster:String(d.monster),name:G.monsters[d.monster]?.name||String(d.monster)});});
-  parent.socket.on('death',d=>{if(d&&(d.id||d.name)===character.name)deaths.push(Date.now());});
+  const socket=parent.socket,on={
+    hit:d=>{if(!d||d.id!==character.name||!(Number(d.damage)>0))return;const e=d.hid&&get_entity(String(d.hid));
+      hits.push({at:Date.now(),hid:d.hid??null,source:d.source??null,name:e&&e.type==='monster'?(G.monsters[e.mtype]?.name||String(e.mtype)):null});},
+    game_response:d=>{if(d&&d.response==='defeated_by_a_monster'&&d.monster)killers.push({at:Date.now(),monster:String(d.monster),name:G.monsters[d.monster]?.name||String(d.monster)});},
+    death:d=>{if(d&&(d.id||d.name)===character.name)deaths.push(Date.now());}};
+  for(const [event,handler] of Object.entries(on))socket.on(event,handler);
+  parent.__e2eSurvivalHitsUndo=()=>{for(const [event,handler] of Object.entries(on))socket.off(event,handler);delete g.__e2eSurvivalHits;delete parent.__e2eSurvivalHitsUndo;};
   return true;})()`;
 const ESCAPE_SPENDS=['use_hp','use_mp','hardshell','charge','dash','stomp','curse','heal','partyheal','scare'];
 export const escapeSpendProbe=`(()=>{if(globalThis.__e2eEscapeSpends)return true;const g=globalThis,log=g.__e2eEscapeSpends=[];let asked=null;
   const replies=g.__e2eEscapeReplies=[],respawns=g.__e2eRespawns=[],moves=g.__e2eEscapeMoves=[];let flying=false;
-  const calls=g.__partyHooks.calls,band=calls.band;calls.band=function(q){const a=band.apply(this,arguments);asked={method:q.method,answer:a};queueMicrotask(()=>{asked=null;});return a;};
+  const calls=g.__partyHooks.calls,band=calls.band,originals={use_skill:g.use_skill,heal:g.heal,respawn:g.respawn,move:g.move},wrappedBand=calls.band=function(q){const a=band.apply(this,arguments);asked={method:q.method,answer:a};queueMicrotask(()=>{asked=null;});return a;};
   const escaping=()=>!!g.__partyHooks.survival.escaping(character.name);
   const wrap=(name,skillOf)=>{const f=g[name];g[name]=function(){const skill=skillOf(arguments);
     if(escaping()&&${JSON.stringify(ESCAPE_SPENDS)}.includes(skill))log.push({at:Date.now(),skill,asked:asked?asked.answer:null});
@@ -359,9 +374,28 @@ export const escapeSpendProbe=`(()=>{if(globalThis.__e2eEscapeSpends)return true
   const respawn=g.respawn;g.respawn=function(){respawns.push({at:Date.now(),asked:asked&&asked.method==='respawn'?asked.answer:null,inFlight:flying,rip:!!character.rip});flying=true;
     return Promise.resolve(respawn.apply(this,arguments)).finally(()=>{flying=false;});};
   const move=g.move;g.move=function(){if(escaping())moves.push(Date.now());return move.apply(this,arguments);};
-  parent.socket.on('game_response',d=>{if(d&&typeof d==='object'&&['equip','use','heal','partyheal','respawn','curse'].includes(d.place))replies.push({at:Date.now(),place:d.place,response:d.response||null,failed:!!d.failed,ms:d.ms});});
+  const socket=parent.socket,onReply=d=>{if(d&&typeof d==='object'&&['equip','use','heal','partyheal','respawn','curse'].includes(d.place))replies.push({at:Date.now(),place:d.place,response:d.response||null,failed:!!d.failed,ms:d.ms});};
+  socket.on('game_response',onReply);
   ${survivalHitProbe};
+  const wrapped={use_skill:g.use_skill,heal:g.heal,respawn:g.respawn,move:g.move};
+  parent.__e2eEscapeSpendsUndo=()=>{socket.off('game_response',onReply);parent.__e2eSurvivalHitsUndo?.();
+    if(calls.band===wrappedBand)calls.band=band;for(const [name,f] of Object.entries(originals))if(g[name]===wrapped[name])g[name]=f;
+    delete g.__e2eEscapeSpends;delete parent.__e2eEscapeSpendsUndo;};
   return true;})()`;
+// Runs escapeSpendProbe on one character and registers its undo, so the row's end takes its
+// socket listeners off, as event-death-helpers.ts installProbe does for its emit wrapper. A
+// listener left on the socket throws on each packet once a reload replaces its CODE frame, and
+// socket.io then skips the listeners added after it.
+export async function installEscapeSpendProbe(live:LiveGame,name:string){
+  await live.clients[name]!.run(escapeSpendProbe);
+  live.undo(`the escape spend probe on ${name}`,()=>live.clients[name]!.run('parent.__e2eEscapeSpendsUndo?.()'));
+}
+// Runs survivalHitProbe alone on one character and registers its undo, for a row that starts the
+// hit probe before escapeSpendProbe.
+export async function installSurvivalHitProbe(live:LiveGame,name:string){
+  await live.clients[name]!.run(survivalHitProbe);
+  live.undo(`the survival hit probe on ${name}`,()=>live.clients[name]!.run('parent.__e2eSurvivalHitsUndo?.()'));
+}
 export async function escapeSpendRead(live:LiveGame,names:readonly string[]){
   const out:Record<string,{at:number;skill:string;asked:string|null}[]>={},replies:Record<string,any[]>={},respawns:Record<string,any[]>={},moves:Record<string,number[]>={};
   for(const n of names){out[n]=await live.clients[n]!.run('globalThis.__e2eEscapeSpends??[]') as any;replies[n]=await live.clients[n]!.run('globalThis.__e2eEscapeReplies??[]') as any;
@@ -549,9 +583,10 @@ export async function rangerNeedsRows(live:LiveGame,info:TestInfo){
   for(const [key,vitals,skill] of [['sv1',{hp:0.4},'use_hp'],['sv3',{mp:0.15},'use_mp']] as const){
     const planted=await plantOwn(live,R,vitals),bound=await limit();
     await waitForGameplay(REGEN_COOLDOWN_MS+bound+500);
-    const first=((await spendsSince(live,R,planted.seenAt)).spends as Spend[]).find(s=>potion(s)===skill),free=await familyFree(live,R,planted.seenAt,window.cooldown);
-    // The potion family's sends around the plant, for the reading of a late potion.
-    const around=((await spendsSince(live,R,planted.seenAt-5000)).spends as Spend[]).filter(s=>family(s)).map(s=>[s.at-planted.seenAt,family(s)]);
+    const first=((await spendsSince(live,R,planted.seenAt)).spends as Spend[]).find(s=>potion(s)===skill),free=await familyFree(live,R,planted.seenAt,window.cooldown,above(R,planted,vitals));
+    // The potion family's sends around the plant with the vitals each read, for the reading of a late
+    // potion.
+    const around=((await spendsSince(live,R,planted.seenAt-5000)).spends as Spend[]).filter(s=>family(s)).map(s=>[s.at-planted.seenAt,family(s),s.mp,s.party?.[R]?.hp??null]);
     result[key]={bound,freeAfterMs:free-planted.seenAt,pollLagMs:planted.polledAt-planted.seenAt,afterMs:first?first.at-free:null,planted:vitals,family:around};
     await plantVitals(live,R,{hp:1,mp:1});await waitForGameplay(2_500);
   }

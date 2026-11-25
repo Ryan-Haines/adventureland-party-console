@@ -93,12 +93,14 @@ export const probe=`(()=>{if(globalThis.__e2eRejoin)return true;const s=globalTh
     s.samples.push({at:Date.now(),rip:!!character.rip,map:character.map,x:character.real_x,y:character.real_y,moving:!!character.moving,
       live:live&&{kind:live.kind,owner:live.owner,journey:live.journey,paused:live.paused},stage:state.stage??null,phase:recovery.phase??null,trying:recovery.trying??null,climb:__partyMovement.climbing?.()?.activity??null,error:recovery.lastError??null,answer:recovery.answer??null,answeredAt:recovery.answeredAt??null,reunion:globalThis.__partyReunion?.phase??null});
     if(s.samples.length>6000)s.samples.shift();},250);
-  s.undo=()=>{socket.emit=emit;socket.off('game_response',onResponse);clearInterval(timer);delete globalThis.__e2eRejoin;};return true;})()`;
+  const code=globalThis;parent.__e2eRejoinUndo=()=>{socket.emit=emit;socket.off('game_response',onResponse);clearInterval(timer);delete code.__e2eRejoin;delete parent.__e2eRejoinUndo;};return true;})()`;
 // Installs the probe on one character and registers its undo, so the row's end puts back the
-// socket's emit, its listener and the sampler.
+// socket's emit, its listener and the sampler. The undo sits on the game window, beside the
+// socket: a reload that replaces the CODE frame leaves the wrapper on the socket, where its
+// `character` reads the old frame's detached parent and throws on each Town emit.
 export async function installProbe(live:LiveGame,name:string){
   await live.clients[name]!.run(probe);
-  live.undo(`the rejoin probe on ${name}`,()=>live.clients[name]!.run('globalThis.__e2eRejoin?.undo()'));
+  live.undo(`the rejoin probe on ${name}`,()=>live.clients[name]!.run('parent.__e2eRejoinUndo?.()'));
 }
 export const harvest=`(()=>{const s=globalThis.__e2eRejoin;return {records:[...s.records.values()].sort((a,b)=>a.seq-b.seq),journeys:Object.fromEntries(s.journeys),reports:s.reports,samples:s.samples,joins:s.joins,replies:s.replies,towns:s.towns,speed:character.speed,
   invariants:(()=>{const now=__partyMovement.ownerReport().invariants;return now&&Object.fromEntries(Object.entries(now).map(([k,v])=>[k,v-(s.base[k]||0)]));})(),incidents:__partyMovement.incidents?.()??[]};})()`;

@@ -2,6 +2,7 @@ import {expect,plantVitals,type LiveGame} from './live-fixtures';
 import type {TestInfo} from '@playwright/test';
 import {fighters,location,party} from './game/hunt-lifecycle';
 import {settleNavigation} from './movement-owner-helpers';
+import {ARRIVAL_TOLERANCE} from '../runtime/protocol/ladder.ts';
 import {spendLog,spendsSince,red} from './turns-rows';
 import {stockPotions,wrongWhileLow} from './survival-rows';
 
@@ -37,22 +38,25 @@ export async function farmWalkRow(live:LiveGame,info:TestInfo){
       if(can_move({map:c.map,x:c.real_x,y:c.real_y,going_x:p.x,going_y:p.y,base:c.base})){smart_move(p,undefined,{request:{kind:'follow',owner:'follow'}}).catch(()=>{});return true;}}throw Error('No clear point');})()`);
     await expect.poll(async()=>(await live.clients[P].run('__partyMovement.live()'))?.kind,{timeout:15_000}).toBe('follow');
     await live.post('/focus',{monsterFocus:['goo'],monsterPriorities:{},monsterSearchRadius:400});
-    const walkFrom=Object.fromEntries(await Promise.all(fighters.map(async n=>[n,await live.clients[n].run('Date.now()') as number])));
     // The cruise pace: the walk starts with the warrior under
     // Hard Shell, which sets its speed to the condition's `set_speed` for the condition's duration.
     const shell=await live.clients[fighters[0]!].run(`(()=>{const p=G.conditions.hardshell.set_speed;use_skill('hardshell');return p;})()`) as number;
     await expect.poll(async()=>live.clients[fighters[0]!].run('!!character.s.hardshell'),{timeout:5_000}).toBe(true);
+    // The walk's spends start after the row's own Hard Shell. The gameplay clock moves in 250 ms
+    // steps, so that cast can share walkFrom's reading; TC19 leaves it out (the end run on 367447e73
+    // and PR #159's final run each failed on it).
+    const walkFrom=Object.fromEntries(await Promise.all(fighters.map(async n=>[n,await live.clients[n].run('Date.now()') as number])));
     await live.post('/navigate-to-monster',{monsterId:'goo',location:farm});
     // The priest planted to want both potions (45% HP, 15% MP), below its lines. Survival's potions
     // go in the walk (decided 2026-11-05), and the role loop's hold still stops buffs and class casts.
     // The red run turns the role loop's hold off on both fighters.
-    // The row reads the hold itself: a wrapper keeps
-    // each fighter's last isOccupied answer, which the spend log copies at a skill's send. A fighter
+    // The row reads the hold itself: the spend log asks the kept original `skills.allows` at a
+    // skill's send, which answers from the sending pass's spend table read. A fighter
     // that arrives before the convoy ends, or that a convoy defence releases, casts with the hold
     // off, as its role loop allows. The red run returns false while
     // still keeping the real answer, so a cast under the real hold reads as one.
     for(const n of fighters)await live.clients[n].run(`(()=>{const s=__partyHooks.skills,o=s.allows,off=${red('tc19')};globalThis.__e2eOccupied=o;
-      s.allows=function(ask){const v=o.apply(this,arguments);if(!ask||!ask.occupied)return v;globalThis.__e2eHeld={held:!!v,at:Date.now()};return off?undefined:v;};return true;})()`);
+      s.allows=function(ask){const v=o.apply(this,arguments);return ask&&ask.occupied&&off?undefined:v;};return true;})()`);
     await stockPotions(live,P);
     await plantVitals(live,fighters[1]!,{hp:0.45,mp:0.15});
     // The buff half needs a buff the warrior wants in the walk: its Warcry effect and cooldown
@@ -88,11 +92,12 @@ export async function farmWalkRow(live:LiveGame,info:TestInfo){
     expect.soft(paces.filter(p=>!(p.pace>shell)),'RR13: travel samples paced at the Hard Shell speed').toEqual([]);
     expect.soft(paces.filter(p=>Object.values(p.speeds).some((v:any)=>!(Math.abs(Number(v)-p.pace)<=0.1))),
       'RR13: travel samples with a member off the pace of the walk').toEqual([]);
-    for(const n of fighters)await live.clients[n].run('(__partyHooks.skills.allows=globalThis.__e2eOccupied,delete globalThis.__e2eHeld,true)');
+    for(const n of fighters)await live.clients[n].run('(__partyHooks.skills.allows=globalThis.__e2eOccupied,delete globalThis.__e2eOccupied,true)');
     const walkTo=Object.fromEntries(await Promise.all(fighters.map(async n=>[n,await live.clients[n].run('Date.now()') as number])));
     const walkSpends=Object.fromEntries(await Promise.all(fighters.map(async n=>[n,(await spendsSince(live,n,walkFrom[n]!)).spends.filter((s:any)=>s.at<=walkTo[n]!)])));
     console.log('TURNS-TC19 '+JSON.stringify(Object.fromEntries(fighters.map(n=>[n,walkSpends[n]!.map((s:any)=>[s.at-walkFrom[n]!,s.method,s.name??s.item??null,s.walk??null,s.held??null,s.heldAt!=null?s.at-s.heldAt:null])]))));
-    for(const n of fighters)expect.soft(walkSpends[n]!.filter((s:any)=>s.method==='skill'&&s.name!=='partyheal'&&s.held!==false).map((s:any)=>[s.method,s.name,s.held??null]),
+    const ownShell=(n:string,s:any)=>n===fighters[0]&&s.name==='hardshell'&&s.at<=walkFrom[n]!;
+    for(const n of fighters)expect.soft(walkSpends[n]!.filter((s:any)=>s.method==='skill'&&s.name!=='partyheal'&&s.held!==false&&!ownShell(n,s)).map((s:any)=>[s.method,s.name,s.held??null]),
       `TC19, SV15: ${n}'s buffs and class casts while its hold holds`).toEqual([]);
     // The priest below both lines drinks in the walk. Its
     // own heal can lift its HP above the line before the potion cooldown frees (21,189 HP a heal on a
@@ -203,12 +208,6 @@ export async function walkLadderRow(live:LiveGame,info:TestInfo){
       expect(now.untimed-base[name].untimed,`${name} untimed holds`).toBe(0);
       expect(now.errors-base[name].errors,`${name} owner errors`).toBe(0);
     }
-    // The trip past the map's edge never ends by itself, and its walk regroups the members at the
-    // leader, so it walks them off the points planted below. A party travel to the town square
-    // replaces it, as the fixture reset does, and the assembly half starts from no walk.
-    await live.post('/travel',{map:'main',x:0,y:0});
-    await expect.poll(async()=>!(await live.state()).activeConvoy,{timeout:180_000,message:'The travel past the edge must end before the assembly half'}).toBe(true);
-    await expect.poll(async()=>(await live.tasks()).groups.find((g:any)=>g.id===group)?.live?.kind,{timeout:30_000,message:'The trip task must end before the assembly half'}).not.toBe('manual');
     // A walk never judges a member from silence, rounds or timers: an assembly waiting on a stunned member that
     // still reports stays in its assemble phase and names the member, and neither fails nor climbs. Both members stand
     // on Main spawn points (data.maps.main.spawns) away from every monster spawn, so no defense takes the walk. The
@@ -216,10 +215,20 @@ export async function walkLadderRow(live:LiveGame,info:TestInfo){
     // walk.ts's barrier step. The priest stands outside the rally, stunned for 90 s, past the 30 s the old
     // assembly timeout allowed.
     const quiet={[fighters[0]!]:{map:'main',x:-472,y:149},[fighters[1]!]:{map:'main',x:168,y:-134}};
-    await live.admin(`output=(()=>{for(const [n,at] of Object.entries(${JSON.stringify(quiet)})){const p=get_player(n);transport_player_to(p,at.map,[at.x,at.y]);resend(p,'u+cid');}return true;})()`);
+    // The trip past the map's edge never ends by itself, and its walk regroups the members at the
+    // leader. A party travel to the leader's point replaces it and makes that point the party's farm
+    // location. The farm approach walks a member that stands outside the farm's search radius of that
+    // location back into it: in the confirming table run on fdc770fc6, and in its rerun of rows 10
+    // and 11, the row teleported the leader 495 from the town square the trip had made the location,
+    // and the leader walked to 383 from it before the start check read it.
+    await live.post('/travel',quiet[fighters[0]!]);
+    await expect.poll(async()=>!(await live.state()).activeConvoy,{timeout:180_000,message:'The travel past the edge must end before the assembly half'}).toBe(true);
+    await expect.poll(async()=>(await live.tasks()).groups.find((g:any)=>g.id===group)?.live?.kind,{timeout:30_000,message:'The trip task must end before the assembly half'}).not.toBe('manual');
+    // The priest lands stunned, so no farm approach walks it back from outside the radius.
+    await live.admin(`output=(()=>{const p=get_player('${fighters[1]}'),at=${JSON.stringify(quiet[fighters[1]!])};transport_player_to(p,at.map,[at.x,at.y]);p.s.stunned={ms:90000};resend(p,'u+cid');return true;})()`);
+    // The leader stands within the walk's arrival tolerance of its point, the priest on its own.
     await expect.poll(async()=>{const c=(await live.state()).characters;
-      return fighters.every(n=>c[n]?.map==='main'&&Math.hypot(c[n].x-quiet[n]!.x,c[n].y-quiet[n]!.y)<10);},{timeout:30_000}).toBe(true);
-    await live.admin(`output=(()=>{const p=get_player('${fighters[1]}');p.s.stunned={ms:90000};resend(p,'u+cid');return true;})()`);
+      return fighters.every(n=>c[n]?.map==='main'&&Math.hypot(c[n].x-quiet[n]!.x,c[n].y-quiet[n]!.y)<=ARRIVAL_TOLERANCE);},{timeout:30_000,message:'Both members stand on their points'}).toBe(true);
     const sentAt=Date.now();
     await live.post('/travel',{map:'main',x:0,y:0});
     const assembly:any[]=[];

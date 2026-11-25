@@ -202,8 +202,22 @@ export const rendezvousRows:Row[]=[
     await live.post('/formation',{character:W,eventSelections:['mrpumpkin']});
     await expect.poll(async()=>{const s=await sample();return s.activeConvoy?.walkingActivity==='event'&&s.activeConvoy.participants.includes(P);},
       {timeout:120_000,message:'precondition: the event walk starts with the priest'}).toBe(true);
-    const here=(await live.state()).characters[P],trip={map:here.map,x:Number(here.x)+20,y:Number(here.y)};
+    // A player's move leaves only an occurrence the member already owns: its admission records the
+    // session the leave reads (attendance.ts `manualOccurrenceParticipating`, as v1.5.0's
+    // attendance-limits.ts). The walk lists the follower before its own report is admitted, so
+    // the trip waits for the admission.
+    await expect.poll(async()=>{const a=(await sample()).characters[P]?.eventAdmission;return a?.event==='mrpumpkin'&&a.allowed===true;},
+      {timeout:60_000,message:'precondition: the priest is admitted to the occurrence'}).toBe(true);
+    // The trip goes off Halloween, the Pumpkin's map, through its door to Spooky Town. A move to a
+    // point on the same map keeps the occurrence once the member reports the event joined
+    // (`playerMoved`, A10), and the admitted priest reports it as soon as its own event travel
+    // starts. The 20-pixel trip of the earlier confirming runs stayed on Halloween, so it left the
+    // occurrence only when it beat that report.
+    const trip=await live.admin(`output=(()=>{const door=G.maps.halloween.doors.find(d=>d[4]==='spookytown'),spawn=G.maps.spookytown.spawns[door[5]];
+      return {map:'spookytown',x:spawn[0],y:spawn[1]};})()`);
+    const joined=(await live.state()).characters[P]?.joinedEvent??null;
     await live.post('/command',{character:P,type:'character-travel',location:trip,label:'Player trip during the event walk'});
+    samples.push({at:Date.now(),trip,joined});
     await expect.poll(async()=>{const s=await sample(),a=s.eventAttendance?.[P]?.mrpumpkin;return !!a&&!a.ended&&!!a.ignored;},
       {timeout:60_000,message:'precondition: the trip skips the priest\u2019s occurrence'}).toBe(true);
     // The priest's assignment stays the party's attendance, apart and waiting (rule 2.3.2).
