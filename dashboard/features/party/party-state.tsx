@@ -222,7 +222,7 @@ export type PartyState = {
   ownedStock?: Record<string, import('../../../runtime/status/api.ts').OwnedStock>;
   bankGold?: number | null;
   accountGold?: { carried: number | null; offline: number | null; total: number | null };
-  // The last ring save (coordinator/diagnostics.ts), which lights the record icon.
+  // The last ring save (coordinator/diagnostics.ts), on which the Diagnostics button reads its alerts again.
   recordSaved?: import('../../../runtime/status/api.ts').RecordSaved | null;
   bankVaults?: BankVault[];
   bankbois?: Bankboi[];

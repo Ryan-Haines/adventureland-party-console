@@ -110,8 +110,9 @@ test('status hooks: one fixture add-on registers every hook and event', async ({
       expect((await api(live, `/diagnostics/records?character=${W}&rings=status-hooks-fixture.none`)).status).toBe(400);
       rows.addonRing = FIXTURE_RING.ring;
     });
-    await test.step('L: a planted stuck record lights the icon', async () => {
-      // The record icon reads the last ring save, which the movement owner's `records.saved` lights.
+    await test.step('L: a planted stuck record reaches the core section', async () => {
+      // The Diagnostics button reads its alerts again on the last ring save, which the movement
+      // owner's `records.saved` sets.
       await fixture(live, { op: 'notify', hook: 'records.saved', args: [{ ring: 'movement', character: W, record: 'df11-planted' }] });
       // The dashboard reads the icon from its core section (status/coordinator/state.ts `core`).
       await expect.poll(async () => (await (await api(live, '/state?section=core&dashboard=1')).json()).recordSaved?.record ?? null, { timeout: 10_000 }).toBe('df11-planted');

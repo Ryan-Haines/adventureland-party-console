@@ -8,11 +8,13 @@
 // a view that keeps reading keeps it, and one that stops releases it within two
 // reports. The saved snapshots stay the movement owner's (movement/coordinator/records.ts); the view reads them here
 // beside the live rings, and its routes are in routes.ts. An add-on's own ring leases the same way
-// under its add-on's name (`diagnostics-ring`). The record icon reads the last
-// `records.saved` notice, which every ring's save through the protocol's records sends.
+// under its add-on's name (`diagnostics-ring`). The Diagnostics button reads the alerts: every saved
+// snapshot, each one a death, a stuck moment, a caught error, a refusal (runtime/protocol/records.ts
+// `refusal`), a failed walk or task, churn, a fallback to a safe point or a call-limit disconnect. The last `records.saved` notice tells the
+// dashboard to read them again.
 import { reportInterval } from '../../protocol/reports.ts';
 import type { LeasedRing } from '../rules.ts';
-import type { RecordSaved } from '../api.ts';
+import type { DiagnosticsAlert, RecordSaved } from '../api.ts';
 import { partyHooks } from '../../hooks/index.ts';
 
 interface PostedRing { at: number; records: unknown[]; incidents: unknown[] }
@@ -22,6 +24,9 @@ interface DiagnosticsPorts {
   status(name: string): { reportIntervalMs?: unknown } | undefined;
   // The movement owner's saved snapshots of a character, newest first, without their rings.
   snapshots(name: string): unknown[];
+  // Every saved snapshot of every subject from its file name, and one snapshot whole.
+  saved(): DiagnosticsAlert[];
+  report(subject: string, id: string): unknown;
 }
 
 export function createDiagnostics(ports: DiagnosticsPorts) {
@@ -38,11 +43,15 @@ export function createDiagnostics(ports: DiagnosticsPorts) {
   }
   const service = {
     rings,
-    // `records.saved` (the movement owner's notice): the save the record icon lights for.
+    // `records.saved` (the movement owner's notice): the last save, which the dashboard's state carries.
     saved(payload: Record<string, unknown>) {
       lastSaved = { at: ports.now(), ring: String(payload.ring), character: String(payload.character), record: String(payload.record) };
     },
     lastSaved: (): RecordSaved | null => lastSaved,
+    // The alerts list; reading it takes no lease, so no character posts a ring for it.
+    alerts: (): DiagnosticsAlert[] => ports.saved(),
+    // One alert's report: the snapshot's facts and the routine records that led up to it.
+    report: (subject: string, id: string): unknown => ports.report(subject, id),
     // A view's read: renews the lease on each named ring and answers the live posts and the movement owner's snapshots.
     read(name: string, named: readonly LeasedRing[]) {
       // An ended ring leaves first, so a view that comes back leases it again.

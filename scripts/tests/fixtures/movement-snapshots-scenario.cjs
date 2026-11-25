@@ -7,10 +7,10 @@ const test=require('node:test'), assert=require('node:assert/strict');
 const {createMovementRecords,SNAPSHOTS_KEPT}=require('../../../runtime/movement/coordinator/records.ts');
 
 function store(){
-  // The snapshot directory as an in-memory file system: one entry per file path, and a missing
-  // file throws as node:fs does.
+  // The snapshot directory as an in-memory file system: one entry per file path, a directory read
+  // lists its own entries (a subject folder once), and a missing file throws as node:fs does.
   let now=1_000_000;const paths=new Map(),root='/snapshots';
-  const files={readdirSync:d=>[...paths.keys()].filter(p=>p.startsWith(d+'/')).map(p=>p.slice(d.length+1)),
+  const files={readdirSync:d=>[...new Set([...paths.keys()].filter(p=>p.startsWith(d+'/')).map(p=>p.slice(d.length+1).split('/')[0]))],
     readFileSync:p=>{if(!paths.has(p))throw Error('ENOENT '+p);return paths.get(p);},mkdirSync(){},
     writeFileSync:(p,b)=>{paths.set(p,b);},unlinkSync:p=>{if(!paths.delete(p))throw Error('ENOENT '+p);}};
   const service=createMovementRecords({now:()=>now,directory:root,files,notify:(hook,payload)=>told.push([hook,payload])});

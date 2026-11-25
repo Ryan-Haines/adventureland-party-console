@@ -403,9 +403,12 @@ export type Section = StateSection;
 export type ReplySection = ReplySectionName;
 // A diagnostics view's read of one character (coordinator/diagnostics.ts, table G): the lease's end
 // and the last post of each ring it named.
-/** The last ring save the record icon shows: when, which ring (table G's or an add-on's
- * `<add-on>.<key>`), whose and which record. */
+/** The last ring save, on which the Diagnostics button reads its alerts again: when, which ring
+ * (table G's or an add-on's `<add-on>.<key>`), whose and which record. */
 export interface RecordSaved { at: number; ring: string; character: string; record: string }
+/** One alert of the Diagnostics button: a saved snapshot, by its subject (a character or a group),
+ * what set it off and when. */
+export interface DiagnosticsAlert { id: string; subject: string; trigger: string; at: number }
 export interface DiagnosticsLease {
   character: string; until: number;
   live: Partial<Record<LeasedRing, { at: number; records: unknown[]; incidents: unknown[] } | null>>;

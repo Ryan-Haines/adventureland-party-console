@@ -3,7 +3,7 @@
 // escape's reset and hold rules, the two heartbeat reply sections, and the card words for the survival owner's
 // states. It imports no install, so the coordinator reads a phase or a label without loading the
 // character half.
-import { createMovementRing } from '../../protocol/records.ts';
+import { createMovementRing, refusal } from '../../protocol/records.ts';
 import type { RecoveryFightRule, RecoveryView } from '../../hooks/registry.ts';
 import { ESCAPE_SETTLED } from './lines.ts';
 
@@ -19,10 +19,20 @@ export interface SurvivalRecord {
   skill?: string; reason?: string; verdict?: string; phase?: string | null; answer?: string; stage?: string | null;
 }
 export type SurvivalEntry = Omit<SurvivalRecord, 'part'>;
-export function createSurvivalRing(now: () => number = () => Date.now()) {
+// The ring's alerts, each with the fields that tell one from the next: a spend the executor refused,
+// by its skill and reason. The ring hands each to the protocol's refusal door under the character's
+// name (`subject`).
+const ALERTS: Partial<Record<SurvivalRecord['decision'], (entry: SurvivalEntry) => unknown[]>> = {
+  refused: entry => [entry.skill, entry.reason],
+};
+export function createSurvivalRing(now: () => number = () => Date.now(), subject: () => string = () => '') {
   const ring = createMovementRing<SurvivalRecord>(now, SURVIVAL_RING_SIZE);
   return {
-    record(entry: SurvivalEntry): void { ring.push({ part: 'survival', ...entry }); },
+    record(entry: SurvivalEntry): void {
+      ring.push({ part: 'survival', ...entry });
+      const alert = ALERTS[entry.decision];
+      if (alert) refusal(subject(), { part: 'survival', ...entry }, '05', alert(entry));
+    },
     entries: () => ring.entries(),
   };
 }

@@ -323,7 +323,7 @@ export function installMovementRecordRoutes(router: HttpRouter, records: Movemen
     const b = requestObject(req.body), name = String(b.character);
     if (!owned(name) || !SNAPSHOT_TRIGGERS.includes(b.trigger as SnapshotTrigger)) return res.status(400).json({ error: 'Invalid movement snapshot' });
     const saved = records.save({ character: name, trigger: b.trigger as SnapshotTrigger, runtime: typeof b.runtime === 'string' ? b.runtime : undefined,
-      incident: typeof b.incident === 'string' ? b.incident : undefined,
+      incident: typeof b.incident === 'string' ? b.incident : undefined, by: typeof b.by === 'string' ? b.by : undefined,
       posted: typeof b.id === 'string' && b.id.length <= 200 ? b.id : undefined,
       records: list<MovementRecord>(b.records), incidents: list<MovementIncident>(b.incidents) });
     return res.json({ ok: true, id: saved.id });

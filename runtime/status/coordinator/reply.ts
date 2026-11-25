@@ -194,10 +194,10 @@ interface Hooks { register(registration: Registration): { ok: boolean; message?:
 // The status owner's coordinator notices. When an escape starts, each participant's
 // pending command leaves the slot, at the moment survival sends `survival.escapeStarted`. A
 // command given during the escape stays, and the slot holds it until the recovery walk. Each ring save
-// (`records.saved`) lights the record icon through the diagnostics service.
+// (`records.saved`) tells the Diagnostics button to read its alerts again, through the diagnostics service.
 export function installStatusNotices(hooks: Hooks, groups: CommandGroups, diagnostics: Pick<Diagnostics, 'saved'>, reads: StatusReads): void {
   const result = hooks.register({ name: 'core:status', folder: 'core', author: 'adventureland-party-console',
-    summary: "Composes each character's heartbeat reply, drops an escaping party's pending commands, lights the record icon and answers the status reads.",
+    summary: "Composes each character's heartbeat reply, drops an escaping party's pending commands, keeps the last ring save and answers the status reads.",
     hooks: {
       'status.cardLine': name => reads.cardLine(name),
       'status.lastReport': name => reads.lastReport(name),

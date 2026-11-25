@@ -7,6 +7,7 @@
 import { scope, CHARACTER_PICKS } from '../../lifecycle/api.ts';
 import { capReached } from './bounds.ts';
 import { partyHooks } from '../../hooks/index.ts';
+import { receiveRefusals } from '../../protocol/records.ts';
 import { HANDOFF_DEATHS, STATUS_PICKS, TRACE_CELL_PX, type DiagnosticsRing, type LeasedRing } from '../rules.ts';
 import type { Group } from '../../coordinator/targeting/api.ts';
 import { ATTACK_SOURCE, attackReadyAt } from '../../characters/turns/api.ts';
@@ -147,6 +148,12 @@ function createRings(p: RingsPorts) {
       },
     } });
 
+  // The character's refusals (the survival owner's refused spends) post as `refused` alerts, which
+  // need no lease.
+  receiveRefusals((subject, entry, by) => {
+    void p.request('/movement-snapshot', { method: 'POST', body: { character: subject || p.name(), trigger: 'refused', by, records: [entry], incidents: [] } })
+      .catch(() => { /* A lost post loses that one alert; the ring keeps the entry. */ });
+  });
   // Table G's client: the reply's leased rings, posted after the report.
   function reply(state: { diagnosticsRings?: unknown }) {
     leased = Array.isArray(state.diagnosticsRings) ? state.diagnosticsRings as LeasedRing[] : [];

@@ -143,8 +143,13 @@ The service records every decision, end and refused stop in a 128-entry ring wit
 the caller's kind and site. A death, a stuck or caught-error record, a failed group
 walk and churn (10 conflicts inside 10 seconds) save a snapshot on the coordinator
 (`POST /party-api/movement-snapshot`), at most 20 per character and none older than 7 days.
-The diagnostics view's movement tab (`#diagnostics/movement`) lists the stuck and
-caught-error records, and the card's activity line names the rung being tried.
+The header's Diagnostics button counts the unread alerts: every saved snapshot of a character or
+a group, a refusal included (an owner that records a refused spend, job or realm want hands it to the
+protocol's refusal door, `runtime/protocol/records.ts` `refusal`, with its owner number and the fields that tell one refusal from the next, and the door saves it once per change), read from the snapshot file names (`GET /party-api/diagnostics/alerts`, no lease). Its view
+(`#diagnostics`) lists each alert as a row with Mark as read, and opening the view marks nothing
+read. An alert's report (`GET /party-api/diagnostics/alert`) shows its records' facts and the
+routine records that led up to it; the rings' whole live logs wait behind "Show all records", which
+starts off. The card's activity line names the rung being tried.
 
 ## Planner and deployment
 

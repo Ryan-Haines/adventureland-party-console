@@ -19,8 +19,10 @@ export const SNAPSHOT_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 // `task-failed` and `safe-point` are the group ring's triggers 3 and 2, whose subject is the group.
 // `limitdc` is the call budget's: a character the server disconnected for its call limit posts its
 // call ring (part 'calls') with the server's report and the ledger in its `limitdc` entry.
-export type SnapshotTrigger = 'death' | 'stuck' | 'caught-error' | 'churn' | 'walk-failed' | 'task-failed' | 'safe-point' | 'limitdc';
-export const SNAPSHOT_TRIGGERS: readonly SnapshotTrigger[] = ['death', 'stuck', 'caught-error', 'churn', 'walk-failed', 'task-failed', 'safe-point', 'limitdc'];
+// `refused` is a refusal the protocol's refusal door saved (runtime/protocol/records.ts `refusal`):
+// its one record is the refusing owner's entry, and the snapshot's `by` names that owner.
+export type SnapshotTrigger = 'death' | 'stuck' | 'caught-error' | 'churn' | 'walk-failed' | 'task-failed' | 'safe-point' | 'limitdc' | 'refused';
+export const SNAPSHOT_TRIGGERS: readonly SnapshotTrigger[] = ['death', 'stuck', 'caught-error', 'churn', 'walk-failed', 'task-failed', 'safe-point', 'limitdc', 'refused'];
 // The triggers of the movement ring, each with the owner whose change sets it off, which
 // `records.saved` names as `by`. A death is survival's; the rest are
 // movement's own. The task and call rings' triggers tell nothing here: their owners tell theirs.
@@ -33,10 +35,14 @@ interface MovementSnapshot {
   // `limitdc` copy until this store answers, and a relog can cut the answer after the save
   //. The store keeps one snapshot per character and posted id.
   posted?: string;
+  // A `refused` snapshot's refusing owner, which `records.saved` names as `by`.
+  by?: string;
   // A character's movement records, a group's task ring (part 'tasks') or a character's call
   // ring (part 'calls').
   records: (MovementRecord | RingEntry)[]; incidents: MovementIncident[];
 }
+// One saved snapshot as its file name tells it: the subject's folder, the trigger and the time.
+export interface SavedSnapshot { id: string; subject: string; trigger: SnapshotTrigger; at: number }
 interface MovementRecordsPorts {
   now(): number;
   // The realm's registry, which hears `records.saved` for each movement ring snapshot.
@@ -93,7 +99,7 @@ export function createMovementRecords(ports: MovementRecordsPorts) {
       const now = ports.now(), file = fileOf({ at: now, trigger: snapshot.trigger }, ++sequence);
       const saved: MovementSnapshot = { ...snapshot, id: `${snapshot.character}/${file.replace(/\.json$/, '')}`, at: now };
       writeFile(snapshot.character, file, JSON.stringify(saved));
-      const by = MOVEMENT_TRIGGERS[snapshot.trigger];
+      const by = snapshot.trigger === 'refused' ? snapshot.by : MOVEMENT_TRIGGERS[snapshot.trigger];
       if (by) ports.notify('records.saved', { ring: 'movement', character: snapshot.character, record: saved.id, trigger: snapshot.trigger, by });
       prune(snapshot.character, now);
       return saved;
@@ -113,6 +119,21 @@ export function createMovementRecords(ports: MovementRecordsPorts) {
         const { id, trigger, at, incident, incidents, records } = saved;
         return [{ id, trigger, at, incident, incidents, records: records.length }];
       });
+    },
+    // Every saved snapshot of every subject (a character, or a group's task ring), newest first,
+    // from the file names alone: the diagnostics alerts read it without opening a file.
+    index(): SavedSnapshot[] {
+      let subjects: string[];
+      try { subjects = ports.files.readdirSync(ports.directory); } catch { return []; }
+      const now = ports.now();
+      return subjects.flatMap(folderName => {
+        const subject = decodeURIComponent(folderName);
+        prune(subject, now);
+        return listFiles(subject).filter(file => file.endsWith('.json')).map(file => {
+          const name = file.replace(/\.json$/, ''), trigger = name.slice(name.indexOf('-', name.indexOf('-') + 1) + 1);
+          return { id: `${subject}/${name}`, subject, trigger: trigger as SnapshotTrigger, at: savedAt(file) };
+        });
+      }).sort((a, b) => b.at - a.at);
     },
     snapshot(name: string, id: string): MovementSnapshot | null {
       const file = id.startsWith(name + '/') ? id.slice(name.length + 1) + '.json' : '';

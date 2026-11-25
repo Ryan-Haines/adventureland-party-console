@@ -77,6 +77,12 @@ export function installStatusRoutes(router: GateRouter, routes: StatusRoutes): v
     if (!routes.owned(name) || !named.every(isRing)) return res.status(400).json({ error: 'unknown character or ring' });
     return res.json(routes.diagnostics.read(name, named as LeasedRing[]));
   });
+  // The Diagnostics button's alerts and one alert's report. Neither read leases a ring.
+  router.get('/party-api/diagnostics/alerts', (_req, res) => res.json({ alerts: routes.diagnostics.alerts() }));
+  router.get('/party-api/diagnostics/alert', (req, res) => {
+    const report = routes.diagnostics.report(requestText(req.query?.subject), requestText(req.query?.id));
+    return report ? res.json(report) : res.status(404).json({ error: 'no such record' });
+  });
   // The bound record (bounds.ts), once for the whole party: its firings name their own subjects.
   router.get('/party-api/diagnostics/bounds', (_req, res) => res.json(boundFirings()));
   // The dashboard's cap counts (dashboard cap-counts.ts): the page sends no status report, so it posts

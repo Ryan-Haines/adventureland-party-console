@@ -58,6 +58,7 @@ import { coordinatorClock, createWorkers } from '../lifecycle/coordinator/worker
 import { coordinatorOwnership, createCoordinatorOwnershipPorts, createRosterCommit } from '../lifecycle/roster/ownership.ts';
 import { createRosterProjection } from '../lifecycle/roster/roster-projection.ts';
 import { realmLabel } from '../protocol/realm.ts';
+import { receiveRefusals } from '../protocol/records.ts';
 import { reservedForSteam } from '../lifecycle/roster/handoff.ts';
 import { classScript, createCode } from '../lifecycle/coordinator/code.ts';
 import { merchantVisibility } from '../merchant-jobs/coordinator/api.ts';
@@ -152,10 +153,13 @@ export function startCoordinatorApplication(
       directory: LOCALSTORAGE_PATH + '.movement-snapshots', files: fs_regular,
     });
     const walkFailed = movementRecords.walkFailed;
+    // The coordinator's refusals (the merchant's job and realm refusals) save as `refused` alerts.
+    receiveRefusals((subject, entry, by) => { movementRecords.save({ character: subject, trigger: 'refused', by, records: [entry as never], incidents: [] }); });
     // Table G's one lease for every ring; the view reads movement's saved snapshots beside the live
     // rings.
     const diagnostics = createDiagnostics({ now: () => Date.now(), status: name => party.statuses[name],
-      snapshots: name => movementRecords.snapshots(name) });
+      snapshots: name => movementRecords.snapshots(name), saved: () => movementRecords.index(),
+      report: (subject, id) => movementRecords.snapshot(subject, id) });
     const prepareMovement = (gameVersion: number) => prepareMovementGeometry(gameVersion, {
       read: path => fs_regular.readFileSync(path, 'utf8'), planner: movementPlanner, log });
     await prepareMovement(initialVersion);

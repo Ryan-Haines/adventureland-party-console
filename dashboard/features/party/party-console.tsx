@@ -13,7 +13,7 @@ import { usePartyConsole } from "./use-party-console";
 import { DashboardLive } from "./dashboard-live";
 import { DashboardQueries } from "./query-cache";
 import { DebugBrowserBanner } from './debug-browser';
-import { DiagnosticsDialog, RecordIcon, useRecordIcon } from './diagnostics-dialog';
+import { DiagnosticsButton, DiagnosticsDialog, useDiagnosticsAlerts } from './diagnostics-dialog';
 import { SettingsMenu } from './settings-menu';
 
 // Scrolls to `top` once the page is tall enough to hold it, as the content lays out. A scroll input
@@ -42,7 +42,7 @@ function PartyConsole({ onUp }: { onUp?: (up: boolean) => void }) {
   const model = usePartyConsole();
   const up = !model.coordinatorLoading && !model.coordinatorUnavailable;
   useEffect(() => onUp?.(up), [onUp, up]);
-  const records = useRecordIcon(model.state.recordSaved);
+  const alerts = useDiagnosticsAlerts(model.state.recordSaved?.at);
   const [logsOpen,setLogsOpen]=useSessionState('logs-open',false),[logsWidth,setLogsWidth]=useSessionState('logs-width',440);
   useEffect(()=>{const saved=sessionStorage.getItem('party-console-scroll');if(saved!==null){sessionStorage.removeItem('party-console-scroll');return restoreScroll(Number(saved));}},[]);
   const [view, setView] = useState<PartyView>('characters');
@@ -57,7 +57,7 @@ function PartyConsole({ onUp }: { onUp?: (up: boolean) => void }) {
     <>
       <main style={{marginRight:logsOpen?`min(${logsWidth}px,75vw)`:0}} data-party-console-root className="@container min-h-screen bg-[#07100f] text-[#e9f3e8]">
         <PartyHeader model={model} onLogs={() => setLogsOpen(v=>!v)} metricsActive={view === 'metrics'} onMetrics={() => navigate('metrics')}
-          recordIcon={records.unread && model.state.recordSaved ? <RecordIcon saved={model.state.recordSaved} /> : null} />
+          diagnostics={<DiagnosticsButton unread={alerts.unread.length} />} />
         <DebugBrowserBanner />
         <AddonSlot name="page-section" part="banner" state={model.state} />
         <PartyViewSwitch model={model} view={view} navigate={navigate} />
@@ -68,7 +68,7 @@ function PartyConsole({ onUp }: { onUp?: (up: boolean) => void }) {
       <PartyManagementPanels model={model} />
       <PartyWorkspacePanels model={model} />
       <SettingsMenu model={model} />
-      <DiagnosticsDialog characters={Object.keys(model.state.characters || {})} onRead={records.markRead} />
+      <DiagnosticsDialog characters={Object.keys(model.state.characters || {})} alerts={alerts} />
     </>
   );
 }

@@ -238,6 +238,24 @@ export function leadUp(entries: readonly MovementRecord[], fromSeq: number): Mov
   return entries.filter(entry => entry.seq >= fromSeq);
 }
 
+// The refusal door. A refusal is an alert (user, 2026-11-22: failures, stuck moments, caught
+// errors, refusals and deaths), and the refusing owner's ring keeps it only in memory, so the owner
+// that records a refusal hands it here too, with its owner number (`by`, which `records.saved`
+// names) and the fields that tell one of its refusals from the next (`key`). The runtime's
+// diagnostics install names the sink: the coordinator saves a `refused` snapshot, a character posts
+// one. A repeat of a subject's last refusal reaches the sink once, so a refusal answered every tick
+// saves one alert.
+type RefusalSink = (subject: string, entry: Record<string, unknown>, by: string) => void;
+let refusalSink: RefusalSink | null = null;
+const lastRefusal = new Map<string, string>();
+export function receiveRefusals(sink: RefusalSink | null): void { refusalSink = sink; lastRefusal.clear(); }
+export function refusal(subject: string, entry: Record<string, unknown>, by: string, key: readonly unknown[]): void {
+  const last = JSON.stringify([by, ...key]);
+  if (lastRefusal.get(subject) === last) return;
+  lastRefusal.set(subject, last);
+  refusalSink?.(subject, entry, by);
+}
+
 export function createMovementRing<T extends object = MovementRecordInput>(now: () => number, capacity = MOVEMENT_RING_SIZE) {
   if (!Number.isInteger(capacity) || capacity < 1) throw Error('Movement ring size must be a positive integer');
   type Entry = T & { seq: number; at: number };

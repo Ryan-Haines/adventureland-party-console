@@ -53,6 +53,45 @@ scenarioTable('movement snapshots are kept per character and bounded (MOV-204)',
  }],
  // A corrupt snapshot file reads as none for every reader (records.ts readSnapshot), so GET
  // /party-api/movement/snapshot answers 404 for it as for a missing one.
+ // The Diagnostics button's alerts (runtime/status/coordinator/diagnostics.ts `alerts`): every
+ // subject's saved snapshots, a group's task ring included, read from the file names alone.
+ ['the alerts list the snapshots of every subject, newest first, from their file names', ()=>{
+  const s=store();
+  const stuck=s.service.save({character:'W',trigger:'caught-error',records:ring(1),incidents:[]});s.advance(1000);
+  const failed=s.service.save({character:'group:W',trigger:'task-failed',records:ring(2),incidents:[]});s.advance(1000);
+  const cut=s.service.save({character:'M',trigger:'limitdc',records:ring(1),incidents:[]});
+  assert.deepEqual(s.service.index(),[
+   {id:cut.id,subject:'M',trigger:'limitdc',at:cut.at},
+   {id:failed.id,subject:'group:W',trigger:'task-failed',at:failed.at},
+   {id:stuck.id,subject:'W',trigger:'caught-error',at:stuck.at}]);
+  // Each alert's report is its whole snapshot.
+  assert.deepEqual(s.service.snapshot('group:W',failed.id).records,ring(2));
+  // A pruned snapshot leaves the list with its file.
+  s.advance(SNAPSHOT_AGE_MS);
+  assert.deepEqual(s.service.index().map(x=>x.id),[]);
+ }],
+ // A refusal is an alert too (user, 2026-11-22: failures, stuck moments, caught errors, refusals
+ // and deaths). The owner that records one hands it to the protocol's refusal door, whose sink on the
+ // coordinator saves it as a `refused` snapshot; a repeat of the subject's last refusal saves nothing.
+ ['a refusal an owner records is a refused snapshot in the alerts, once per change', ()=>{
+  const {receiveRefusals}=require('../../runtime/protocol/records.ts');
+  const {recordMerchant}=require('../../runtime/merchant-jobs/coordinator/records.ts');
+  const {recordRealm}=require('../../runtime/merchant-realm/coordinator/records.ts');
+  const s=store();
+  receiveRefusals((subject,entry,by)=>s.service.save({character:subject,trigger:'refused',by,records:[entry],incidents:[]}));
+  try{
+   recordMerchant({subject:'M',decision:'job-refused',owner:'restock',kind:'addon:restock:wands',code:'refused:blacklisted'});s.advance(1000);
+   recordMerchant({subject:'M',decision:'job-refused',owner:'restock',kind:'addon:restock:wands',code:'refused:blacklisted'});s.advance(1000);
+   recordMerchant({subject:'M',decision:'queued',owner:'job:1'});s.advance(1000);
+   recordRealm({subject:'M',decision:'refused',owner:'job:2',code:'refused:pvp'});
+   const alerts=s.service.index();
+   assert.deepEqual(alerts.map(x=>[x.subject,x.trigger]),[['M','refused'],['M','refused']],'a repeat saves nothing and a routine decision is no alert');
+   assert.deepEqual(s.service.snapshot('M',alerts[1].id).records[0],{subject:'M',decision:'job-refused',owner:'restock',kind:'addon:restock:wands',code:'refused:blacklisted',part:'merchant'});
+   assert.equal(s.service.snapshot('M',alerts[0].id).records[0].part,'realm');
+   // Each saved refusal tells the Diagnostics button to read its alerts again.
+   assert.deepEqual(s.told.map(([hook,p])=>[hook,p.trigger,p.by]),[['records.saved','refused','08'],['records.saved','refused','09']]);
+  }finally{receiveRefusals(null);}
+ }],
  ['a corrupt snapshot file answers none', ()=>{
   const s=store();
   const saved=s.service.save({character:'W',trigger:'stuck',records:ring(1),incidents:[]});

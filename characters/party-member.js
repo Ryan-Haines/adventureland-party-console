@@ -1743,6 +1743,18 @@
   function leadUp(entries2, fromSeq) {
     return entries2.filter((entry) => entry.seq >= fromSeq);
   }
+  var refusalSink = null;
+  var lastRefusal = /* @__PURE__ */ new Map();
+  function receiveRefusals(sink) {
+    refusalSink = sink;
+    lastRefusal.clear();
+  }
+  function refusal(subject, entry, by, key3) {
+    const last = JSON.stringify([by, ...key3]);
+    if (lastRefusal.get(subject) === last) return;
+    lastRefusal.set(subject, last);
+    refusalSink?.(subject, entry, by);
+  }
   function createMovementRing(now, capacity = MOVEMENT_RING_SIZE) {
     if (!Number.isInteger(capacity) || capacity < 1) throw Error("Movement ring size must be a positive integer");
     const entries2 = [];
@@ -9253,7 +9265,9 @@
     "create-character": { file: P + "create-character.tsx", core: "login integrity", cite: "questions/design/slot-coverage.md D45" },
     "state-import": { file: P + "dashboard-state-import.tsx", core: "save-restore", cite: "questions/design/slot-coverage.md D3" },
     "deconstruction": { file: P + "deconstruction-confirmation.tsx", core: "confirmation", cite: "questions/design/slot-coverage.md C31" },
-    "diagnostics": { file: P + "diagnostics-dialog.tsx", slot: "diagnostics-ring" },
+    "diagnostics": { file: P + "diagnostics-dialog.tsx", core: "frame", cite: "docs/movement.md, the Diagnostics view: its alerts and its ring logs carry their own areas" },
+    "diagnostics-alert": { file: P + "diagnostics-dialog.tsx", within: "diagnostics" },
+    "diagnostics-rings": { file: P + "diagnostics-dialog.tsx", slot: "diagnostics-ring" },
     "cave-panel": { file: P + "dungeon-panel.tsx", slot: "page-section", part: "cave" },
     "cave-exit": { file: P + "dungeon-panel.tsx", core: "confirmation", cite: "questions/design/slot-coverage.md P7" },
     "cave-choice": { file: P + "dungeon-panel.tsx", core: "confirmation", cite: "questions/design/slot-coverage.md P7" },
@@ -9917,7 +9931,7 @@ ${hook}`, was = errors.get(key3);
       }
       return void 0;
     }
-    function refusal(hook, ask3) {
+    function refusal2(hook, ask3) {
       const refused4 = refuser(hook, ask3);
       return refused4 && `${refused4.by}: ${refused4.reason}`;
     }
@@ -10139,7 +10153,7 @@ ${hook}`, was = errors.get(key3);
       record: record3,
       call,
       answers,
-      refusal,
+      refusal: refusal2,
       refuser,
       one
     };
@@ -10263,7 +10277,7 @@ ${hook}`, was = errors.get(key3);
       },
       // Step 9b hook points. A refusal names the add-on, so the step's record says who refused it.
       stepRefusal(view, to) {
-        return refusal("step.safety", (r) => r.hooks["step.safety"](view, to, scoped(r.name)));
+        return refusal2("step.safety", (r) => r.hooks["step.safety"](view, to, scoped(r.name)));
       },
       // True when an enabled add-on keeps step safety zones, so the owner builds its view only then.
       guardsSteps: () => answering2("step.safety").length > 0,
@@ -13753,8 +13767,8 @@ ${hook}`, was = errors.get(key3);
       if (m.target || !(Number(m.aggro) > 0)) continue;
       if (!inBlock(from, m) && entersBlock(from, to, m)) idle2.push(m.id);
     }
-    const refusal = attackers2.length ? "attacker" : idle2.length ? "idle-aggro" : void 0;
-    return { safe: !refusal, refusal, attackers: attackers2, idle: idle2 };
+    const refusal2 = attackers2.length ? "attacker" : idle2.length ? "idle-aggro" : void 0;
+    return { safe: !refusal2, refusal: refusal2, attackers: attackers2, idle: idle2 };
   }
   function fighting(input) {
     return input.monsters.some((m) => seen(m) && (m.target === input.name || (m.id === input.target || m.id === input.attacking) && Math.hypot(m.x - input.from.x, m.y - input.from.y) <= Number(input.range)));
@@ -17059,11 +17073,16 @@ ${hook}`, was = errors.get(key3);
 
   // runtime/characters/survival/records.ts
   var SURVIVAL_RING_SIZE = 64;
-  function createSurvivalRing(now = () => Date.now()) {
+  var ALERTS = {
+    refused: (entry) => [entry.skill, entry.reason]
+  };
+  function createSurvivalRing(now = () => Date.now(), subject = () => "") {
     const ring = createMovementRing(now, SURVIVAL_RING_SIZE);
     return {
       record(entry) {
         ring.push({ part: "survival", ...entry });
+        const alert = ALERTS[entry.decision];
+        if (alert) refusal(subject(), { part: "survival", ...entry }, "05", alert(entry));
       },
       entries: () => ring.entries()
     };
@@ -17447,7 +17466,7 @@ ${hook}`, was = errors.get(key3);
     const flights = /* @__PURE__ */ new Map();
     const waitUntil = /* @__PURE__ */ new Map();
     const refusedUntil = /* @__PURE__ */ new Map();
-    const waits = /* @__PURE__ */ new Map(), lastRefusal = /* @__PURE__ */ new Map();
+    const waits = /* @__PURE__ */ new Map(), lastRefusal2 = /* @__PURE__ */ new Map();
     const spent = /* @__PURE__ */ new Map();
     const sentIn = /* @__PURE__ */ new Map();
     const update = () => {
@@ -17534,7 +17553,7 @@ ${hook}`, was = errors.get(key3);
       inFlightMp(),
       reserveOf
     );
-    function refusal(s, cap, h) {
+    function refusal2(s, cap, h) {
       if (!(s.rank in SPEND_RANKS) || SPEND_RANKS[s.rank] > SPEND_RANKS[cap]) return `rank ${s.rank} above its requester's ${cap}`;
       if (!h.combat && s.family !== "potion") return "Combat is off";
       if (!h.potions && (s.skill === "use_hp" || s.skill === "use_mp")) return "Use potions is off";
@@ -17793,10 +17812,10 @@ ${hook}`, was = errors.get(key3);
       }
       const top = /* @__PURE__ */ new Map(), outranked = /* @__PURE__ */ new Map();
       for (const { spend: spend2, cap } of asks) {
-        const refused4 = refusal(spend2, cap, h), key3 = spend2.by + "|" + spend2.family;
+        const refused4 = refusal2(spend2, cap, h), key3 = spend2.by + "|" + spend2.family;
         if (refused4) {
-          if (lastRefusal.get(key3) !== refused4) {
-            lastRefusal.set(key3, refused4);
+          if (lastRefusal2.get(key3) !== refused4) {
+            lastRefusal2.set(key3, refused4);
             drop(spend2, refused4);
           }
           if (spend2 === push) push.push?.reject({ reason: refused4 });
@@ -17810,12 +17829,12 @@ ${hook}`, was = errors.get(key3);
       }
       for (const [fam, losers] of outranked) for (const s of losers) {
         const reason4 = `outranked by ${top.get(fam).by}`, key3 = s.by + "|" + fam;
-        if (lastRefusal.get(key3) !== reason4) {
-          lastRefusal.set(key3, reason4);
+        if (lastRefusal2.get(key3) !== reason4) {
+          lastRefusal2.set(key3, reason4);
           drop(s, reason4);
         }
       }
-      for (const s of top.values()) lastRefusal.delete(s.by + "|" + s.family);
+      for (const s of top.values()) lastRefusal2.delete(s.by + "|" + s.family);
       if (push && top.get(push.family) !== push) push.push?.reject({ reason: "waiting" });
       attackOpen = top.has("attack");
       for (const s of [...top.values()].sort((a, b) => SPEND_RANKS[b.rank] - SPEND_RANKS[a.rank])) {
@@ -19317,8 +19336,8 @@ ${hook}`, was = errors.get(key3);
       }
     }
     function emote2(args, ask3) {
-      const refusal = emoteRefusal(G.skills, character.acx, args.name);
-      return refusal ? Promise.resolve(refused4(refusal)) : spend2({ skill: args.name, rank: "maintenance", category: "maintenance" }, ask3);
+      const refusal2 = emoteRefusal(G.skills, character.acx, args.name);
+      return refusal2 ? Promise.resolve(refused4(refusal2)) : spend2({ skill: args.name, rank: "maintenance", category: "maintenance" }, ask3);
     }
     Object.assign(globalThis, { __partyTurnsDoors: { spend: spend2, emote: emote2 } });
     return {
@@ -20996,7 +21015,7 @@ ${hook}`, was = errors.get(key3);
     return half2;
   }
   function installSurvival(realm4, ports) {
-    const root2 = realm4, ring = createSurvivalRing(), half2 = ports.character, shared = half2.shared, hooks = ports.hooks;
+    const root2 = realm4, ring = createSurvivalRing(Date.now, () => character.name), half2 = ports.character, shared = half2.shared, hooks = ports.hooks;
     publish(hooks);
     root2.__partySurvival?.stop();
     const fighting2 = () => partyUnderAttack(half2.atFarm, () => hooks.ask("targeting.threat", { character: character.name }));
@@ -33028,17 +33047,17 @@ ${hook}`, was = errors.get(key3);
       }, to) : void 0;
       return safetyInput(host4, visibleMonsters(), target, zones2);
     }
-    function refuseStep(live2, refusal, mode, key3 = [live2.journeyId ?? live2.owner, refusal].join(":")) {
+    function refuseStep(live2, refusal2, mode, key3 = [live2.journeyId ?? live2.owner, refusal2].join(":")) {
       steps.refused++;
       if (refusedFor !== key3) {
         refusedFor = key3;
-        ring.push({ decision: "step-refused", ...live2, cause: refusal, code: mode });
+        ring.push({ decision: "step-refused", ...live2, cause: refusal2, code: mode });
       }
-      return { status: "refused", reason: refusal, sent: Promise.resolve() };
+      return { status: "refused", reason: refusal2, sent: Promise.resolve() };
     }
     function judgedStep(to, options) {
-      const refusal = stepRefusal();
-      if (refusal) return { decision: "refused", reason: refusal };
+      const refusal2 = stepRefusal();
+      if (refusal2) return { decision: "refused", reason: refusal2 };
       if (walkingStep(to)) return { decision: "kept" };
       const input = safetyFor(options.target);
       let chosen2;
@@ -33342,8 +33361,8 @@ ${hook}`, was = errors.get(key3);
         tell("crossing.ended", { ...told, code: "refused", reason: reason4, by });
         return Promise.reject(Object.assign(Error("Movement refused " + what + ": " + reason4), { reason: "refused", refused: true }));
       };
-      const refusal = hooks.movement.crossingRefusal(told);
-      if (refusal) return refused4(refusal, "hook:crossing.allows");
+      const refusal2 = hooks.movement.crossingRefusal(told);
+      if (refusal2) return refused4(refusal2, "hook:crossing.allows");
       const owns = journey ? journey.options.request?.owner === request.owner : hold2?.owner === request.owner;
       let took = false;
       if (!owns) {
@@ -35426,7 +35445,7 @@ ${hook}`, was = errors.get(key3);
     return { x: (Number(box[at4]) + Number(box[at4 + 2])) / 2, y: (Number(box[at4 + 1]) + Number(box[at4 + 3])) / 2 };
   }
   function installEventAttendance(ports) {
-    const suppressed = mark2("__partyManuallySuppressedEvent"), refusal = mark2("__partyEventRefusal");
+    const suppressed = mark2("__partyManuallySuppressedEvent"), refusal2 = mark2("__partyEventRefusal");
     let eventTypes = [];
     const targets = (next) => {
       eventTypes = next;
@@ -35528,7 +35547,7 @@ ${hook}`, was = errors.get(key3);
     }
     const pointOnly = (row4) => !!row4?.point && !row4.boss && !Object.keys(row4.targets).length;
     function candidate(name2, feed, anniversaryFirst, list4) {
-      const refused4 = refusal.get(), moved = suppressed.get(), row4 = eventKey(name2);
+      const refused4 = refusal2.get(), moved = suppressed.get(), row4 = eventKey(name2);
       if (refused4?.name === name2) return null;
       if (row4?.kind === "interaction") return selected(name2) && ports.clock.feedCurrent() && moved?.name !== name2 ? ports.october.activity(name2) : null;
       const state = feed[name2], types = ports.facts.targets(name2);
@@ -35558,7 +35577,7 @@ ${hook}`, was = errors.get(key3);
         ports.hint(),
         ports.assignment(),
         ports.anniversary(),
-        refusal.get(),
+        refusal2.get(),
         suppressed.get(),
         acted,
         ports.life()
@@ -35574,7 +35593,7 @@ ${hook}`, was = errors.get(key3);
     function activeNow() {
       const feed = ports.clock.status() || {}, list4 = ports.selection().list;
       clearEnded(suppressed, feed);
-      clearEnded(refusal, feed);
+      clearEnded(refusal2, feed);
       const ahead = anniversaryAhead(feed), here = ports.game().maps?.[ports.character().map]?.event, marked = joined();
       const found = ports.facts.names().map((name2) => candidate(name2, feed, ahead, list4)).filter(Boolean);
       const rank3 = (entry) => list4 ? list4.indexOf(entry.name) : -1;
@@ -35661,7 +35680,7 @@ ${hook}`, was = errors.get(key3);
           const failed2 = error, reply2 = String(failed2?.reason || failed2?.response || "");
           const row4 = joinReply(reply2);
           if (row4.final) {
-            refusal.set({ name: event.name, id: event.state.id || event.state.event_id || null, reply: reply2 });
+            refusal2.set({ name: event.name, id: event.state.id || event.state.event_id || null, reply: reply2 });
             acted = null;
             ports.log("The game refused " + event.name + " (" + reply2 + "); skipping this round", "#c084fc");
             throw Object.assign(new Error("event-over"), { reason: "event-over" });
@@ -35951,7 +35970,7 @@ ${hook}`, was = errors.get(key3);
       leave();
     }
     const combatEvent = () => ports.character().cave ? { name: "cave", types: [] } : active();
-    return { targets, targetTypes: () => eventTypes, refused: refusal.get, selected, sighting, arenaFight, destination, active, combatEvent, leaveForManualWalk, huntPending, allowed, defers, owns, joined, eventName, leave, rejoinPending, joinDestination, seen: seen3, searching, poll, rejoin, traveling, searchReport, reported, disappeared };
+    return { targets, targetTypes: () => eventTypes, refused: refusal2.get, selected, sighting, arenaFight, destination, active, combatEvent, leaveForManualWalk, huntPending, allowed, defers, owns, joined, eventName, leave, rejoinPending, joinDestination, seen: seen3, searching, poll, rejoin, traveling, searchReport, reported, disappeared };
   }
   Object.assign(globalThis, { installEventAttendance });
 
@@ -47659,7 +47678,7 @@ ${hook}`, was = errors.get(key3);
       const liveTarget = combatTarget && !combatTarget.dead ? combatTarget : null;
       const threats = Object.keys(parent2.entities || {}).map((id2) => parent2.entities[id2]).filter((entity) => entity && entity.type === "monster" && !entity.dead && entity.target === character2.name && !!hooks.ask("targeting.allowed", entity)).map((entity) => ({ id: entity.id, mtype: entity.mtype }));
       const selectedEvent = attend.active(), liveEventName = selectedEvent && selectedEvent.name || null;
-      const status5 = clock.status(), anniversaryFeed = status5 && status5.anniversary, refusal = o.events.attend.refused();
+      const status5 = clock.status(), anniversaryFeed = status5 && status5.anniversary, refusal2 = o.events.attend.refused();
       const returning = o.targeting.returnCombatActive();
       const body = {
         huntLoot: root2.partyLootClient && root2.partyLootClient.hunt.report(),
@@ -47805,7 +47824,7 @@ ${hook}`, was = errors.get(key3);
         mainTownSpawn: G2.maps.main && G2.maps.main.spawns[0] ? { x: G2.maps.main.spawns[0][0], y: G2.maps.main.spawns[0][1] } : null,
         mapEvent: G2.maps && G2.maps[character2.map] && G2.maps[character2.map].event || null,
         activeEvent: liveEventName,
-        eventRefusal: refusal && { name: refusal.name, id: refusal.id, reply: refusal.reply || null },
+        eventRefusal: refusal2 && { name: refusal2.name, id: refusal2.id, reply: refusal2.reply || null },
         serverLiveEvents: clock.live(),
         serverStagingEvents: clock.staging(),
         eventWalks: clock.walks(),
@@ -48099,6 +48118,10 @@ ${hook}`, was = errors.get(key3);
             timing.attack("blocked", notice3.selected, { reason: notice3.reason, cooldownReadyAt: attackReadyAt() });
         }
       }
+    });
+    receiveRefusals((subject, entry, by) => {
+      void p.request("/movement-snapshot", { method: "POST", body: { character: subject || p.name(), trigger: "refused", by, records: [entry], incidents: [] } }).catch(() => {
+      });
     });
     function reply2(state) {
       leased = Array.isArray(state.diagnosticsRings) ? state.diagnosticsRings : [];

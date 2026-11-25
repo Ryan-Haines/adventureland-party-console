@@ -1752,27 +1752,39 @@ test('the card shows the activity line under the level line, and the stuck notic
   await expect(card.getByText(/\d+ ?min/)).toHaveCount(0);
 });
 
-test('the diagnostics view lists stuck and caught-error records with their lead-up and id links', async ({page},info) => {
-  // Step 8b item 14: a debug view reached from the address, not part of the card.
+test('the Diagnostics button counts unread alerts and the view lists them with their lead-up', async ({page},info) => {
+  // The alerts are the saved snapshots; opening the view marks nothing read, each alert has Mark as
+  // read, and the routine logs wait behind Show all records.
   const leadUp=[{seq:7,at:1000,decision:'climbing',owner:'escape:e1',cause:'ladder'},
     {seq:8,at:1100,decision:'ended',kind:'escape',owner:'escape:e1',code:'replaced:manual',by:{kind:'manual',owner:'manual'}}];
   const stuck={id:'stuck:W:runtime:9',kind:'stuck',character:'W',owner:'escape:e1',activity:'Regrouping after escape',rung:'door',
     trying:'walking around the Arena door',noProgressMs:12000,position:{map:'arena',x:10,y:20},blocked:{code:'replaced:manual',by:{kind:'manual',owner:'manual'}},leadUp};
-  const caught={id:'caught-error:W:runtime:12',kind:'caught-error',character:'W',error:'Error: forced owner error',position:{map:'main',x:0,y:0},leadUp:leadUp.slice(0,1)};
-  await page.route('**/party-api/diagnostics/records*',route=>route.fulfill({json:{character:'W',until:1500,
-    live:{movement:{at:1200,records:[],incidents:[stuck]}},snapshots:[{id:'W/1-1-caught-error',trigger:'caught-error',at:1300,incident:caught.id,incidents:[caught],records:1}]}}));
-  await page.goto('/#diagnostics/movement');
+  const alerts=[{id:'W/000000000002000-000002-stuck',subject:'W',trigger:'stuck',at:2000},{id:'group:W/000000000001000-000001-task-failed',subject:'group:W',trigger:'task-failed',at:1000}];
+  await page.route('**/party-api/diagnostics/alerts*',route=>route.fulfill({json:{alerts}}));
+  await page.route('**/party-api/diagnostics/alert?*',route=>route.fulfill({json:{id:alerts[0].id,character:'W',trigger:'stuck',at:2000,records:leadUp,incidents:[stuck]}}));
+  await page.goto('/');
+  const button=page.getByRole('link',{name:'Diagnostics, 2 unread',exact:true});
+  await expect(button).toBeVisible();
+  await button.click();
   const dialog=page.getByRole('dialog',{name:'Diagnostics'});
-  await expect(dialog).toBeVisible();
-  for(const record of [stuck,caught])await expect(dialog.getByRole('link',{name:record.id,exact:true}).first()).toBeVisible();
-  await expect(dialog.getByText('Regrouping after escape',{exact:true}).first()).toBeVisible();
-  await expect(dialog.getByText('12 s without progress')).toBeVisible();
-  await info.attach('movement-records-list',{body:await page.screenshot(),contentType:'image/png'});
-  await dialog.getByRole('link',{name:stuck.id,exact:true}).first().click();
+  await expect(dialog.getByRole('article')).toHaveCount(2);
+  // The modal view hides the page from the accessibility tree, so the header's badge is read with
+  // includeHidden while the view is open.
+  const header=(name:string)=>page.getByRole('link',{name,exact:true,includeHidden:true});
+  await expect(header('Diagnostics, 2 unread')).toBeVisible();
+  await expect(dialog.getByRole('checkbox',{name:'Show all records'})).not.toBeChecked();
+  const first=dialog.getByRole('article',{name:alerts[0].id});
+  await first.getByText('Report',{exact:true}).click();
+  await expect(first.getByText('Regrouping after escape',{exact:true})).toBeVisible();
+  await expect(first.getByText('12 s without progress')).toBeVisible();
+  await expect(first.getByRole('cell',{name:'replaced:manual'}).first()).toBeVisible();
+  await info.attach('diagnostics-alerts',{body:await page.screenshot(),contentType:'image/png'});
+  await first.getByRole('button',{name:'Mark as read',exact:true}).click();
+  await expect(header('Diagnostics, 1 unread')).toBeVisible();
+  await dialog.getByRole('button',{name:'Mark all as read',exact:true}).click();
+  await expect(header('Diagnostics')).toBeVisible();
+  await dialog.getByRole('link',{name:alerts[1].id,exact:true}).click();
   await expect(dialog.getByRole('article')).toHaveCount(1);
-  await expect(dialog.getByRole('article',{name:stuck.id})).toBeVisible();
-  await expect(dialog.getByRole('cell',{name:'replaced:manual'})).toBeVisible();
-  await info.attach('movement-records-one',{body:await page.screenshot(),contentType:'image/png'});
   await dialog.getByRole('link',{name:'All records'}).click();
   await expect(dialog.getByRole('article')).toHaveCount(2);
 });

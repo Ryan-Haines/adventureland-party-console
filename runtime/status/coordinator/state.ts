@@ -103,7 +103,7 @@ export interface PublicStatePorts {
   realmControl(): unknown;
   /** Pause, Play and clean shutdown state; runtime/lifecycle/coordinator/control.ts. */
   consoleControl(): unknown;
-  /** The last ring save, which the record icon lights for; coordinator/diagnostics.ts. */
+  /** The last ring save, on which the Diagnostics button reads its alerts again; coordinator/diagnostics.ts. */
   recordSaved?(): unknown;
   /** The card line for a character (coordinator/line.ts `createCardLines`). Each projection
    * that hands a character out adds it to its own copy; the stored report holds what the character sent. */

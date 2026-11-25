@@ -216,7 +216,7 @@ export interface Survival {
 // recovery, registered before the turns owner's sources so the pass asks them first, in today's
 // chain order.
 export function installSurvival(realm: object, ports: SurvivalPorts): Survival {
-  const root = realm as Root, ring = createSurvivalRing(), half = ports.character, shared = half.shared, hooks = ports.hooks;
+  const root = realm as Root, ring = createSurvivalRing(Date.now, () => character.name), half = ports.character, shared = half.shared, hooks = ports.hooks;
   publish(hooks);
   root.__partySurvival?.stop();
   const fighting = () => partyUnderAttack(half.atFarm, () => hooks.ask('targeting.threat', { character: character.name }));

@@ -2,7 +2,7 @@
 // ring entry per decision, `part: 'merchant'`, at most 20 per subject (3.the add-on owner's size for this ring).
 // The subject is the merchant, and each entry names its job in `owner` (`job:<id>`) or the slot's
 // writer. The stuck record is the tasks owner's ladder's, so the ring keeps no snapshot of its own.
-import { createMovementRing, type RingEntry } from '../../protocol/records.ts';
+import { createMovementRing, refusal, type RingEntry } from '../../protocol/records.ts';
 import { partyHooks } from '../../hooks/index.ts';
 import type { MerchantJobNotice } from '../../hooks/registry.ts';
 
@@ -18,6 +18,10 @@ const NOTICES: Readonly<Record<string, MerchantJobNotice>> = {
   'slot-written': 'merchant.slot.written', 'slot-cleared': 'merchant.slot.written', 'slot-held': 'merchant.slot.held',
   'slot-refused': 'merchant.slot.refused', 'no-tool': 'merchant.gathering.noTool',
 };
+// The decisions that are alerts, each with the fields that tell one from the next: a job or add-on
+// kind the door refused. A slot write another holds is the slot rule working, so it is none.
+const refusedJob = (entry: Entry) => [entry.decision, entry.owner, entry.kind, entry.code];
+const ALERTS: Readonly<Record<string, (entry: Entry) => unknown[]>> = { 'job-refused': refusedJob, 'kind-refused': refusedJob };
 
 // Writes one entry under its subject and sends its notice: queued, claimed, paused with `by`,
 // resumed, ended with its code, blocked and unblocked, a written, refused or held slot write. The
@@ -26,6 +30,8 @@ export function recordMerchant(entry: Entry, now: () => number = Date.now): void
   let ring = rings.get(entry.subject);
   if (!ring) rings.set(entry.subject, ring = createMovementRing<Entry & { part: 'merchant' }>(now, MERCHANT_RING_SIZE));
   ring.push({ ...entry, part: 'merchant' });
+  const alert = ALERTS[entry.decision];
+  if (alert) refusal(entry.subject, { ...entry, part: 'merchant' }, '08', alert(entry));
   const notice = NOTICES[entry.decision];
   if (notice) partyHooks().notify(notice, { ...entry, by: entry.by ?? entry.owner });
 }

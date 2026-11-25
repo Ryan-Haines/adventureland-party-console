@@ -50,8 +50,9 @@ function ListCode({className}:{className:string}) { return (
     <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="M3 4h18M3 8h18M3 12h7M7 16l-4 3 4 3m10-6 4 3-4 3m-3-7-3 8" /></svg>
   ); }
 
-export function PartyHeader({ model, onLogs, metricsActive, onMetrics, recordIcon }: { model: PartyConsoleModel; onLogs: () => void; metricsActive: boolean; onMetrics: () => void;
-  recordIcon?: ReactNode;
+export function PartyHeader({ model, onLogs, metricsActive, onMetrics, diagnostics }: { model: PartyConsoleModel; onLogs: () => void; metricsActive: boolean; onMetrics: () => void;
+  // The Diagnostics button (diagnostics-dialog.tsx), always beside Logs.
+  diagnostics?: ReactNode;
 }) {
   const [artifact,setArtifact]=useState<string>();
   const { state: updates } = useUpdates();
@@ -164,7 +165,7 @@ export function PartyHeader({ model, onLogs, metricsActive, onMetrics, recordIco
                 <ListCode className="mr-2 size-4" />
                 Logs
               </Button>
-              {recordIcon}
+              {diagnostics}
               <AddonSlot name="top-bar" part="views" state={state} />
               </div>
               <div data-header-row="actions" className="contents md:flex md:gap-3 [&>*]:shrink-0">
