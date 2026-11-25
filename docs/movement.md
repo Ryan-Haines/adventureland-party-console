@@ -228,6 +228,11 @@ walk names its departure, and any other journey takes its request row's: the esc
 row departs `now`, so the survivors' walk home casts Town with the fight that started
 the escape still on, and every other row waits for its fight and its chests.
 
+A journey that starts while the character moves stops it first and plans once that
+stop answers (owner.ts `settle`). The game resolves a move "stopped" when the character
+stands at its point, however long that takes; a stop that a later move interrupts ends
+the journey, since something else walks the character.
+
 An ALClient plan has a budget of `movementAlclientPlanMs` (2 s by default) and a
 native search one of `movementPlanningMs` (30 s by default, a setting the player
 sees); a requester may name its own per request. A group walk's native search and

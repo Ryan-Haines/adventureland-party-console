@@ -102,7 +102,7 @@ type Waiting = Hold & { destination: unknown; options: MovementOptions; listener
 // A request waiting on combat: `fighting` is the requester's own fight test and `start` its
 // answer. It carries no revision: only its currency test ends it, as the job's token did.
 type CombatWait = Requester & { owner: string } & Pick<MovementRequest, 'current'> & { fighting(): boolean; start(started: boolean): void };
-interface Journey { routeAggro?: { detours: number; crossings: number }; listeners: Listener[]; terminalSettlement?: Record<string,unknown>; scheduling?: ReturnType<typeof createPlanningScheduleMetrics>; settlingAt?: number; repair?: SegmentRepair; repaired?: boolean; repairEndpoints?: string[]; repairRemaining?: Closeness; firstIssue?: Issue; failureContext?: Record<string, unknown>; id: string; context: MovementContext; options: MovementOptions; native: boolean; pending: boolean; searches: number; ladder: OwnerLadder; started: number; planningAt: number; fallback: boolean; plannerMs?: number; collisionError?: string; requestMs?: number; distance?: number; transitions?: number; importedEngine?: string }
+interface Journey { routeAggro?: { detours: number; crossings: number }; listeners: Listener[]; terminalSettlement?: Record<string,unknown>; scheduling?: ReturnType<typeof createPlanningScheduleMetrics>; settling?: Promise<void>; repair?: SegmentRepair; repaired?: boolean; repairEndpoints?: string[]; repairRemaining?: Closeness; firstIssue?: Issue; failureContext?: Record<string, unknown>; id: string; context: MovementContext; options: MovementOptions; native: boolean; pending: boolean; searches: number; ladder: OwnerLadder; started: number; planningAt: number; fallback: boolean; plannerMs?: number; collisionError?: string; requestMs?: number; distance?: number; transitions?: number; importedEngine?: string }
 const failurePhases = new Map([
   ['superseded', 'Movement cancelled'],
   ['convoy-communication-hold', 'Movement paused: coordinator communication unavailable'],
@@ -628,17 +628,26 @@ export function installPartyMovement(host: MovementHost, ports: MovementPorts) {
     if (!j || state.found) return;
     if (!current(j)) { finish(false, 'Navigation revision or runtime superseded this journey', {code:'superseded'}); return; }
     const scheduling=j.scheduling ??= createPlanningScheduleMetrics();scheduling.plan();
-    // movement.ts:437: the stop before a plan settles when the game reports `moving` false,
-    // within one measured round trip; a transport waits on the game's map change.
+    // movement.ts:437: a plan waits while the character moves, behind the journey's stop, and a
+    // transport waits on the game's map change.
     if (planningBlocked(scheduling)) {
-      if (host.is_transporting(host.character)) { j.settlingAt = undefined; return; }
-      j.settlingAt ??= ports.now();
-      if (ports.now() - j.settlingAt > hooks.calls.margin()) finish(false, 'Character did not settle before route planning');
+      if (!host.is_transporting(host.character)) settle(j);
       return;
     }
-    j.settlingAt = undefined;
     try { planningStep(j); }
     catch (error) { finish(false, error); }
+  }
+  // The stop before a plan settles on its own answer, however long the game takes: the game
+  // resolves a move's promise "stopped" once the character stands at its point
+  // (old_common_functions.js:1657) and "interrupted" when a later move replaces it
+  // (functions.js:2064). A character that another move walks on fails the journey; any other
+  // answer leaves the next blocked tick to stop it again.
+  function settle(j: Journey) {
+    j.settling ??= standStill().then(answer => {
+      if (journey !== j) return;
+      j.settling = undefined;
+      if ((answer as { reason?: unknown } | undefined)?.reason === 'interrupted') finish(false, 'Character did not settle before route planning');
+    });
   }
   function planningStep(j: Journey): void {
     if (j.options.relocation === 'town') { install([{...point(state),town:true}],true); return; }
@@ -775,7 +784,7 @@ export function installPartyMovement(host: MovementHost, ports: MovementPorts) {
   function contextHolds(j: Journey): boolean {
     const contextHeld = readContext().paused;
     if (contextHeld !== contextPaused) { contextPaused = contextHeld; ring.push({ decision: contextHeld ? 'paused' : 'resumed', journeyId: j.id, cause: 'context' }); }
-    if (contextHeld) { if(!state.found)(j.scheduling ??= createPlanningScheduleMetrics()).paused();j.settlingAt = undefined; executor.pause(); }
+    if (contextHeld) { if(!state.found)(j.scheduling ??= createPlanningScheduleMetrics()).paused(); executor.pause(); }
     return contextHeld;
   }
   function tick() {
@@ -788,9 +797,9 @@ export function installPartyMovement(host: MovementHost, ports: MovementPorts) {
     // the character's targeting off (queue-client.ts 'travel intent').
     if (standsAtGoal()) { finish(true); return; }
     if (contextHolds(j)) return;
-    if (click?.paused) { j.settlingAt = undefined; return; }
+    if (click?.paused) return;
     if (paused) {
-      if (ports.now() - stepAt < stepMs) { j.settlingAt = undefined; return; }
+      if (ports.now() - stepAt < stepMs) return;
       resumeSteps('idle');
     }
     if (!state.found) { planTick(); return; }
@@ -815,11 +824,11 @@ export function installPartyMovement(host: MovementHost, ports: MovementPorts) {
       return Promise.reject(Error('Destination is in another instance; use its instance-entry workflow'));
     delete state.in;
     Object.assign(state, target, { moving: true, found: false, searching: false, plot: [], use_town: options.town !== false, edge: tolerance });
-    if (host.character.moving) void standStill();
     stepping = undefined;
     executor.reset(); const context = {...readContext(), map:host.character.map, instance:host.character.in ?? host.character.map};
     const j: Journey = journey = { listeners: [], id: `${host.character.name}:${context.runtime}:${++sequence}`, context, options, native: !!options.native, pending: false, searches: 0, ladder: createOwnerLadder(journeyRound(), ports.now), started: ports.now(), planningAt: ports.now(), fallback: !!options.native };
     contextPaused = false;
+    if (host.character.moving) settle(j);
     ring.push({ decision: 'started', journeyId: j.id, kind: options.request!.kind, owner: options.request!.owner,
       tier: options.request!.tier, destination: point(target), from, ...(site ? { by: { kind: typed.kind, owner: typed.owner, site } } : {}) });
     // Every caller of this journey hears its end: the starter and each repeat the owner kept.

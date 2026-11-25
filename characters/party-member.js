@@ -32500,20 +32500,21 @@ ${hook}`, was = errors.get(key3);
       const scheduling = j.scheduling ??= createPlanningScheduleMetrics();
       scheduling.plan();
       if (planningBlocked(scheduling)) {
-        if (host4.is_transporting(host4.character)) {
-          j.settlingAt = void 0;
-          return;
-        }
-        j.settlingAt ??= ports.now();
-        if (ports.now() - j.settlingAt > hooks.calls.margin()) finish(false, "Character did not settle before route planning");
+        if (!host4.is_transporting(host4.character)) settle(j);
         return;
       }
-      j.settlingAt = void 0;
       try {
         planningStep(j);
       } catch (error) {
         finish(false, error);
       }
+    }
+    function settle(j) {
+      j.settling ??= standStill().then((answer) => {
+        if (journey !== j) return;
+        j.settling = void 0;
+        if (answer?.reason === "interrupted") finish(false, "Character did not settle before route planning");
+      });
     }
     function planningStep(j) {
       if (j.options.relocation === "town") {
@@ -32656,7 +32657,6 @@ ${hook}`, was = errors.get(key3);
       }
       if (contextHeld) {
         if (!state.found) (j.scheduling ??= createPlanningScheduleMetrics()).paused();
-        j.settlingAt = void 0;
         executor.pause();
       }
       return contextHeld;
@@ -32674,15 +32674,9 @@ ${hook}`, was = errors.get(key3);
         return;
       }
       if (contextHolds(j)) return;
-      if (click?.paused) {
-        j.settlingAt = void 0;
-        return;
-      }
+      if (click?.paused) return;
       if (paused) {
-        if (ports.now() - stepAt < stepMs) {
-          j.settlingAt = void 0;
-          return;
-        }
+        if (ports.now() - stepAt < stepMs) return;
         resumeSteps("idle");
       }
       if (!state.found) {
@@ -32721,12 +32715,12 @@ ${hook}`, was = errors.get(key3);
         return Promise.reject(Error("Destination is in another instance; use its instance-entry workflow"));
       delete state.in;
       Object.assign(state, target, { moving: true, found: false, searching: false, plot: [], use_town: options.town !== false, edge: tolerance });
-      if (host4.character.moving) void standStill();
       stepping = void 0;
       executor.reset();
       const context = { ...readContext(), map: host4.character.map, instance: host4.character.in ?? host4.character.map };
       const j = journey = { listeners: [], id: `${host4.character.name}:${context.runtime}:${++sequence}`, context, options, native: !!options.native, pending: false, searches: 0, ladder: createOwnerLadder(journeyRound(), ports.now), started: ports.now(), planningAt: ports.now(), fallback: !!options.native };
       contextPaused = false;
+      if (host4.character.moving) settle(j);
       ring.push({
         decision: "started",
         journeyId: j.id,

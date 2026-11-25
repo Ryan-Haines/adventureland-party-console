@@ -330,6 +330,27 @@ scenarioTable("the walking try ends on the game's own movement, never on a fixed
  const rejected=assert.rejects(p,/Stalled walking movement \(moving without progress/);await r.ticks();
  r.c.moving=true;r.service.reported();r.c.real_x+=1;r.setNow(2000);r.service.reported();await r.ticks();await rejected;r.dispose();
  }), {stall:true}],
+ // The end run on 367447e73 (D7): a player command started as the escape's native walk released,
+ // and its stop took three planning ticks to settle, past the margin of that run.
+ ['the stop before a plan settles on its own answer, however long the game takes to stop', r=>withMargin(200,async()=>{
+ const walkTo=r.host.move;let stopped;
+ r.host.move=(x,y)=>{r.calls.push(['move',x,y]);return new Promise(resolve=>{stopped=()=>{r.c.moving=false;resolve({success:true,reason:'stopped'});};});};
+ r.c.moving=true;
+ let error;const walk=r.service.move({map:'main',x:100,y:0});walk.catch(e=>{error=e;});
+ for(const at of [1100,1400,2000]){r.setNow(at);await r.ticks(1);}
+ assert.equal(r.request,undefined,'no plan while the stop has not answered');
+ r.host.move=walkTo;stopped();await r.ticks();
+ assert.equal(error,undefined,'the journey waits for the stop');
+ assert.ok(r.request,'the plan goes once the stop answers');r.dispose();
+ })],
+ ['a stop that a later move interrupts ends the journey before its plan', r=>withMargin(200,async()=>{
+ let answer;r.host.move=(x,y)=>{r.calls.push(['move',x,y]);return new Promise(resolve=>{answer=resolve;});};
+ r.c.moving=true;
+ let error;r.service.move({map:'main',x:100,y:0}).catch(e=>{error=e;});
+ await r.ticks(2);answer({success:true,reason:'interrupted'});await r.ticks(2);
+ assert.match(String(error?.message),/did not settle before route planning/);
+ assert.equal(r.request,undefined);r.dispose();
+ })],
  // A step that stopped short and is no longer walkable from where the character
  // stands cannot be sent again, so its try ends on that reason.
  ['a step no longer walkable from where it stopped ends the try at once', ()=>withMargin(200,async()=>{
