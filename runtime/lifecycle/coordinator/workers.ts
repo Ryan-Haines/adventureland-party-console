@@ -380,8 +380,11 @@ export function createWorkers(ports: WorkerPorts) {
     state.lifecycle[name] = block.connected ? "online" : "starting";
     if (!block.instance) start(name);
   }
+  // The headless slots the start loaded, which the slot restore starts.
+  let savedSlots: readonly (string | null)[] = [];
   /** At start every saved worker is off and unconnected until the slot restore turns it on. */
   function prepareSlots(): void {
+    savedSlots = [...state.headlessSlots];
     for (const [name, block] of Object.entries(blocks)) {
       block.connected = false;
       ports.watch(name, block);
@@ -391,6 +394,9 @@ export function createWorkers(ports: WorkerPorts) {
   /** The saved headless slots start their characters; a slot the account no longer owns, or the native owner's, empties. */
   function restoreSlots(): void {
     state.headlessSlots.forEach((name, index) => {
+      // A slot written after the start is its writer's: the roster's spawn reserves its slot before
+      // it confirms the character offline, and starts the worker itself.
+      if (name !== savedSlots[index]) return;
       if (ports.reserved(name)) return;
       if (!name || !ports.owned(name) || name === state.nativeOwner) {
         state.headlessSlots[index] = null;
