@@ -7355,6 +7355,7 @@
     farmAreaObservation: debug("Latest farm area observation."),
     farmFocusInView: debug("True while a live focus monster the farm would take is in view."),
     farmCompetition: debug("Other players competing for the farm area."),
+    huntSightings: debug("Live monsters in view of the Hunt's target and the character's own quest (hunting/character/farm.ts)."),
     dungeon: debug("Dungeon runtime report, with recovery inside a cave."),
     // Catalogs, reported once when the coordinator has none (coordinator/intake.ts)
     merchantCatalogVersion: catalog("Merchant catalog version.", { size: "small" }),
@@ -11031,6 +11032,11 @@ ${hook}`, was = errors.get(key3);
 
   // runtime/hunting/areas.ts
   var FLAGS = ["ignore", "instance", "irregular"];
+  function roamArea(game2, map, spawn) {
+    const bounds2 = game2.geometry?.[map];
+    if (!bounds2 || !(spawn.random || spawn.roam || game2.monsters[spawn.type]?.roam)) return void 0;
+    return [bounds2.min_x, bounds2.min_y, bounds2.max_x, bounds2.max_y];
+  }
   function spawnCatalog(game2, sprite, onlyType) {
     const ids2 = onlyType ? game2.monsters[onlyType] ? [onlyType] : [] : Object.keys(game2.monsters);
     return ids2.map((id2) => {
@@ -11053,7 +11059,8 @@ ${hook}`, was = errors.get(key3);
               x: valid ? Math.round(x) : void 0,
               y: valid ? Math.round(y) : void 0,
               boundary: box || void 0,
-              polygon: spawn.polygon || void 0
+              polygon: spawn.polygon || void 0,
+              roamArea: roamArea(game2, at4, spawn)
             };
             spawnRecords.push({ sourceMap: mapId, count: spawn.count, restrictions, ...location });
             recorded = true;
@@ -16034,6 +16041,11 @@ ${hook}`, was = errors.get(key3);
       const all2 = focus.includes("all");
       return select(Object.values(ports.frame().entities || {}).filter((e) => !!e && e.type === "monster" && !!e.visible && !e.dead && (all2 || focus.includes(String(e.mtype))))).length > 0;
     }
+    function huntSightings() {
+      const c = me(), types = [huntTarget, c.s?.monsterhunt?.id].filter((type2) => typeof type2 === "string" && !!type2);
+      if (!types.length) return [];
+      return Object.entries(ports.frame().entities || {}).flatMap(([id2, e]) => e && e.type === "monster" && e.visible && !e.dead && types.includes(String(e.mtype)) ? [{ id: id2, mtype: String(e.mtype), map: c.map, in: c.in ?? c.map, x: e.x, y: e.y }] : []);
+    }
     function entryPoint(location) {
       if (!location || !location.shapes && !location.allOf) return location;
       const c = me(), origin = c.map === location.map ? c : location;
@@ -16097,7 +16109,8 @@ ${hook}`, was = errors.get(key3);
         farmAreaEvidence: evidence,
         farmAreaObservation: observed,
         farmFocusInView: focusInView(),
-        farmCompetition: competition()
+        farmCompetition: competition(),
+        huntSightings: huntSightings()
       })
     };
   }

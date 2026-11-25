@@ -185,6 +185,9 @@ const holdLabels = {
   regroupSpawns: f => f.target + ' spawns failed; regrouping and starting over from the first spawn',
   questsOver: f => 'Every ' + f.target + ' spawn failed again; starting the Hunt over from its quests',
   skipped: f => 'Skipping ' + f.target + ': no spawn could be reached',
+  // The roaming target's search (coordinator/search.ts): a hold at its point, and its release.
+  searching: f => 'Searching for ' + f.target + ': ' + f.text,
+  noReachable: f => 'No reachable ' + f.target + '; farming until one is seen',
   spawnRestored: () => 'Restored Hunt spawn after temporary route recovery',
   backupNoSpot: () => 'Backup Hunt waiting for configured farming location',
   lootPending: f => 'Pending Hunt loot: ' + (f.text || 'collecting final kill drops'),

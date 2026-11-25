@@ -248,8 +248,10 @@ export function startCoordinatorApplication(
         // The party group's farming ladder, which a failed Phoenix patrol leg climbs.
         ladder: () => ladderPort(taskOwner, () => groupId('party', party.leader), ['farming']),
         routeDistance: createRareRouteDistance(request=>movementPlanner.plan(request),
-          ()=>({version: party.gameVersion, fingerprint: movementFingerprint(party.gameVersion)})),
+          ()=>({version: party.gameVersion, fingerprint: movementFingerprint(party.gameVersion)}), 'phoenix-wait'),
       },
+      huntRoute: createRareRouteDistance(request=>movementPlanner.plan(request),
+        ()=>({version: party.gameVersion, fingerprint: movementFingerprint(party.gameVersion)}), 'hunt-search'),
       persist: persistSettings,
       groups: () => groups.combat().flatMap(g => g.id ? [g.id] : []),
       solo: name => !!groups.solo(name),

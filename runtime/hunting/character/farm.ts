@@ -29,7 +29,7 @@ type Mode = 'default' | 'scatter';
 export interface FarmReply { monsterFocus?: unknown; monsterSearchRadius?: unknown; scatterEpoch?: unknown;
   huntCombatTarget?: string | null; partyFarmingMode?: unknown; partyFarmingMonsterType?: unknown }
 export interface FarmClientPorts extends HandoffHolds {
-  character(): FarmEntity & { name: string; map: string; ctype?: string; cave?: unknown };
+  character(): FarmEntity & { name: string; map: string; ctype?: string; cave?: unknown; s?: { monsterhunt?: { id?: unknown } } };
   frame(): { entities?: Record<string, FarmEntity>; socket?: { connected?: boolean }; server_region?: string; server_identifier?: string };
   entity(id: unknown): FarmEntity | null | undefined;
   members(): string[];
@@ -265,6 +265,15 @@ export function installFarmClient(ports: FarmClientPorts) {
     return select(Object.values(ports.frame().entities || {}).filter(e => !!e && e.type === 'monster' && !!e.visible && !e.dead &&
       (all || focus.includes(String(e.mtype))))).length > 0;
   }
+  // The live monsters in view of the Hunt's target and of this character's own quest, which the
+  // coordinator's search asks the planner a route to (coordinator/search.ts). The own quest's
+  // sightings keep coming while a released Hunt farms elsewhere.
+  function huntSightings() {
+    const c = me(), types = [huntTarget, c.s?.monsterhunt?.id].filter((type): type is string => typeof type === 'string' && !!type);
+    if (!types.length) return [];
+    return Object.entries(ports.frame().entities || {}).flatMap(([id, e]) => e && e.type === 'monster' && e.visible && !e.dead &&
+      types.includes(String(e.mtype)) ? [{ id, mtype: String(e.mtype), map: c.map, in: c.in ?? c.map, x: e.x, y: e.y }] : []);
+  }
   // A shaped area's walkable search point nearest the character (or the area, from another map);
   // a plain point is its own entry.
   function entryPoint(location: Spot | null | undefined) {
@@ -304,7 +313,8 @@ export function installFarmClient(ports: FarmClientPorts) {
     report: () => ({ farmingMode: mode, farmingMonsterType: type,
       combatDeviation: deviationLive(),
       oneShotMonsterTypes: Object.keys(oneShot), oneShotEpoch: epoch,
-      farmAreaEvidence: evidence, farmAreaObservation: observed, farmFocusInView: focusInView(), farmCompetition: competition() }),
+      farmAreaEvidence: evidence, farmAreaObservation: observed, farmFocusInView: focusInView(), farmCompetition: competition(),
+      huntSightings: huntSightings() }),
   };
 }
 // The role code's spawn catalog (shared.js `root.partySpawnCatalog`).

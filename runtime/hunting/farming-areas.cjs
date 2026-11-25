@@ -173,6 +173,11 @@ function searchPoints(area) {
 
 // runtime/hunting/areas.ts
 var FLAGS = ["ignore", "instance", "irregular"];
+function roamArea(game, map, spawn) {
+  const bounds2 = game.geometry?.[map];
+  if (!bounds2 || !(spawn.random || spawn.roam || game.monsters[spawn.type]?.roam)) return void 0;
+  return [bounds2.min_x, bounds2.min_y, bounds2.max_x, bounds2.max_y];
+}
 function spawnCatalog(game, sprite, onlyType) {
   const ids = onlyType ? game.monsters[onlyType] ? [onlyType] : [] : Object.keys(game.monsters);
   return ids.map((id2) => {
@@ -195,7 +200,8 @@ function spawnCatalog(game, sprite, onlyType) {
             x: valid ? Math.round(x) : void 0,
             y: valid ? Math.round(y) : void 0,
             boundary: box || void 0,
-            polygon: spawn.polygon || void 0
+            polygon: spawn.polygon || void 0,
+            roamArea: roamArea(game, at, spawn)
           };
           spawnRecords.push({ sourceMap: mapId, count: spawn.count, restrictions, ...location });
           recorded = true;

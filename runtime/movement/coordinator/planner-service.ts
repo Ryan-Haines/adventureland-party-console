@@ -154,9 +154,14 @@ function createRouteLength(plan: (request: PlanRequest) => Promise<PlanResult>, 
     return distance;
   };
 }
-/** Route walking distance plus a fixed transition cost; failed plans are not reachable candidates. */
-export function createRareRouteDistance(plan: (request: PlanRequest) => Promise<PlanResult>, identity: () => { version: number; fingerprint: string }) {
-  const length = createRouteLength(plan, identity, 'phoenix-wait');
+/**
+ * Route walking distance plus a fixed transition cost; failed plans are not reachable candidates.
+ * `purpose` prefixes each planner request id with the owner that asks: the Phoenix patrol
+ * (`phoenix-wait`) or the Hunt's search for a roaming target (`hunt-search`).
+ */
+export function createRareRouteDistance(plan: (request: PlanRequest) => Promise<PlanResult>, identity: () => { version: number; fingerprint: string },
+  purpose: 'phoenix-wait' | 'hunt-search') {
+  const length = createRouteLength(plan, identity, purpose);
   return (from: Point, to: Point): Promise<number> => length(from, to, 60);
 }
 // The walk estimate's route time: the planned route at `speed`, in milliseconds.

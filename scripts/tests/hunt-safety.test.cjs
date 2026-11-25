@@ -4,6 +4,7 @@ const {priority}=require('../../runtime/tasks/api.ts');
 // The status line, which labelHunt keeps beside the Hunt record.
 const {huntMessage}=require('../../runtime/hunting/coordinator/record.ts');
 const {events}=require('./fixtures/coordinator-core.cjs');
+const {scenarioTable}=require('./fixtures/scenarios.cjs');
 // The rows drive the hunting owner's Hunt service (hunt.ts `createHunt`) through the names they were written on:
 // a member's death reaches it as survival's `died` notice, and the Daisy step is a tick at Daisy.
 function fixture(options={}) {
@@ -12,17 +13,19 @@ function fixture(options={}) {
  const party={leader:'W',followers:{P:true,M:true},targetMode:'hunt',monsterFocus:['snake'],monsterHunterLocation:{map:'main',x:126,y:-413},
   commands:{},nextCommandId:1,monsterSearchRadiusByCharacter:{W:400},activeConvoy:null,monsterHunt:null,
   // The Hunt's spawns are the catalog's (hunt.ts `coordinatorHuntDestination`); each quest's spawn is the row's destination.
-  monsterChoices:['mole','rat','ghost','snake','bee'].map(id=>({id,locations:[destination]})),
+  monsterChoices:[...['mole','rat','ghost','snake','bee'].map(id=>({id,locations:[destination]})),...options.choices||[]],
   statuses:Object.fromEntries(names.map((name,i)=>[name,{name,hp:100,rip:false,seenAt:time,server:'II',map:'tunnel',x:0,y:-1000,monsterHunt:{id:['mole','rat','ghost'][i],count:10,remainingMs:1000000}}]))};
  events.party=()=>party;
- const r={party,huntPolicy,Date:{now:()=>time},huntTurnInOwnsTravel:priority,
+ // Movement's planner: a row plants the points it routes (`options.route`); every other point has no route.
+ const r={party,huntPolicy,Date:{now:()=>time},huntTurnInOwnsTravel:priority,routes:[],
+  route:(from,to)=>{r.routes.push(to);return options.route?.(to)?Promise.resolve(1):Promise.reject(Error('ALClient found no route'));},
   farmingNavigation:{intent:()=>({cancelled:false}),authorize(){}},
   startPartyMonsterConvoy:(location,label,participants,purpose)=>{convoys.push({location,purpose});party.activeConvoy={id:String(convoys.length),participants,purpose,phase:'assemble'};return true;}};
  require('./helpers/travel-observations.cjs').observeTravel(party.statuses);
  for(const s of Object.values(party.statuses))s.convoyProtocol=4;
  const service=huntPolicy.createHunt(party,{now:()=>time,participants:()=>names,online:()=>true,persist(){},
   cancelConvoy:()=>{party.activeConvoy=null;},selectedDestination:()=>({location:farm}),
-  start:(...args)=>r.startPartyMonsterConvoy(...args),ownsTravel:priority,
+  start:(...args)=>r.startPartyMonsterConvoy(...args),ownsTravel:priority,route:(from,to)=>r.route(from,to),
   navigation:{intent:name=>r.farmingNavigation.intent(name),authorize:(...args)=>r.farmingNavigation.authorize(...args)}});
  Object.assign(r,{monsterHuntTick:service.tick,processHuntsAtDaisy:()=>service.tick(),startHuntConvoy:service.start,beginMonsterHuntCycle:(policy,location)=>service.begin(policy,location)});
  if (options.quests) for (const name of names) party.statuses[name].monsterHunt=options.quests[name] || null;
@@ -57,7 +60,6 @@ test('mission destination stays pinned as nearest spawn changes; combat outside 
  t.party.statuses.W.target=null;t.party.statuses.P.threats=[{hp:100}];t.r.monsterHuntTick();assert.equal(t.convoys.length,count);
 });
 
-const {scenarioTable}=require('./fixtures/scenarios.cjs');
 const nextMember=({t,second})=>{
  assert.equal(t.party.huntFailures.mole.deaths,2);assert.equal(t.party.targetMode,'hunt');assert.deepEqual(t.party.monsterFocus,['snake']);
  t.party.statuses[second].rip=false;t.advance(5000);t.r.monsterHuntTick();
@@ -389,3 +391,75 @@ scenarioTable('a death below the threshold resumes the same Hunt',enabled=>{
  t.party.statuses.M.rip=false;t.advance(5000);t.r.monsterHuntTick();assert.equal(t.hunt.target,'mole');assert.equal(t.hunt.recovering,false);
  t.die('M');assert.equal(t.party.huntFailures.mole.deaths,2);assert.equal(!!t.party.huntBlacklist.mole,enabled);
 },false]]);
+
+// HN46: a Hunt target the game places anywhere on its map (harpy: `random` and `roam` in game data).
+// The catalog's box is winter_cove's harpy box and `roamArea` the map's walkable bounds; the planner
+// routes only the upper part of the map (y > -1000), as ALClient refused every point near
+// (-190, -1350) from the box on 2026-11-24.
+const harpyBox={map:'winter_cove',x:135,y:-311,boundary:[-3,-398,273,-224],roamArea:[-1032,-2376,904,56]};
+const harpyQuest=()=>({id:'harpy',count:5,remainingMs:1000000});
+const upper=p=>p.map==='winter_cove'&&p.y>-1000;
+const flush=()=>new Promise(resolve=>setImmediate(resolve));
+// The party stands in the harpy box after the mission walk, with every sighting off the routed part.
+function harpyFixture(){
+ const t=fixture({quests:{W:harpyQuest(),P:harpyQuest(),M:harpyQuest()},choices:[{id:'harpy',locations:[harpyBox]}],route:upper});
+ for(const s of Object.values(t.party.statuses))Object.assign(s,{map:'winter_cove',x:135,y:-311});
+ t.hunt.originArrivedAt=t.r.Date.now();t.advance(1);
+ t.party.statuses.W.huntSightings=[{id:'h1',mtype:'harpy',map:'winter_cove',in:'winter_cove',x:-190,y:-1350}];
+ return t;
+}
+// Ticks, answers the planner, and walks each mission walk to its point, until the Hunt leaves its
+// mission or `limit` steps pass.
+async function play(t,until,limit=60){
+ for(let i=0;i<limit&&!until();i++){
+  const walk=t.party.activeConvoy;
+  if(walk?.purpose==='monster-hunt'&&t.hunt.stage==='mission-travel'){
+   const to=t.convoys.at(-1).location;
+   for(const s of Object.values(t.party.statuses))Object.assign(s,{map:to.map,x:to.x,y:to.y});
+   t.party.activeConvoy=null;
+  }
+  t.advance(1);t.r.monsterHuntTick();await flush();
+ }
+}
+scenarioTable('a Hunt target with no reachable sighting', ()=>undefined, [
+ ['every harpy unreachable: the search walks its routed points, then backup farming takes the party', async()=>{
+  const t=harpyFixture();
+  await play(t,()=>!!t.hunt.backup);
+  assert.ok(t.hunt.backup,'the Hunt released the party');assert.equal(t.hunt.stage,'backup-travel');
+  const searched=t.convoys.filter(c=>c.location.map==='winter_cove');
+  assert.ok(searched.length>0,'the search walked');assert.ok(searched.every(c=>upper(c.location)),'only routed points');
+  t.r.monsterHuntTick();assert.deepEqual(t.convoys.at(-1).location,t.farm);
+  assert.equal(t.party.huntBlacklist.harpy,undefined);assert.equal(t.party.huntSettings,undefined);
+  assert.equal(require('../../runtime/hunting/coordinator/install.ts').huntKind(t.party,false),'farming');
+ }],
+ ['a sighting the planner routes brings the Hunt back from backup farming', async()=>{
+  const t=harpyFixture();
+  await play(t,()=>!!t.hunt.backup);
+  t.party.activeConvoy=null;for(const s of Object.values(t.party.statuses))Object.assign(s,t.farm);
+  t.advance(1);t.r.monsterHuntTick();await flush();assert.equal(t.hunt.stage,'backup-farming');
+  t.party.statuses.W.huntSightings=[{id:'h2',mtype:'harpy',map:'winter_cove',in:'winter_cove',x:150,y:-300}];
+  for(let i=0;i<3&&t.hunt.backup;i++){t.advance(1);t.r.monsterHuntTick();await flush();}
+  assert.equal(t.hunt.backup,undefined);assert.equal(t.hunt.target,'harpy');assert.equal(t.hunt.stage,'mission-travel');
+  assert.equal(t.convoys.at(-1).location.map,'winter_cove');
+ }],
+ // The 2026-11-24 live window: the routed point (554, -1160) failed on its last segment, the spawn
+ // ladder took the walk as a spent spawn and sent the party back to the box.
+ ['a search walk that fails goes on to the next point and leaves the spawn ladder alone', async()=>{
+  const t=harpyFixture();
+  await play(t,()=>t.hunt.stage==='mission-travel'&&t.party.activeConvoy?.purpose==='monster-hunt'&&!!t.hunt.search?.points);
+  const failed=t.convoys.at(-1).location,next=t.hunt.search.points[t.hunt.search.next],walks=t.convoys.length;
+  Object.assign(t.party.activeConvoy,{location:failed,phase:'failed',failureCode:'route-failed',failure:'collisions detected',
+   failureDetails:{movement:{engine:'native'}}});
+  for(let i=0;i<4&&t.convoys.length===walks;i++){t.advance(1);t.r.monsterHuntTick();await flush();}
+  assert.deepEqual(t.convoys.at(-1).location,next,'the walk goes to the next search point');
+  assert.equal(t.convoys.length,walks+1);assert.deepEqual(t.hunt.routeRecovery||{},{});
+ }],
+ ['a box target with unreachable sightings keeps farming its spawn and asks no route', async()=>{
+  const t=fixture();t.hunt.originArrivedAt=t.r.Date.now();t.advance(1);
+  t.party.statuses.W.huntSightings=[{id:'m1',mtype:'mole',map:'tunnel',in:'tunnel',x:-900,y:-1900}];
+  const walks=t.convoys.length;
+  for(let i=0;i<5;i++){t.advance(1);t.r.monsterHuntTick();await flush();}
+  assert.equal(t.hunt.stage,'farming');assert.equal(t.hunt.target,'mole');assert.equal(t.convoys.length,walks);
+  assert.equal(t.hunt.backup,undefined);assert.deepEqual(t.r.routes,[]);
+ }],
+]);

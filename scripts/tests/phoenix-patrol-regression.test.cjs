@@ -28,9 +28,9 @@ scenarioTable('a Phoenix scan leg ends on every acknowledgement, survives a relo
  }],
  ['planner distance excludes incomplete routes and includes transition cost', async ()=>{
   const from={map:'main',x:0,y:0},to={map:'cave',x:30,y:40};
-  const measure=createRareRouteDistance(async()=>({plot:[{map:'main',x:0,y:100},{map:'cave',x:0,y:0},to]}),()=>({version:1,fingerprint:'g'}));
+  const measure=createRareRouteDistance(async()=>({plot:[{map:'main',x:0,y:100},{map:'cave',x:0,y:0},to]}),()=>({version:1,fingerprint:'g'}),'phoenix-wait');
   assert.equal(await measure(from,to),550);
-  const bad=createRareRouteDistance(async()=>({plot:[]}),()=>({version:1,fingerprint:'g'}));
+  const bad=createRareRouteDistance(async()=>({plot:[]}),()=>({version:1,fingerprint:'g'}),'phoenix-wait');
   await assert.rejects(bad(from,to),/Incomplete/);
  }],
 ]);

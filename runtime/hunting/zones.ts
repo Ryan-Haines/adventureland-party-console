@@ -23,6 +23,9 @@ export interface Area extends Shape {
   id?: string;
   shapes?: Shape[] | null;
   allOf?: Area[];
+  // The map's bounds [min_x, min_y, max_x, max_y] where the game places or walks a roaming
+  // spawn's monster (areas.ts `spawnCatalog`); a box spawn has none.
+  roamArea?: number[];
 }
 export interface Zone extends Area {
   monsterIds: string[];

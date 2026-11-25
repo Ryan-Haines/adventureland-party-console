@@ -609,6 +609,7 @@ export const characterFields = {
   farmAreaObservation: debug("Latest farm area observation."),
   farmFocusInView: debug("True while a live focus monster the farm would take is in view."),
   farmCompetition: debug("Other players competing for the farm area."),
+  huntSightings: debug("Live monsters in view of the Hunt's target and the character's own quest (hunting/character/farm.ts)."),
   dungeon: debug("Dungeon runtime report, with recovery inside a cave."),
   // Catalogs, reported once when the coordinator has none (coordinator/intake.ts)
   merchantCatalogVersion: catalog("Merchant catalog version.", { size: "small" }),

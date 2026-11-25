@@ -32,6 +32,9 @@ interface HuntingPorts {
   // The rare's ports (rares.ts) less the hand-in hold, which the install asks the tasks owner's
   // door for on the party's walk group (`group`).
   rare: Omit<RarePorts, 'runs'> & { group(): string | null };
+  // Movement's planner, which each group's Hunt search asks for routes under its own request ids
+  // (planner-service.ts `createRareRouteDistance`, `hunt-search`).
+  huntRoute: HuntPorts['route'];
   persist(): void;
   // The tasks owner's combat groups now, which the per-report tick steps.
   groups(): string[];
@@ -123,7 +126,7 @@ export function installHunting(party: Parameters<typeof createCave>[0] & Paramet
     const rare = rareOf(kind), huntLadder = g.ladder(['hunt-mission', 'hunt-turn-in']);
     const hunt = createHunt(state, { now: g.now, participants: g.participants, cancelConvoy: g.cancelConvoy,
       persist: g.persist, selectedDestination: g.selectedDestination, start: g.start, navigation: g.navigation, ownsTravel: priority,
-      ladder: huntLadder, intentHold: g.intentHold, drain: g.drain, group: g.group, online: ports.cave.online,
+      ladder: huntLadder, intentHold: g.intentHold, drain: g.drain, group: g.group, online: ports.cave.online, route: ports.huntRoute,
       questRefused: (owner, quest, candidates) => !!partyHooks().hunting.questRefused({ group: g.group(), owner, quest, candidates }) });
     const farm = createFarm(state, workers, { now: g.now, group: g.group, rareOwns: rare.owns, members: () => g.navigation.members(),
       intent: name => g.navigation.intent(name) as ReturnType<FarmPorts['intent']>, huntOwns: priority, cancelConvoy: g.cancelConvoy,

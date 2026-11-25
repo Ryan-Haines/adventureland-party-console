@@ -120,8 +120,9 @@ function axis(a: number, b: number, half: number, current: number): number[] {
   const count = Math.ceil((b - a - half * 2) / (half * 2));
   return Array.from({ length: count + 1 }, (_, i) => a + half + ((b - a - half * 2) * i) / count);
 }
-// The serpentine scan of a region, started from the end nearer the leader.
-function scanPoints(area: Area, from: Point): Point[] {
+// The serpentine scan of a region, started from the end nearer the leader. The Phoenix patrol scans its
+// regions with it, and the Hunt's search (search.ts) a roaming target's map.
+export function scanPoints(area: Area, from: Point): Point[] {
   const [x1, y1, x2, y2] = area.boundary!;
   const origin = from.map === area.map ? from : area;
   const xs = axis(x1, x2, GAME_VISION[0] / 2, origin.x), ys = axis(y1, y2, GAME_VISION[1] / 2, origin.y);

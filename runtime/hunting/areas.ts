@@ -5,14 +5,26 @@ import * as zones from './zones.ts';
 import type { Area, Catalog, Zone } from './zones.ts';
 export type FarmingArea = Zone & { id: string };
 
-interface Spawn { type?: string; count?: number; position?: number[]; boundary?: number[]; boundaries?: unknown[][]; polygon?: number[][] }
+interface Spawn { type?: string; count?: number; position?: number[]; boundary?: number[]; boundaries?: unknown[][]; polygon?: number[][];
+  random?: unknown; roam?: unknown }
 interface GameMap { name?: string; monsters?: (Spawn | null)[]; ignore?: unknown; instance?: unknown; irregular?: unknown }
-interface Game { monsters: Record<string, { name?: string; skin?: string }>; maps: Record<string, GameMap | undefined> }
+interface Bounds { min_x: number; min_y: number; max_x: number; max_y: number }
+interface Game { monsters: Record<string, { name?: string; skin?: string; roam?: unknown }>; maps: Record<string, GameMap | undefined>;
+  geometry?: Record<string, Bounds | undefined> }
 export interface SpawnRecord extends Partial<Area> { sourceMap: string; count?: number; restrictions: string[]; boundary?: number[] }
 export interface SpawnChoice { id: string; name: string; sprite?: unknown; locations: Area[]; spawnRecords: SpawnRecord[] }
 
 // A map flag that keeps a spawn out of the farm locations (the restriction keeps its record).
 const FLAGS = ['ignore', 'instance', 'irregular'] as const;
+// The server places a `random` spawn's monster on any cell of its map's walkable grid (node/server.js:13507,
+// server_functions.js:5176 `random_place`), and the monster of a `roam` spawn, or of a type with `roam`,
+// walks off its box (server.js:14627). The place to look for it is its map's geometry bounds; a box spawn
+// has none.
+function roamArea(game: Game, map: string, spawn: Spawn): number[] | undefined {
+  const bounds = game.geometry?.[map];
+  if (!bounds || !(spawn.random || spawn.roam || game.monsters[spawn.type!]?.roam)) return undefined;
+  return [bounds.min_x, bounds.min_y, bounds.max_x, bounds.max_y];
+}
 
 /**
  * The spawn catalog from game data (`G.maps` spawns): each monster type's farm locations, and every
@@ -36,7 +48,7 @@ export function spawnCatalog(game: Game, sprite?: (skin: string | undefined) => 
           const valid = Number.isFinite(x) && Number.isFinite(y) && (!box || box.every(Number.isFinite));
           if (!valid) restrictions.push('invalid-geometry');
           const location = { map: at, mapName: target?.name || at, x: valid ? Math.round(x) : undefined, y: valid ? Math.round(y) : undefined,
-            boundary: box || undefined, polygon: spawn.polygon || undefined };
+            boundary: box || undefined, polygon: spawn.polygon || undefined, roamArea: roamArea(game, at, spawn) };
           spawnRecords.push({ sourceMap: mapId, count: spawn.count, restrictions, ...location });
           recorded = true;
           if (!restrictions.length) locations.push(location as Area);

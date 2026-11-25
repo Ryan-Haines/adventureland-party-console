@@ -232,7 +232,17 @@ export interface HuntCycle extends Hunt {
   returnPolicy?: string;
   returnLocation?: ReturnLocation | null;
   returnFocus?: string;
+  // The search for a roaming target (coordinator/search.ts): one pass per kill count, its routed
+  // search points once the planner answered them, and the next point's index.
+  search?: HuntSearch;
+  // The targets a search released, each with the owner of its quest: the selection skips them until a
+  // routed sighting or the quest's end (coordinator/search.ts `observe`).
+  released?: Record<string, string>;
 }
+export interface HuntSearch { id: string; target: string; count: number; points?: ReturnLocation[]; next: number }
+// A live monster of the Hunt's target or of the member's own quest in the member's view
+// (character/farm.ts `report`).
+export interface HuntSighting { id: string; mtype: string; map: string; in?: string | number; x: number; y: number }
 
 export interface HuntStatus {
   movementGeometry?: { version: number; fingerprint: string };
@@ -268,6 +278,7 @@ export interface HuntStatus {
   convoyProtocol?: number;
   huntEventPending?: boolean;
   monsterHunt?: { id: string; count: number; remainingMs: number } | null;
+  huntSightings?: HuntSighting[];
 }
 
 export interface HuntConvoy {

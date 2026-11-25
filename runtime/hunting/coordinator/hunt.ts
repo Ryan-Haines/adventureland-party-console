@@ -24,6 +24,7 @@ import { contains, distance, zones, type Catalog, type Zone } from '../zones.ts'
 import type { HuntQuest } from '../api.ts';
 import type { HuntCommand, HuntConvoy, HuntCycle, HuntExpiryAttempt, HuntRouteRecovery, HuntStatus, HuntTickState, RouteRecoveryCommand } from '../api.ts';
 import { writeSlot } from '../../status/api.ts';
+import { createSearch } from './search.ts';
 
 interface Quest { id: string; count: number; remainingMs: number }
 interface Status { monsterHunt?: Quest | null; seenAt?: number }
@@ -551,6 +552,8 @@ export interface HuntPorts {
   // (lifecycle/roster/roster-projection.ts `online`), which `events-pending` holds a silent
   // participant by.
   online(name: string): boolean;
+  // Movement's planner, which the roaming target's search asks for routes (search.ts).
+  route(from: { map: string; x: number; y: number }, to: { map: string; x: number; y: number }): Promise<unknown>;
 }
 
 type Mission = HuntCycle['missions'][number];
@@ -596,6 +599,7 @@ export function createHunt(state: HuntState, ports: HuntPorts) {
     return !!current && current.id === mission.target && current.count > 0;
   });
   const radius = (name: string) => searchReach(state.monsterSearchRadiusByCharacter, name);
+  const search = createSearch(state, { now: ports.now, route: (from, to) => ports.route(from, to), persist: ports.persist, radius });
 
   /** Every participant is present, alive, on the leader's server; the label names the first who is not. */
   function fresh(hunt: HuntCycle): boolean {
@@ -652,7 +656,10 @@ export function createHunt(state: HuntState, ports: HuntPorts) {
     return spot;
   }
 
-  /** Every live quest is blacklisted: the group farms the backup spot until they expire. */
+  /**
+   * Every live quest is skipped (blacklisted, released for want of a reachable sighting, or refused
+   * by an add-on): the group farms the backup spot until a quest is no longer barred or they expire.
+   */
   function endBlacklisted(hunt: HuntCycle): void {
     cancelHuntWalk();
     huntStep(hunt, 'backup-travel', { convoyId: null, target: null, returnLocation: fallbackDestination(hunt) || hunt.returnLocation,
@@ -776,10 +783,13 @@ export function createHunt(state: HuntState, ports: HuntPorts) {
     return true;
   }
 
-  // The quests the selection skips: the blacklist, and each live quest with kills
-  // left that an add-on's `hunt.quest` refuses.
+  // The quests the selection and the backup skip: the blacklist and the targets the search released
+  // (search.ts).
+  const barred = (hunt: HuntCycle): Record<string, unknown> => ({ ...state.huntBlacklist, ...hunt.released });
+  // The quests the selection skips: the barred ones, and each live quest with kills left that an
+  // add-on's `hunt.quest` refuses.
   function skipped(hunt: HuntCycle): Record<string, unknown> {
-    const skip: Record<string, unknown> = { ...state.huntBlacklist };
+    const skip = barred(hunt);
     if (!ports.questRefused) return skip;
     const open = [...new Set([leader(), ...hunt.participants])].flatMap(name => {
       const q = live(state.statuses[name]?.monsterHunt);
@@ -1251,9 +1261,45 @@ export function createHunt(state: HuntState, ports: HuntPorts) {
     const arrived = !!spawn && !!lead && standsAt(spawn, lead, radius(String(state.leader)));
     const handoff = state.commands[String(state.leader)]?.convoyHandoff;
     const protectedArrival = arrivalProtected(hunt, state.leader, lead, intent(leader()), spawn, ports.now());
-    if (recoveryPending(hunt, spawn) || returnIfDue(hunt) || partyFighting(hunt, state.statuses, ports.now())) return;
+    if (recoveryPending(hunt, spawn) || returnIfDue(hunt) || partyFighting(hunt, state.statuses, ports.now()) || searchStep(hunt)) return;
     if (spawn && !arrived && !handoff && !protectedArrival) { recoverArrival(hunt, spawn, lead); return; }
     advanceIfFinished(hunt);
+  }
+
+  // A roaming target's search (search.ts) answers at the mission's point: it holds the party, walks
+  // it to the next point or sighting, or releases the target, which the selection then skips. A box
+  // target gets no answer.
+  function searchStep(hunt: HuntCycle): boolean {
+    const mission = hunt.missions[hunt.currentIndex], current = quest(hunt, leader(), state.statuses);
+    if (!mission || current?.id !== mission.target) return false;
+    const answer = search.step(hunt, mission.target, current.count, hunt.originArrivedAt ?? 0);
+    if (answer.kind === 'none') return false;
+    if (answer.kind === 'hold') labelHunt(hunt, 'searching', { target: mission.target, text: answer.text });
+    else if (answer.kind === 'walk') {
+      Object.assign(mission, { destination: answer.to, destinationVersion: 1 });
+      delete mission.destinationRevisions;
+      huntStep(hunt, 'mission-travel', { originArrivedAt: undefined });
+      start(hunt, answer.to, 'Searching for ' + mission.target + ': ' + answer.text, 'mission-travel');
+      ports.persist();
+    } else {
+      search.release(hunt, mission.target, owner(hunt, leader()));
+      logNavigation('Hunt released: no reachable ' + mission.target, { cycleId: hunt.cycleId, missionIndex: hunt.currentIndex });
+      labelHunt(hunt, 'noReachable', { target: mission.target });
+      advance(hunt);
+      ports.persist();
+    }
+    return true;
+  }
+
+  // A failed walk to a search point or a sighting is the search's, not a spent spawn: the party
+  // searches where it stands, and the search's next answer walks it on (search.ts `missed`).
+  function searchWalkFailed(hunt: HuntCycle, c: HuntConvoy | null | undefined): boolean {
+    if (c?.phase !== 'failed' || c.failureCode !== 'route-failed') return false;
+    search.missed();
+    dropWalk(hunt);
+    huntStep(hunt, 'farming', { originArrivedAt: ports.now() });
+    ports.persist();
+    return true;
   }
 
   // Every participant stands alive inside the spawn, with a report at most 3 s old and stamped
@@ -1425,7 +1471,8 @@ export function createHunt(state: HuntState, ports: HuntPorts) {
   // spawn its entry recorded, while no other activity's walk runs.
   function restoreSpawn(hunt: HuntCycle): boolean {
     const mission = hunt.missions[hunt.currentIndex], c = state.activeConvoy;
-    if (!hunt.routeRecovery || !mission?.destination) return false;
+    // A roaming target's search point is the search's own place (search.ts), not a recovery waypoint.
+    if (!hunt.routeRecovery || !mission?.destination || hunt.search?.target === mission.target) return false;
     const keys = spawnKeys(mission.target);
     if (!keys.size || keys.has(routeKey(mission.destination))) return false;
     const original = Object.values(hunt.routeRecovery).find(entry => keys.has(routeKey(entry.destination)));
@@ -1452,6 +1499,7 @@ export function createHunt(state: HuntState, ports: HuntPorts) {
     if (restoreSpawn(hunt)) return true;
     const c = state.activeConvoy;
     if (c ? !ownsHuntRoute(hunt, c) : hunt.stage === 'farming' && !!hunt.originArrivedAt) return false;
+    if (hunt.search?.target === hunt.missions[hunt.currentIndex]?.target) return searchWalkFailed(hunt, c);
     const entry = observeRouteFailure(hunt, spawn);
     if (!entry) return false;
     return spentEntry(entry) ? climbSpawn(hunt) : retryNative(hunt, entry);
@@ -1592,9 +1640,10 @@ export function createHunt(state: HuntState, ports: HuntPorts) {
       labelHunt(hunt, 'backupStale', { name: stale.join(', ') });
       return true;
     }
+    const skip = barred(hunt);
     const eligible = hunt.participants.some(name => {
       const q = state.statuses[name]?.monsterHunt;
-      return !!q && q.remainingMs > 0 && (q.count === 0 || !state.huntBlacklist?.[q.id]);
+      return !!q && q.remainingMs > 0 && (q.count === 0 || !skip[q.id]);
     });
     if (eligible || ready === all.length) endBackup(hunt, eligible);
     else backupTravel(hunt);
@@ -1731,6 +1780,7 @@ export function createHunt(state: HuntState, ports: HuntPorts) {
     if (communicationPaused(hunt)) return;
     arrive(hunt);
     if (observeHuntExpiry(state, hunt, ports.now(), ports.group?.() ?? null)) ports.persist();
+    if (search.observe(hunt)) ports.persist();
     // While the deploy lease names a participant the cycle takes no step, so the current
     // fight finishes, and it resumes at its saved stage once the lease is gone.
     const drain = ports.drain?.();
