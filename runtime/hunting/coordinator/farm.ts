@@ -510,8 +510,8 @@ export function createFarm(party: FarmState, workers: Record<string, unknown>, p
     observe(state, hunt, names, ids, areas, active, now);
   }
 
-  // The empty spawn return: a fresh leader outside the saved area, with no member
-  // holding a target, walks the party back while farming holds the group and no walk, pending
+  // The empty spawn return: a fresh leader outside the saved area, on no farm reunion of its own and
+  // with no member holding a target, walks the party back while farming holds the group and no walk, pending
   // move, scatter mode or user hold stands in the way. The farm tick already runs only while the tasks owner's
   // table lets farming act, which holds it during a Cave visit. It asks again only after its
   // last walk ended and a leader report sent after that still stands outside. As in b9b5c91e
@@ -542,7 +542,10 @@ export function createFarm(party: FarmState, workers: Record<string, unknown>, p
     const reach = radius(party.leader);
     const inside = (location.in == null || String(lead.in ?? lead.map) === String(location.in)) && lead.map === location.map &&
       contains(location, { map: lead.map, x: lead.x, y: lead.y }, 0, reach);
-    if (inside || lead.farmFocusInView || names.some(name => name !== party.merchantCharacter && (party.statuses[name] as { target?: unknown } | undefined)?.target)) {
+    // A leader on its own farm reunion is walking back already (the tasks owner's `farmReunionTick`
+    // starts one when the leader stands on another map than the saved spot), so the return holds,
+    // as b9b5c91e's poll held on `reunion` (shared.js:17675).
+    if (inside || lead.farmFocusInView || lead.farmReunion || names.some(name => name !== party.merchantCharacter && (party.statuses[name] as { target?: unknown } | undefined)?.target)) {
       outsideSince = 0;
       return;
     }

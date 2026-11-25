@@ -59,3 +59,21 @@ test('HN18: the empty spawn return walks only while farming holds the group and 
  report(1000);assert.equal(walks.length,1,'that report starts the wait again');
  report(1500);assert.equal(walks.length,2);
 });
+// HN18, W21 H7 (step 14): a leader that reports its own farm reunion is walking back to the
+// farm already, so the empty spawn return holds, as b9b5c91e's poll held on `reunion`
+// (shared.js:17675). The reunion starts when the leader stands on another map than the saved spot
+// (runtime/tasks/character/assignment.ts `farmReunionTick`).
+test('HN18: the empty spawn return holds while the leader reports a farm reunion',()=>{
+ let now=100000;const walks=[];
+ const location={id:'hawk-main',map:'main',x:0,y:0,monsterIds:['bigbird']};
+ const party={leader:'W',targetMode:'farming',monsterHunt:null,monsterFocus:['bigbird'],monsterChoices:[{id:'bigbird',locations:[{map:'main',x:0,y:0}]}],location,
+  statuses:{W:{map:'uhills',x:-400,y:-250,seenAt:now,farmReunion:{id:'W-1',phase:'waiting'}}},farmAreaState:{recoveryVersion:2},monsterSearchRadiusByCharacter:{W:100}};
+ const farm=createFarm(party,{},{now:()=>now,rareOwns:()=>false,members:()=>['W'],intent:()=>({revision:1}),huntOwns:()=>false,cancelConvoy(){},
+  authorize(){},startConvoy:(_l,_label,_names,purpose)=>{walks.push(purpose);party.activeConvoy={id:'w'+walks.length,purpose};},persist(){},
+  farmingLive:()=>true,hunt:{relocate(){},promote(){},skipMission(){}}});
+ const report=ms=>{now+=ms;party.statuses.W.seenAt=now;farm.tick('W');};
+ farm.tick('W');report(1500);report(1500);
+ assert.deepEqual(walks,[],'the leader\'s own reunion walks it back');
+ party.statuses.W.farmReunion=null;
+ report(0);report(1500);assert.deepEqual(walks,['empty-spawn-recovery'],'with no reunion the spawn return walks');
+});

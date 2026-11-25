@@ -94,6 +94,8 @@ export interface FarmReport extends ReturnLocation {
   farmAreaObservation?: { id: string; at: number };
   // A focus monster the farm would take stands in the character's view (character/farm.ts `focusInView`).
   farmFocusInView?: boolean;
+  // The leader's own farm reunion (the tasks owner's `reunionReport`), which holds the empty spawn return.
+  farmReunion?: unknown;
   combatSelection?: { runtimeId?: string };
   server?: string;
   seenAt: number;
