@@ -270,19 +270,18 @@ function leaveOccurrences(state: ManualEventState, name: string, now: number, ke
 }
 /** `events.playerMoved` (`left`): a player command moves the named
  * members to `destination`, or off every event map when it names none (a realm switch). Only a move
- * off an event's map leaves its occurrence: a member that stands on an event's map and is sent to a
- * point on the same map keeps that occurrence. The event's map is the map the game names for it
- * (the report's `mapEvent`, `G.maps[map].event`), else the map the member stands on while it
- * attends the event (`joinedEvent`): a boss's map, such as Halloween's for Mr. Pumpkin, names no
- * event of its own. Leaving marks only the member's own occurrences; it never creates participation or
- * overwrites a stronger limit, and the attendance observer replaces it when the native id or realm
- * changes. */
+ * off an event's map leaves its occurrence: a member that attends an event and is sent to a point on
+ * the map it stands on keeps that occurrence. The occurrence's `attending` (`recordAttendance`) names
+ * the event the member stands at: a boss's map, such as Halloween's for Mr. Pumpkin, names no event
+ * of its own, and the report's `joinedEvent` names the event from the start of the walk to it, so
+ * neither report field alone says the member's map is the event's. Leaving marks only the member's
+ * own occurrences; it never creates participation or overwrites a stronger limit, and the attendance
+ * observer replaces it when the native id or realm changes. */
 export function playerMoved(state: ManualEventState, names: string[], destination: { map?: unknown } | null, now: number): void {
   for (const name of names) {
     const status = state.statuses[name];
-    const event = typeof status?.mapEvent === 'string' && status.mapEvent ? status.mapEvent
-      : typeof status?.joinedEvent === 'string' && status.joinedEvent ? status.joinedEvent : null;
-    const keep = destination && event && status!.map === destination.map ? event : null;
+    const event = Object.entries(state.eventAttendance?.[name] ?? {}).find(([, entry]) => entry.attending && !entry.ended)?.[0] ?? null;
+    const keep = destination && event && status?.map === destination.map ? event : null;
     leaveOccurrences(state, name, now, keep, destination);
   }
 }

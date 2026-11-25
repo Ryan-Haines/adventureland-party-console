@@ -67,6 +67,16 @@ test('a move inside a boss event map keeps attendance and a move off it leaves',
  playerMoved(s,['W'],{map:'main',x:0,y:0},100000);
  assert.equal(s.eventAttendance.W.mrpumpkin.ignored,'manual travel','a point off the boss map');
 });
+// The character reports `joinedEvent` from the start of its walk to the event, so a member on
+// main walking to Mr. Pumpkin names it while main is not the event's map. A point on main leaves.
+test('a move on the map a member walks through to its event leaves the occurrence',()=>{
+ const s=fixture(),live={serverLiveEvents:[{name:'mrpumpkin'}]},walking={event:true};
+ s.eventSelectionsByCharacter.W=['mrpumpkin'];s.eventSessions.W.event='mrpumpkin';
+ Object.assign(s.statuses.W,{map:'main',mapEvent:null,joinedEvent:'mrpumpkin',farmingNavigationDebug:walking});
+ observeEventAttendance(s,{name:'W',server:'USII',map:'main',joinedEvent:'mrpumpkin',farmingNavigationDebug:walking,...live},100000);
+ playerMoved(s,['W'],{map:'main',x:100,y:100},100000);
+ assert.equal(s.eventAttendance.W.mrpumpkin.ignored,'manual travel');
+});
 for(const reason of ['death limit','time limit'])test('manual route ownership preserves '+reason,()=>{
  const s=fixture();observeEventAttendance(s,{name:'W',server:'USII',joinedEvent:'icegolem',serverLiveEvents:[{name:'icegolem',id:'native-1'}]},100000);
  s.eventAttendance.W.icegolem.ignored=reason;
