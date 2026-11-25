@@ -21,3 +21,23 @@ test('a member a Follow change moved into another group leaves the return, which
  assert.deepEqual(dispatched,[['W']],'the return dispatches the members still in the group');
  assert.equal(state.current,null,'the return completes');
 });
+
+// The UP-1 cant_join row on 6921a352c: the warrior engaged a crab, so the farm walk handed the
+// priest an `event-resume-travel` back to the farm, and the priest took it. Its join was refused,
+// the Rime Djinn killed it, and its last report still named a walk above the return as the
+// return began. The return gave it no Town, the spent hand-off kept its slot, and the re-issue
+// row skipped a member whose slot holds any command, so the return sat in `evacuating` with the
+// priest pending until the next row's reset gave up.
+test('outside the Hunt row, a member whose live walk ranks above the return still gets the Town command',()=>{
+ const {createCoordinatorEventReturns}=require('../../runtime/events/coordinator/returns.ts');
+ const spot={map:'main',x:-1202,y:-66};let id=527;
+ const state={eventReturn:null,eventReturnLast:null,deferredEventReturns:{},merchantCharacter:'M',huntEventTrips:{},
+  statuses:{W:{seenAt:1000,map:'main',x:-1000,y:0},P:{seenAt:1000,map:'main',x:-1035,y:0,movementLive:{tier:'event-attendance'}}},
+  commands:{P:{id:526,type:'event-resume-travel',convoyHandoff:'farm-walk',location:spot,navigationRevision:2,label:'the selected farming waypoint'}},
+  abtestingStrategy:null,activeConvoy:null,townCycle:null,anniversary:{},eventSessions:{}};
+ const returns=createCoordinatorEventReturns(state,{now:()=>1000,nextCommand:()=>++id,activeNames:()=>['W','P','M'],enabled:()=>true,
+  checkpoint:()=>spot,cancelConvoy(){},startConvoy:()=>false,anniversaryParticipants:()=>[],persist(){},huntCycle:()=>false,
+  navigation:{capture:names=>Object.fromEntries(names.map(n=>[n,{revision:2,location:spot}])),dispatch:()=>false,reconcile:()=>false,finish(){}}});
+ const recovery=returns.begin('icegolem',{participants:['W','P']},true);
+ for(const name of ['W','P'])assert.deepEqual([state.commands[name]?.type,state.commands[name]?.cycleId],['event-return-town',recovery.cycleId],name+"'s Town command");
+});

@@ -279,7 +279,15 @@ export function installEventExit(ports: EventExitPorts) {
       const answer = await ports.request('/event-return-complete', { method: 'POST', body: { character: c.name, cycleId: command.cycleId, commandId: command.id,
         runtimeId: ports.runtimeId(), navigationRevision: revision, map: c.map, mapEvent: mapEvent(c.map) || null, x: Number(c.x), y: Number(c.y) } });
       if (current() && !answer?.stale) recovery.phase = command.deferred ? 'deferred-town-ready' : 'town-ready';
-    } finally { if (running === exit) { pending = false; running = null; } }
+    } finally {
+      if (running === exit) {
+        pending = false; running = null;
+        // An exit that ends short of Main's Town, such as one a player Checkpoint's revision change
+        // ends mid-climb, reports idle. The coordinator's re-issue reads that idle report and sends
+        // its Town again (coordinator/returns.ts `consumedIdleExit`).
+        if (recovery.cycleId === command.cycleId && !['town-ready', 'deferred-town-ready', 'complete'].includes(recovery.phase)) recovery = idle();
+      }
+    }
   }
   // Survival's escape and a player command cross out of an event instance the same way (S-06s7):
   // the climb's goal is any map that is not an event's.

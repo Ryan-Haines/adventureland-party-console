@@ -121,7 +121,7 @@ not coming, and otherwise waits until every hold has ended.
 | Holder | Holds | Answer at this head |
 | --- | --- | --- |
 | survival | dead, reviving, escaping | built-in answer: a dead member (`rip`) is not coming, so the party never waits for a dead member; the revived member catches up on its own |
-| events | attending or returning from an event | built-in answer: coming, except for the walk to the event the member attends and that cycle's event return, which the walk's ask names (`activity`, `key`) and which answer nothing |
+| events | attending or returning from an event | built-in answer: coming, except for the walk to the event the member attends and that cycle's event return, which the walk's ask names (`activity`, `key`) and which answer nothing. A returning member is not coming on the walk to the event it returns from, so a walk its ladder rebuilt after the event ended lets it go to the return |
 | lifecycle | paused, loading | built-in answer reads the report's `consoleMaintenance`: paused or loading is coming, and under the Pause the whole party is held. A member whose reports stopped is movement's own `runtime-lost`, not coming |
 | tasks | a task wind-down: the live trip, the fight's finish, the event healer | the tasks owner's `core:tasks` answers an event walk's start (runtime/tasks/coordinator/wind-down.ts `windDownHolds`): the live trip and the group's fight hold a member coming until the attendance cut-off, and the healer is not coming from the cut-off on; `endsOn: 'task.ended'` |
 | movement | manual control (a live `manual` or `unattributed` request) | ends on `journey.ended` |

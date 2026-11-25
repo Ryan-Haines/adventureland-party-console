@@ -1918,6 +1918,15 @@ scenarioTable('a walk never waits on silence', () => {
   assert.deepEqual(memberHolds({ group: null, member: 'F', at: 3500 }), [], 'red: S-13k answers runtime-lost');
   step(4000, ['F']); assert.deepEqual(c.participants, ['L', 'P'], 'its next fresh report does not join it back');
  }],
+ // The closing-3 pair run's W32a: the warrior completed the event walk and the priest was let go, so the
+ // walk kept only completed members, stayed active and blocked the event return's exit walk for good.
+ ['a walk whose last walking member leaves after the others completed arrives (red: it stays active)', ({ p, c, step, hooks }) => {
+  hooks.register({ name: 'core:test-release', folder: 'core', author: 'test', holder: '06', summary: 'test',
+    hooks: { 'member.holder': ask => ask.member === 'F' ? [{ owner: '06', reason: 'attending icegolem', coming: false, endsOn: 'event.ended' }] : [] } });
+  c.completed = ['L', 'P'];
+  step(1000);
+  assert.equal(p.activeConvoy, null, 'the walk ends once only completed members are left');
+ }],
  // (the (a) check): resumes a Hunt after a CODE runtime replacement once each member reports fresh. Here the
  // replaced runtime ends the round with `runtime-lost`, whose row says the task's next request starts it over
  // with the runtime now reporting. Written in the leftovers pass; the end run runs it first, and the CODE reload

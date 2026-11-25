@@ -24,7 +24,7 @@ import { recordTownAttempt } from './arrivals.ts';
 import { playerMoved } from '../../events/coordinator/api.ts';
 import { publishSharedRoute, readRoutePoint, routeOwner, sharedArrivalReady, sharedRoute,
   type NavigationGroup, type NavigationRoutePorts, type NavigationRouteState, type RouteConvoy, type SharedState } from './route-store.ts';
-import { completeMembers, completeSharedWalkMember, completionKey, createSharedWalks, failureDoes, movementBarrier, rememberCompletion, walkEnds, type CompletionReceipts, type WalkState } from './walk.ts';
+import { completeMembers, completeSharedWalkMember, completionKey, createSharedWalks, failureDoes, movementBarrier, rememberCompletion, walkArrives, walkEnds, type CompletionReceipts, type WalkState } from './walk.ts';
 import { merchantSlotCommand } from '../../merchant-jobs/coordinator/api.ts';
 import { appendCombatLog, requestCaller } from '../../status/coordinator/api.ts';
 
@@ -103,17 +103,8 @@ export function createConvoyAcknowledgementRoutes(
       }, name);
     }
     completeMembers(state, active, [name]);
-    if (active.participants.every((member) => active.completed!.includes(member))) {
-      recordHuntArrival(active);
-      recordConvoyHistory(state, active, "completed", ports.now());
-      walkEnds(state, "arrived");
-    }
+    walkArrives(state, active, ports.now());
     ports.persist();
-  }
-  function recordHuntArrival(active: RouteConvoy): void {
-    if (!active.routeRecovery && active.purpose === 'monster-hunt' &&
-        state.monsterHunt?.stage === 'mission-travel' && state.monsterHunt.convoyId === active.id)
-      state.monsterHunt.originArrivedAt = ports.now();
   }
   function complete(req: HttpRequest, res: HttpResponse): unknown {
     const body = requestObject(req.body),

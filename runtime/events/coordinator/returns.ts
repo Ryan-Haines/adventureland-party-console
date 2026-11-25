@@ -656,7 +656,7 @@ export function createCoordinatorEventReturns(
         merchantSlotCommand(state, 'event:' + String(state.commands[name]?.cycleId), null, name);
       },
       town: (name, recovery) => {
-        if (intoHunt.walksAbove(name)) return;
+        if (intoHunt.keepsWalk(name)) return;
         merchantSlotCommand(state, 'event:' + recovery.cycleId, {
           id: ports.nextCommand(),
           type: "event-return-town",
@@ -1371,7 +1371,11 @@ function createIntoHunt(state: HuntReturnState, ports: IntoHuntPorts) {
     r.returnCompletedAt = ports.now();
     return true;
   }
-  return { pending: ports.huntCycle, complete, walksAbove };
+  // The Town row leaves the member's walk be only under this row: its `complete` counts that walk as
+  // the member's exit. Any other return finishes only on the member's Town, and its re-issue row
+  // gives Town only to a member whose slot is empty, so a skipped Town there never comes.
+  const keepsWalk = (name: string) => ports.huntCycle() && walksAbove(name);
+  return { pending: ports.huntCycle, complete, keepsWalk };
 }
 
 // The checkpoint the return walks back to (the `checkpoint` row), moved from

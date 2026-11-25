@@ -10,7 +10,7 @@ import type { ReturnLocation } from '../../events/api.ts';
 import { eventIs } from '../../events/api.ts';
 import { anniversaryHandedOff, releaseWalkRoutes } from '../../events/coordinator/api.ts';
 import type { MerchantCommand } from '../../merchant-jobs/api.ts';
-import type { ConvoyNavigationPlatform } from './route-store.ts';
+import type { ConvoyNavigationPlatform, RouteConvoy } from './route-store.ts';
 import { requestObject } from '../../lifecycle/api.ts';
 import { memberLost } from '../../lifecycle/coordinator/api.ts';
 import { recordConvoyHistory, type ConvoyHistoryState } from './records.ts';
@@ -1053,6 +1053,17 @@ export function walkEnds(state: WalkHolder, code: string, by?: string): void {
   state.activeConvoy = null;
   tellEnd(state, c, code, by ?? (code === 'arrived' || code === 'released' ? 'rule:T4' : ownerOfTier(c.requester?.tier)));
 }
+// The walk arrives once every member it keeps has completed (T4): the Hunt marks its origin
+// reached, the walk's history records the completion, and the walk ends `arrived`. Both a member's
+// completion (routes.ts) and a member leaving the walk (`letGo`) end it here.
+export function walkArrives(state: SharedState, c: RouteConvoy, now: number): boolean {
+  if (!c.participants.length || !c.participants.every(member => c.completed?.includes(member))) return false;
+  if (!c.routeRecovery && c.purpose === 'monster-hunt' && state.monsterHunt?.stage === 'mission-travel' && state.monsterHunt.convoyId === c.id)
+    state.monsterHunt.originArrivedAt = now;
+  recordConvoyHistory(state, c, "completed", now);
+  walkEnds(state, "arrived");
+  return true;
+}
 // Each step of the walk asks `member.holder` for each member. A member that any holder says is not
 // coming leaves the walk, which goes on without it, and the walk's command goes with it; the first
 // member left leads a walk whose leader left. So does a member whose reports stopped (the failure table
@@ -1115,7 +1126,9 @@ function letGo(state: SharedState, c: SharedConvoy, now: number): boolean {
     tell(state, 'walk.member', c, { member, change: 'left', ...code ? { code } : {}, by });
   }
   if (!c.participants.length) walkEnds(state, 'cancelled', going[0]!.by);
-  else if (gone.includes(c.leader)) c.leader = c.participants[0]!;
+  // The members left have all completed: a walk whose last walking member leaves has arrived,
+  // and an active walk left behind blocks every later walk (W32a's event return, closing-3 run).
+  else if (!walkArrives(state, c, now) && gone.includes(c.leader)) c.leader = c.participants[0]!;
   return true;
 }
 function died(state: SharedState, c: SharedConvoy, member: string): boolean {

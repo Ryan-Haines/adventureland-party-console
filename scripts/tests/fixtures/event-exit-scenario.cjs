@@ -18,7 +18,7 @@ function exitScenario(map, over = {}) {
   exit = installEventExit({
     now: () => 0,
     game: () => ({ npcs: G.npcs, maps: G.maps }),
-    character: () => character, current: () => true, escaping: () => false, revision: () => 0,
+    character: () => character, current: () => true, escaping: () => false, revision: () => t.revision ?? 0,
     feedLive: () => t.feedLive, townCastReady: () => t.townReady, runtimeId: () => 'runtime-1',
     // Each report runs the row's hook; past the row's cap the reply names a new cycle.
     nextReport: async () => { seen++; t.onReport?.(character, seen); if (seen > t.reports) exit.observe({ eventReturnCycleId: 'next', serverNow: seen }); },
@@ -36,7 +36,7 @@ function exitScenario(map, over = {}) {
       // A Town lands on the spawn of the map it is cast on.
       town: async () => { calls.push(['town', character.map]); if (t.town) return t.town(character); lands(character.map); },
       approach: async point => { calls.push(['approach', point.map]); Object.assign(character, point); },
-      prepare: async () => { calls.push(['prepare', character.map]); },
+      prepare: async (command, current) => { calls.push(['prepare', character.map]); if (t.prepare) return t.prepare(character, t); },
       walk: async point => { calls.push(['walk', character.map]); if (t.walk) return t.walk(character); lands(point.map, 1937, -12); },
       landed: point => character.map === point.map && Math.hypot(character.x - point.x, character.y - point.y) <= 90,
     },

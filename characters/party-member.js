@@ -36380,6 +36380,7 @@ ${hook}`, was = errors.get(key3);
         if (running === exit) {
           pending = false;
           running = null;
+          if (recovery.cycleId === command.cycleId && !["town-ready", "deferred-town-ready", "complete"].includes(recovery.phase)) recovery = idle2();
         }
       }
     }

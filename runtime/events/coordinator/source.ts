@@ -153,16 +153,19 @@ export interface EventSourcePorts {
 // `member.holder` for the members the events owner holds, read
 // from attendance and the return through the member's presence. A walk to the member's own event, or its own event
 // return's cycle, is not held. A member attending another occurrence is not coming, so the walk
-// goes on without it; a returning member is coming once its return releases it. A walking member
-// whose report names an event tier's request as its hold is coming (S-06k).
+// goes on without it; a returning member is coming once its return releases it. A returning
+// member is not coming on the walk to the event it returns from: the walk's ladder rebuilds that
+// walk after the event ends, and the return's exit waits on the member while it stays. A walking
+// member whose report names an event tier's request as its hold is coming (S-06k).
 export function eventHolds(at: EventPresence | null | undefined, ask: { activity?: string; key?: string },
   named: { owner?: string; reason?: string } | null | undefined): MemberHold[] {
   // The player's own trip (`manual`) is not held either: `playerMoved` decides what the move does to the
   // attendance (attendance.ts).
-  const own = !!at && (ask.activity === 'event' && ask.key === at.event || ask.activity === 'event-return' && ask.key === at.occurrence ||
+  const toEvent = !!at && ask.activity === 'event' && ask.key === at.event;
+  const own = !!at && (toEvent && at.phase !== 'returning' || ask.activity === 'event-return' && ask.key === at.occurrence ||
     ask.activity === 'manual');
   if (at && !own && at.phase === 'attending') return [{ owner: '06', reason: 'attending ' + at.event, coming: false, endsOn: 'event.ended' }];
-  if (at && !own && at.phase === 'returning') return [{ owner: '06', reason: 'returning from ' + at.event, coming: true, endsOn: 'event.returned' }];
+  if (at && !own && at.phase === 'returning') return [{ owner: '06', reason: 'returning from ' + at.event, coming: !toEvent, endsOn: 'event.returned' }];
   if (named?.owner === '06') return [{ owner: '06', reason: String(named.reason), coming: true, endsOn: 'event.left' }];
   return [];
 }

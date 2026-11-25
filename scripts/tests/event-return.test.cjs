@@ -206,3 +206,16 @@ scenarioTable('K7: the event travel and the join mark', over => attendScenario({
   assert.equal(attend.joined(), null);
  }],
 ]);
+
+// An exit that a revision change ends before it lands (a player Checkpoint during the exit's local
+// Town, W30a in the closing-3 pair run) reports idle, so the coordinator's re-issue
+// (events/coordinator/returns.ts `consumedIdleExit`) sends the member its Town again. Before, the
+// report kept `returning-to-main` and the return held the member pending with no walk.
+scenarioTable('an exit a revision change ends reports idle for its re-issue', exitScenario, [
+ ['a Checkpoint during the local Town ends the exit idle', async t => {
+  await t.run('mrpumpkin');
+  assert.equal(t.calls.filter(c => c[0] === 'prepare').length, 1, 'the exit stops at the revision change');
+  assert.equal(t.state().phase, 'idle');
+  assert.equal(t.exit.exiting(), false);
+ }, 'halloween', { prepare: async (_character, t) => { t.revision = 1; throw new Error('Return workflow superseded'); } }],
+]);

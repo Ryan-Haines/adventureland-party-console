@@ -48,7 +48,7 @@ scenarioTable("the events source reads a presence from status and attendance and
  }],
  // The events owner answers `member.holder` from K3 and K6 through the member's
  // presence, one row per hold.
- ["member.holder: attending another occurrence is not coming, returning is coming, its own walk is not held", () => {
+ ["member.holder: attending another occurrence is not coming, returning is coming, its own walk is not held, the walk to the event it returns from lets it go", () => {
    const attending = { event: 'mrpumpkin', occurrence: 'mp1', realm: 'I', phase: 'attending', since: 0 };
    const row = (at, ask, named) => eventHolds(at, ask, named).map(h => [h.owner, h.coming, h.endsOn]);
    assert.deepEqual(row(attending, { activity: 'farm' }), [['06', false, 'event.ended']]);
@@ -56,6 +56,10 @@ scenarioTable("the events source reads a presence from status and attendance and
    const returning = { ...attending, occurrence: 'c1', phase: 'returning' };
    assert.deepEqual(row(returning, { activity: 'farm' }), [['06', true, 'event.returned']]);
    assert.deepEqual(row(returning, { activity: 'event-return', key: 'c1' }), [], "its own cycle's event return");
+   // The fix6 run of row 21 (left-out member): the event ended under the warrior's walk to the
+   // pumpkin, the walk's ladder rebuilt it, and the warrior stayed on it while its return waited.
+   assert.deepEqual(row(returning, { activity: 'event', key: 'mrpumpkin' }), [['06', false, 'event.returned']],
+     'the walk to the event it returns from');
    assert.deepEqual(row(null, { activity: 'farm' }, { owner: '06', reason: 'event-attendance' }), [['06', true, 'event.left']], 'S-06k');
    assert.deepEqual(row(null, { activity: 'farm' }, { owner: '08', reason: 'job' }), []);
  }],
