@@ -330,6 +330,25 @@ scenarioTable("the walking try ends on the game's own movement, never on a fixed
  const rejected=assert.rejects(p,/Stalled walking movement \(moving without progress/);await r.ticks();
  r.c.moving=true;r.service.reported();r.c.real_x+=1;r.setNow(2000);r.service.reported();await r.ticks();await rejected;r.dispose();
  }), {stall:true}],
+ // The end run on c23b613bb (row 40, CB23): the warrior stood after a click to its own spot, its
+ // step went again, and two reports read it moving at the spot where it stood, before the game drew
+ // the re-sent walk (game.js `draw` moves `real_x` once per draw, 250 ms apart for a CODE window).
+ // The try ended `failed:route-failed` one draw later, 19.7 units on.
+ ['two reports in one game update show no walk between them, so they end no try', r=>withMargin(200,async()=>{
+ const p=r.service.move({map:'main',x:100,y:0},undefined,{shared:true});p.catch(()=>{});await r.ticks();
+ r.host.parent.last_draw=1000;r.c.moving=true;r.service.reported();r.setNow(1100);r.service.reported();await r.ticks();
+ assert.equal(r.service.report()?.progress.phase,'walking','the second report read the same draw');
+ r.host.parent.last_draw=1250;r.c.real_x+=20;r.setNow(1300);r.service.reported();await r.ticks();
+ assert.equal(r.service.report()?.progress.phase,'walking');r.dispose();
+ }), {stall:true}],
+ ['a stand between two moving reports starts the report test again', r=>withMargin(200,async()=>{
+ const p=r.service.move({map:'main',x:100,y:0},undefined,{shared:true});p.catch(()=>{});await r.ticks();
+ r.host.parent.last_draw=1000;r.c.moving=true;r.service.reported();
+ r.c.moving=false;r.host.parent.last_draw=1250;r.setNow(1250);await r.ticks();
+ assert.equal(r.calls.filter(c=>c[0]==='move').length,2,'the step went again after the stand');
+ r.c.moving=true;r.setNow(1300);r.service.reported();await r.ticks();
+ assert.equal(r.service.report()?.progress.phase,'walking','the report after the re-send starts the test');r.dispose();
+ }), {stall:true}],
  // The end run on 367447e73 (D7): a player command started as the escape's native walk released,
  // and its stop took three planning ticks to settle, past the margin of that run.
  ['the stop before a plan settles on its own answer, however long the game takes to stop', r=>withMargin(200,async()=>{

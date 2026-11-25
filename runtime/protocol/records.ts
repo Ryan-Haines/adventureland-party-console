@@ -61,7 +61,7 @@ export interface MovementHost {
   // caracAL supplies its selected game-file version through process arguments.
   // Upstream types omit the runner's synchronous BFS visibility-budget hook.
   // Verified in pinned 15555 and installed 17665; unknown versions keep native behavior.
-  parent: { __partyClientVersion?: number | string; server_region?: string; server_identifier?: string; entities?: Record<string, SafetyEntity>; is_hidden?: (this: void) => boolean; socket: { connected?: boolean; emit(event: string, data: unknown): void; on?(event: string, listener: (data: unknown) => void): unknown; off?(event: string, listener: (data: unknown) => void): unknown; removeListener?(event: string, listener: (data: unknown) => void): unknown }; push_deferred(key: string): Promise<unknown> };
+  parent: { __partyClientVersion?: number | string; last_draw?: Date | number; server_region?: string; server_identifier?: string; entities?: Record<string, SafetyEntity>; is_hidden?: (this: void) => boolean; socket: { connected?: boolean; emit(event: string, data: unknown): void; on?(event: string, listener: (data: unknown) => void): unknown; off?(event: string, listener: (data: unknown) => void): unknown; removeListener?(event: string, listener: (data: unknown) => void): unknown }; push_deferred(key: string): Promise<unknown> };
   __partyMovement?: { dispose(): void };
   // Set by code the player types to park the console's movement.
   __partyMovementPaused?: unknown;

@@ -28916,6 +28916,7 @@ ${hook}`, was = errors.get(key3);
         throw Error("Stalled walking movement (moving without progress across two reports)");
       }
       if (host4.character.moving) return;
+      current.reportAt = void 0;
       if (current.reissuedAt === void 0) {
         if (now() - current.progressAt > calls.roundTrip()) retryStoppedWalk(current, p);
         return;
@@ -28942,9 +28943,16 @@ ${hook}`, was = errors.get(key3);
     function reported() {
       const current = issued;
       if (!current || isTransition(current.step)) return;
+      if (!host4.character.moving) {
+        current.reportAt = void 0;
+        return;
+      }
+      const update = Number(host4.parent.last_draw);
+      if (current.reportAt && Number.isFinite(update) && update === current.reportUpdate) return;
       const p = position3(), last = current.reportAt;
-      current.reportAt = host4.character.moving ? p : void 0;
-      if (host4.character.moving && last && distance5(p, last) < REPORT_STALL_DISTANCE) current.reportStall = true;
+      current.reportAt = p;
+      current.reportUpdate = update;
+      if (last && distance5(p, last) < REPORT_STALL_DISTANCE) current.reportStall = true;
     }
     function arrivedTransition(current, p) {
       return isTransition(current.step) && !!current.acknowledged && distance5(p, current.step) <= 1;

@@ -245,8 +245,10 @@ completed after 12 seconds fails the try. A walking try is never cut while the
 game client shows the character moving: a walk that stops short of its step sends
 the step again one measured round trip later, and the try ends when that re-sent
 step's round trip passes with the character still standing, or when two of its
-reports show it moving with no 2-unit progress between them (executor.ts
-`observeWalk`).
+reports from two of the game's draws show it moving with no 2-unit progress between
+them (executor.ts `observeWalk`, `reported`). The game moves the character only when it
+draws, so a report from the same draw as the last one waits for the next, and a stand
+starts the test again.
 
 A failed journey climbs its own round on the one climber (`runtime/protocol/ladder.ts`
 `journeyRound`): plan again from where it stands, then the native planner, then

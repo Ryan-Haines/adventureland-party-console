@@ -16,7 +16,7 @@ function transitionLabel(step: Step): string {
 }
 // `reissuedAt` is when a step that stopped short was sent again since the last progress;
 // `reportAt` the position at the character's last report while it showed moving.
-interface Issued { reissuedAt?: number; reportAt?: Point; reportStall?: boolean; step: Step; from: Point; at: number; progressAt: number; position: Point; error?: Error | string; completionBarrierError?: Error; townUnavailable?: boolean; acknowledged?: boolean; answerPending?: boolean; finished?: boolean; aligned?: boolean; connectorFrom?: Point; connectorSentAt?: number; connectorVersion?: number; connectorOwed?: boolean; sendVersion?: number }
+interface Issued { reissuedAt?: number; reportAt?: Point; reportUpdate?: number; reportStall?: boolean; step: Step; from: Point; at: number; progressAt: number; position: Point; error?: Error | string; completionBarrierError?: Error; townUnavailable?: boolean; acknowledged?: boolean; answerPending?: boolean; finished?: boolean; aligned?: boolean; connectorFrom?: Point; connectorSentAt?: number; connectorVersion?: number; connectorOwed?: boolean; sendVersion?: number }
 function retryableCompletionBarrier(error: Error & {partyRequest?: unknown}): boolean {
   const request=error.partyRequest as {path?:string;kind?:string;status?:number}|undefined;
   return request?.path==='/movement-barrier' && request.kind!=='aborted' && request.status!==409 && retryableMovementRequest(error);
@@ -238,6 +238,8 @@ export function createMovementExecutor(host: MovementHost, state: MoveState, val
     if (isTransition(current.step)) return;
     if (current.reportStall) { tries.stalls++; throw Error('Stalled walking movement (moving without progress across two reports)'); }
     if (host.character.moving) return;
+    // The character stands, so the next report that shows it moving starts the report test again.
+    current.reportAt = undefined;
     if (current.reissuedAt === undefined) { if (now() - current.progressAt > calls.roundTrip()) retryStoppedWalk(current, p); return; }
     if (now() - current.reissuedAt > calls.roundTrip()) { tries.stalls++; throw Error('Stalled walking movement (stopped short after its step was sent again)'); }
   }
@@ -256,13 +258,18 @@ export function createMovementExecutor(host: MovementHost, state: MoveState, val
   }
   // The character's own report went out: a walk it shows moving across two reports must have
   // moved REPORT_STALL_DISTANCE between them (R2F3), which covers server corrections and a window
-  // whose frames stop.
+  // whose frames stop. The game moves `real_x` only when it draws (game.js `draw`), so a report
+  // in the same update as the last one, the game's clock at its last draw, has no new position
+  // and waits for the next update. A host with no draw reads each report as a new update.
   function reported(): void {
     const current = issued;
     if (!current || isTransition(current.step)) return;
+    if (!host.character.moving) { current.reportAt = undefined; return; }
+    const update = Number(host.parent.last_draw);
+    if (current.reportAt && Number.isFinite(update) && update === current.reportUpdate) return;
     const p = position(), last = current.reportAt;
-    current.reportAt = host.character.moving ? p : undefined;
-    if (host.character.moving && last && distance(p, last) < REPORT_STALL_DISTANCE) current.reportStall = true;
+    current.reportAt = p; current.reportUpdate = update;
+    if (last && distance(p, last) < REPORT_STALL_DISTANCE) current.reportStall = true;
   }
   function arrivedTransition(current: Issued, p: Point): boolean {
     return isTransition(current.step) && !!current.acknowledged && distance(p,current.step)<=1;
