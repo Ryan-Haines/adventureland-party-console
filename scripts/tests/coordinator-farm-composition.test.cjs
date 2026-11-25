@@ -77,3 +77,24 @@ test('HN18: the empty spawn return holds while the leader reports a farm reunion
  party.statuses.W.farmReunion=null;
  report(0);report(1500);assert.deepEqual(walks,['empty-spawn-recovery'],'with no reunion the spawn return walks');
 });
+// The farming resume after a rare, final-gate-closing8 W22 M23: the phoenix's task ended while a
+// walk ran, the party then travelled to a new saved spot by the user's /travel, and on its
+// arrival the resume started "Returning to the saved farming spot after the rare" from reports
+// sent before the transport. That walk's defence held Cleave off two mummies (targeting gates.ts
+// G7). A walk formed after the rare's end answers the resume, so none starts after it.
+test('the farming resume after a rare yields to a walk formed after the rare ended',()=>{
+ const walks=[],location={id:'goo-main',map:'main',x:0,y:0,monsterIds:['goo']};
+ const party={leader:'W',targetMode:'farming',monsterHunt:null,monsterFocus:['goo'],monsterChoices:[{id:'goo',locations:[{map:'main',x:0,y:0}]}],location,
+  statuses:{W:{map:'main',x:600,y:0,seenAt:100000}},farmAreaState:{recoveryVersion:2},monsterSearchRadiusByCharacter:{W:100},partyFarmingMode:'scatter'};
+ const ports={now:()=>100000,rareOwns:()=>false,members:()=>['W'],intent:()=>({revision:1}),huntOwns:()=>false,cancelConvoy(){},
+  authorize(){},startConvoy:(_l,label)=>{walks.push(label);party.activeConvoy={id:'w'+walks.length};},persist(){},
+  farmingLive:()=>true,hunt:{relocate(){},promote(){},skipMission(){}}};
+ const resumed=createFarm(party,{},ports);
+ resumed.rareEnded();resumed.tick('W');
+ assert.deepEqual(walks,['Returning to the saved farming spot after the rare'],'with no later walk the resume walks the party back');
+ walks.length=0;party.activeConvoy={id:'travel'};
+ const superseded=createFarm(party,{},ports);
+ superseded.rareEnded();superseded.tick('W');
+ superseded.walkFormed();party.activeConvoy=null;superseded.tick('W');
+ assert.deepEqual(walks,[],'the user\'s travel formed after the rare ended, so no resume walk follows its arrival');
+});

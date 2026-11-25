@@ -203,7 +203,11 @@ export function installHunting(party: Parameters<typeof createCave>[0] & Paramet
       'walk.ended'(notice) { if (notice.code === 'arrived') for (const hunt of cycles) hunt.walkArrived(String(notice.walk)); rareTick(); },
       // The rare steps on each member report (the status owner's ingestion stage `rareTick`) and
       // each walk notice, the moments its walk or its members' places change.
-      'walk.formed'() { rareTick(); },
+      // A walk formed after a rare's end answers that group's farming resume (farm.ts `resumeAfterRare`).
+      'walk.formed'(notice) {
+        for (const g of stepped) if (g.group() === (notice.group ?? null)) g.farm.walkFormed();
+        rareTick();
+      },
       'walk.phase'() { rareTick(); },
       'walk.member'() { rareTick(); },
       // The rare's task ended and farming took the group back; its farm walks back to the spot.

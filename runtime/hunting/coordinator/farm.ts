@@ -520,7 +520,10 @@ export function createFarm(party: FarmState, workers: Record<string, unknown>, p
   // pull the party back.
   // The farming resume: when the rare's task ends and farming takes the group back, the
   // participants walk to the saved spot unless each already stands at it, in every combat mode, as
-  // b9b5c91e's rare return walked the party back.
+  // b9b5c91e's rare return walked the party back. A walk formed after the rare's end answers it
+  // (`walkFormed`): the party is already on its way somewhere, by a user's travel or a return. In
+  // final-gate-closing8 W22 the resume waited out two walks and fired at the user's travel's
+  // arrival, from reports sent before the transport.
   let rareEnded = false;
   function resumeAfterRare(state: FarmAreaState, names: string[]): boolean {
     const location = party.location;
@@ -595,7 +598,7 @@ export function createFarm(party: FarmState, workers: Record<string, unknown>, p
     ports.persist();
   }
 
-  return { tick, focusChanged, relocationOff, rareEnded: () => { rareEnded = true; } };
+  return { tick, focusChanged, relocationOff, rareEnded: () => { rareEnded = true; }, walkFormed: () => { rareEnded = false; } };
 }
 
 // ---- The monster focus ----
