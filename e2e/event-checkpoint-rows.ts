@@ -1,15 +1,12 @@
 import {expect,type LiveGame} from './live-fixtures';
 import type {Route,TestInfo} from '@playwright/test';
-import type {Row} from './scenario-table';
 import {observeNativeTransport} from './native-transport-observer';
 import {observeNativeStatus} from './native-status-observer';
 import {taskSeq,taskTrail} from './task-records';
 import {W,P,fighters,seedBoss,endEvent,type Boss} from './event-death-helpers';
 
-// The Halloween checkpoint rows, moved in the tasks owner step 8 (the test cut) from
-// live-event-return-handoff.spec.ts and live-event-rendezvous.spec.ts into the default fixture's
-// table. Each row starts with the party's walk to the checkpoint, where those files' fixtures
-// logged the party in, and seeds its own event bosses there.
+// W27a's Halloween checkpoint plays (test-windows DESIGN.md 2.2 W27). Each starts with the party's
+// walk to the checkpoint and seeds its own event bosses there.
 const checkpoint={map:'halloween',x:-550,y:-290};
 async function toCheckpoint(live:LiveGame){
   await live.post('/formation',{leader:W});
@@ -19,177 +16,11 @@ async function toCheckpoint(live:LiveGame){
     s.characters[name]?.map===checkpoint.map&&Math.hypot(s.characters[name].x-checkpoint.x,s.characters[name].y-checkpoint.y)<100);},{timeout:240_000,message:'The party must reach the Halloween checkpoint'}).toBe(true);
 }
 
-// The native transport observer watches the two variants whose return leaves through a door;
-// the status observer watches all four.
-async function handoff(live:LiveGame,info:TestInfo,variant:'leaving Green'|'following a Pumpkin leader'|'restoring a held Green return'|'interrupting a checkpoint return'){
-  const transport=['leaving Green','following a Pumpkin leader'].includes(variant)?await observeNativeTransport(live.clients[W].page):null;
-  let status:Awaited<ReturnType<typeof observeNativeStatus>>|null=null;
-  try{status=await observeNativeStatus(live.clients,fighters);}
-  catch(error){await info.attach('native-status-observer-install-error',{body:String(error),contentType:'text/plain'});throw error;}
-  try{await handoffBody(live,info,variant);}
-  finally{
-    if(transport)await info.attach('native-event-http-transport',{body:JSON.stringify(await transport.finish()),contentType:'application/json'});
-    await info.attach('native-event-status-metadata',{body:JSON.stringify(await status.finish()),contentType:'application/json'});
-  }
-}
-async function handoffBody(live:LiveGame,info:TestInfo,variant:string){
-  // Failure inventory: docs/testing-event-return-handoff.md. Initial native
-  // monsters are declared inputs; damage, commands and return arrival are real.
-  const seeds:Record<string,Boss>={mrgreen:await seedBoss(live,'checkpointGreen'),mrpumpkin:await seedBoss(live,'checkpointPumpkin')};
-  const samples:any[]=[];
-  const hits=async(name:string,event:string,after=0)=>live.clients[name].frame.evaluate(({name,id,after})=>
-    ((window as any).__e2eEvents || []).some((packet:any)=>packet.event==='hit'&&String(packet.data?.id)===id&&
-      packet.data?.hid===name&&packet.data?.damage>0&&packet.at>=after),{name,id:seeds[event].id,after});
-  try{
-    if(variant!=='following a Pumpkin leader'){
-      await live.post('/formation',{character:W,eventSelections:['mrgreen']});
-      await expect.poll(async()=>Promise.all(fighters.map(name=>hits(name,'mrgreen'))).then(values=>values.every(Boolean)),{timeout:120_000}).toBe(true);
-    }else{
-      await live.post('/formation',{character:P,follow:false,eventSelections:['mrgreen']});
-      await live.post('/formation',{character:W,eventSelections:['mrpumpkin']});
-      await expect.poll(async()=>await hits(W,'mrpumpkin')&&await hits(P,'mrgreen'),{timeout:120_000}).toBe(true);
-    }
-    const transitionAt=Date.now();
-    // Follow remains enabled after attendance. Its event rendezvous is not a
-    // new independent farm: both members must return to the saved party farm.
-    const checkpoints=Object.fromEntries(fighters.map(name=>[name,checkpoint]));
-    if(variant==='restoring a held Green return'||variant==='interrupting a checkpoint return'){
-      // Declare the persisted failure state, never a successful exit or hit.
-      // Its dispatched timestamp must not strand an empty recovery.
-      await live.restoreHistoricalSettings(settings=>{
-        const profile=settings.farmingProfiles[W];
-        const waypoints=Object.fromEntries(fighters.map(name=>[name,{revision:settings.navigationIntents?.[name]?.revision||0,location:checkpoint}]));
-        const recovery={cycleId:'historical-active-green-return',event:'mrgreen',participants:fighters,pending:fighters,
-          startedAt:Date.now(),phase:'evacuating',checkpoint,waypoints,deferred:[],
-          ...(variant==='restoring a held Green return'?{returnDispatchedAt:Date.now()}:{})};
-        return {eventReturn:recovery,activeConvoy:null,farmingProfiles:{...settings.farmingProfiles,[W]:{...profile,eventReturn:recovery,activeConvoy:null}},
-          eventSelectionsByCharacter:{...settings.eventSelectionsByCharacter,[W]:variant==='restoring a held Green return'?['mrgreen']:[]}};
-      });
-      if(variant==='restoring a held Green return'){
-        // A globally live but disabled Pumpkin must not release this return.
-        await expect.poll(async()=>{const s=await live.state();return fighters.every(name=>
-          s.characters[name]?.seenAt>transitionAt&&s.eventReturn?.participants?.includes(name));},{timeout:15_000}).toBe(true);
-      }else{
-        // Wait for actual Town exits and an admitted native checkpoint convoy.
-        await expect.poll(async()=>{const s=await live.state();return s.activeConvoy?.purpose==='event-return'&&
-          fighters.every(name=>s.activeConvoy.participants.includes(name));},{timeout:60_000}).toBe(true);
-        await info.attach('active-checkpoint-return-before-handoff',{body:JSON.stringify(await live.state()),contentType:'application/json'});
-        // An escape suspends the event return, which walks no further while the
-        // escape holds the party, and resumes from its record once the player resumes.
-        const group=`party:${W}`,from=await taskSeq(live,group);
-        await live.post('/escape',{});
-        await expect.poll(async()=>(await taskTrail(live,group,from)).trail.some(([d,k,by])=>d==='suspended'&&k==='event-return'&&by==='escape'),
-          {timeout:30_000,message:'The escape suspends the event return'}).toBe(true);
-        expect((await live.state()).activeConvoy?.purpose??null,'no event return walk under the escape').not.toBe('event-return');
-        await live.post('/escape/resume',{});
-        await expect.poll(async()=>(await taskTrail(live,group,from)).trail.some(([d,k])=>d==='resumed'&&k==='event-return'),
-          {timeout:60_000,message:'The event return resumes after the escape'}).toBe(true);
-        // A Hunt turn-in and a death recovery each take the return's walk and suspend the
-        // return: its record stays, it walks no further while either holds the party, and it
-        // resumes once that task ends. No Hunt or death runs at the checkpoint, so the row asks
-        // each task on the party's group the way their providers do (`/e2e-tasks`).
-        for(const kind of ['hunt-turn-in','death-recovery']){
-          const at=await taskSeq(live,group),cycle=(await live.state()).eventReturn?.cycleId;
-          expect(cycle,`precondition: the return is live before the ${kind}`).toBeTruthy();
-          const [handle]=await live.taskOps([{op:'request',args:[group,{kind,owner:`e2e:f19:${kind}`,deadline:Date.now()+600_000}]}]);
-          expect(handle.status,`the ${kind} takes the party`).toBe('granted');
-          await expect.poll(async()=>(await taskTrail(live,group,at)).trail.some(([d,k,by])=>d==='suspended'&&k==='event-return'&&by===kind),
-            {timeout:30_000,message:`The ${kind} suspends the event return`}).toBe(true);
-          await expect.poll(async()=>(await live.state()).activeConvoy?.purpose??null,{timeout:30_000,message:`no event return walk under the ${kind}`}).not.toBe('event-return');
-          const held=await live.state();
-          expect(held.eventReturn?.cycleId,`the ${kind} keeps the return's record`).toBe(cycle);
-          await live.taskOps([{op:'release',args:[handle]}]);
-          await expect.poll(async()=>(await taskTrail(live,group,at)).trail.some(([d,k])=>d==='resumed'&&k==='event-return'),
-            {timeout:60_000,message:`The event return resumes after the ${kind}`}).toBe(true);
-          expect((await taskTrail(live,group,at)).trail.filter(([d,k])=>d==='ended'&&k==='event-return'),`the ${kind} never ends the return`).toEqual([]);
-        }
-      }
-      await live.post('/formation',{character:W,eventSelections:['mrpumpkin']});
-    }else if(variant==='leaving Green') await live.post('/formation',{character:W,eventSelections:['mrpumpkin']});
-    else await live.post('/formation',{character:P,follow:true});
-    await expect.poll(async()=>{
-      const s=await live.state(),damaged=await Promise.all(fighters.map(name=>hits(name,'mrpumpkin',transitionAt)));
-      samples.push({at:Date.now(),return:s.eventReturn,profiles:s.farmingProfiles,commands:s.pendingCommands,
-        characters:Object.fromEntries(fighters.map(name=>[name,{map:s.characters[name]?.map,event:s.characters[name]?.joinedEvent}]))});
-      if(samples.length>64)samples.shift();
-      return damaged.every(Boolean)&&fighters.every(name=>!s.eventReturn?.participants?.includes(name))&&
-        !Object.values(s.farmingProfiles||{}).some((profile:any)=>profile.eventReturn?.participants?.some((name:string)=>fighters.includes(name)));
-    },{timeout:120_000,message:'Both native fighters must damage Pumpkin without an active return holding either member'}).toBe(true);
-    const fighting=await live.state();
-    await info.attach('active-return-handoff-combat',{body:JSON.stringify({variant,seeds,checkpoints,samples,state:fighting,events:await live.clients[W].events()}),contentType:'application/json'});
-    await live.post('/formation',{character:W,eventSelections:[]});
-    await expect.poll(async()=>{const s=await live.state();return !s.eventReturn&&fighters.every(name=>
-      s.characters[name]?.map===checkpoints[name].map&&!s.characters[name]?.joinedEvent&&Math.hypot(s.characters[name].x-checkpoints[name].x,s.characters[name].y-checkpoints[name].y)<100);},{timeout:240_000,message:'After Pumpkin attendance, both fighters must actually return to their saved navigation checkpoint'}).toBe(true);
-  }finally{
-    await info.attach('active-return-handoff-final',{body:JSON.stringify({variant,samples,state:await live.state(),events:await Promise.all(fighters.map(name=>live.clients[name].events()))}),contentType:'application/json'});
-    await live.post('/formation',{character:W,eventSelections:[]});
-    await live.post('/formation',{character:P,eventSelections:[]}).catch(()=>{});
-    for(const type of ['mrgreen','mrpumpkin'])await endEvent(live,type);
-  }
-}
-export const handoffRows:Row[]=(['leaving Green','following a Pumpkin leader','restoring a held Green return','interrupting a checkpoint return'] as const)
-  .map(variant=>[`active event return hands off when ${variant}`,async(live,info)=>{await toCheckpoint(live);await handoff(live,info,variant);}]);
-
-export const rendezvousRows:Row[]=[
-  ...(['moved destination','silent member'] as const).map((fault):Row=>[`event rendezvous starts with a ${fault}`,async(live,info)=>{
-  await toCheckpoint(live);
-  await live.post('/formation',{leader:W});
-  await live.post('/formation',{character:P,follow:true});
-  const seed=await seedBoss(live,'checkpointPumpkin');
-  const context=live.clients[W].page.context(),submissions:any[]=[];
-  // Fixture faults target only the Priest's event walk to this boss.
-  const fixture=async(route:Route)=>{
-    const body=route.request().method()==='POST'?route.request().postDataJSON():null;
-    if(body?.character!==P||body.activity!=='event'||body.key!=='mrpumpkin')return route.fallback();
-    submissions.push({at:Date.now(),cancel:!!body.cancel,destination:body.destination});
-    if(fault==='silent member')return route.abort('failed');
-    // A boss that moved between two members' requests: each froze its own point.
-    await route.fallback({postData:JSON.stringify({...body,destination:{...body.destination,x:body.destination.x+40}})});
-  };
-  await context.route('**/party-api/shared-travel',fixture);
-  // A walk goes on without a member only once the console knows it is gone, its reports stopped
-  // past the report-freshness bound (the user's decision of 2026-11-17). The silent Priest's reports
-  // stop as well until the walk starts, and the walk takes it back on its next report.
-  let silencing=fault==='silent member';
-  const silence=async(route:Route)=>{
-    const body=route.request().method()==='POST'?route.request().postDataJSON():null;
-    if(!silencing||body?.name!==P)return route.fallback();
-    submissions.push({at:Date.now(),report:true});
-    return route.abort('failed');
-  };
-  await context.route('**/party-api/status',silence);
-  const samples:any[]=[];
-  try{
-    await live.post('/formation',{character:W,eventSelections:['mrpumpkin']});
-    await expect.poll(async()=>{
-      const s=await live.state();
-      samples.push({at:Date.now(),convoy:s.activeConvoy&&{id:s.activeConvoy.id,phase:s.activeConvoy.phase,participants:s.activeConvoy.participants,
-        activity:s.activeConvoy.walkingActivity,location:s.activeConvoy.location},characters:Object.fromEntries(fighters.map(n=>[n,{map:s.characters[n]?.map,x:s.characters[n]?.x,y:s.characters[n]?.y}]))});
-      if(samples.length>80)samples.splice(1,1);
-      const walking=s.activeConvoy?.walkingActivity==='event'&&s.activeConvoy.walkingEvent==='mrpumpkin';
-      return walking&&(fault==='silent member'?s.activeConvoy.participants.includes(W):fighters.every(n=>s.activeConvoy.participants.includes(n)));
-    },{timeout:120_000,message:'The event walk must start within the rendezvous window'}).toBe(true);
-    silencing=false;
-    // Arrival hands the walkers to boss combat; attendance records the joined fight.
-    await expect.poll(async()=>{
-      const s=await live.state(),attending=(n:string)=>s.eventAttendance?.[n]?.mrpumpkin?.attending===true;
-      return fault==='silent member'?attending(W):fighters.every(attending);
-    },{timeout:180_000,message:'The walkers must join the boss fight'}).toBe(true);
-  }finally{
-    silencing=false;
-    await context.unroute('**/party-api/status',silence);
-    await context.unroute('**/party-api/shared-travel',fixture);
-    await info.attach('event-rendezvous-'+fault.replace(' ','-'),{body:JSON.stringify({seed,submissions:submissions.slice(-20),samples}),contentType:'application/json'});
-    await live.post('/formation',{character:W,eventSelections:[]});
-    await endEvent(live,'mrpumpkin');
-  }
-}]),
-  // A member left out of its party's event
-  // never walks to it and waits in Main where the party lands (UP-3). The priest's own trip during
-  // the event walk skips its occurrence (attendance-limits.ts `skipManualEventOccurrences`), the
-  // one way a follower, whose events are the leader's, is left out without a death limit. The
-  // setup is the walk to the seeded pumpkin, as in the fault rows.
-  ['event rendezvous starts with a left-out member, who waits in Main',async(live,info)=>{
+// T22's play, W27a's last round: a member left out of its party's event never walks to it and
+// waits in Main where the party lands (UP-3). The priest's own trip during the event walk skips its
+// occurrence (attendance-limits.ts `skipManualEventOccurrences`), the one way a follower, whose
+// events are the leader's, is left out without a death limit.
+export async function leftOutPlay(live:LiveGame,info:TestInfo){
   await toCheckpoint(live);
   await live.post('/formation',{leader:W});
   await live.post('/formation',{character:P,follow:true});
@@ -225,7 +56,14 @@ export const rendezvousRows:Row[]=[
     await expect.poll(async()=>(await sample()).eventAttendance?.[W]?.mrpumpkin?.attending===true,{timeout:180_000,message:'the warrior attends'}).toBe(true);
     // The priest stands in Main, and never joins the walk again or attends.
     await expect.poll(async()=>(await sample()).characters[P]?.map,{timeout:240_000,message:'the left-out priest goes to Main'}).toBe('main');
-    const after=samples.filter(x=>x.at>samples.find(y=>y.attendance?.ignored)!.at);
+    // Attendance reads the member's map (attendance.ts `recordAttendance`, the report's `mapEvent`,
+    // status/character/report.ts), and the trip starts on the Pumpkin's map, so the priest reads
+    // attending until its walk leaves Halloween: in final-gate-closing9's pair run its first report
+    // under the trip read attending for one second at (-550,-290). The count starts once the
+    // ignored priest stands off Halloween.
+    const ignoredAt=samples.find(y=>y.attendance?.ignored)!.at;
+    const leftAt=samples.find(y=>y.at>ignoredAt&&y.characters?.[P]?.map&&y.characters[P].map!==checkpoint.map)?.at??Infinity;
+    const after=samples.filter(x=>x.at>=leftAt);
     expect(after.filter(x=>x.attendance?.attending).length,'samples where the left-out priest attends').toBe(0);
     // F42 joins here (its setup is this left-out member): the event's end starts a return that
     // never lists the priest, and the priest's assignment is still its group's task throughout.
@@ -240,5 +78,115 @@ export const rendezvousRows:Row[]=[
     await live.post('/formation',{character:W,eventSelections:[]});
     if(!cleared)await endEvent(live,'mrpumpkin');
   }
-}],
-];
+}
+
+// W27's one play (test-windows DESIGN.md 2.2 W27): one checkpoint round that T16-T20 observe as
+// its steps. From the Halloween checkpoint the party walks to a seeded Mr. Pumpkin with the
+// priest's walk point moved (T20), turns to Mr. Green, leaves Green for Pumpkin (T16), splits with
+// the priest on Green under a Pumpkin leader and follows again (T17), turns to Green once more and
+// is deselected, so a real Green return walks the party to the checkpoint. An escape suspends that
+// return and Resume picks it up (T19's escape half), and the coordinator restarts during the
+// resumed return (T18, DESIGN.md 4.3: a real restart during a real return in place of the planted
+// persisted return). Pumpkin then takes both with no return holding either, and its deselection
+// walks both back to the checkpoint.
+export async function checkpointRoundPlay(live:LiveGame,info:TestInfo){
+  await toCheckpoint(live);
+  const transport=await observeNativeTransport(live.clients[W].page);
+  let status:Awaited<ReturnType<typeof observeNativeStatus>>|null=null;
+  try{status=await observeNativeStatus(live.clients,fighters);}
+  catch(error){await info.attach('native-status-observer-install-error',{body:String(error),contentType:'text/plain'});throw error;}
+  const seeds:Record<string,Boss>={mrgreen:await seedBoss(live,'checkpointGreen'),mrpumpkin:await seedBoss(live,'checkpointPumpkin')};
+  const hits=async(name:string,event:string,after=0)=>live.clients[name].frame.evaluate(({name,id,after})=>
+    ((window as any).__e2eEvents || []).some((packet:any)=>packet.event==='hit'&&String(packet.data?.id)===id&&
+      packet.data?.hid===name&&packet.data?.damage>0&&packet.at>=after),{name,id:seeds[event].id,after});
+  const samples:any[]=[],steps:any[]=[],submissions:any[]=[];
+  const step=(name:string)=>{steps.push({at:Date.now(),name});return Date.now();};
+  const noReturnHolds=(s:any)=>fighters.every(name=>!s.eventReturn?.participants?.includes(name))&&
+    !Object.values(s.farmingProfiles||{}).some((profile:any)=>profile.eventReturn?.participants?.some((name:string)=>fighters.includes(name)));
+  const bothOnPumpkin=async(after:number)=>{
+    const s=await live.state(),damaged=await Promise.all(fighters.map(name=>hits(name,'mrpumpkin',after)));
+    samples.push({at:Date.now(),return:s.eventReturn,convoy:s.activeConvoy&&{purpose:s.activeConvoy.purpose,activity:s.activeConvoy.walkingActivity,phase:s.activeConvoy.phase,participants:s.activeConvoy.participants},
+      characters:Object.fromEntries(fighters.map(name=>[name,{map:s.characters[name]?.map,event:s.characters[name]?.joinedEvent}]))});
+    if(samples.length>200)samples.splice(1,1);
+    return damaged.every(Boolean)&&noReturnHolds(s);
+  };
+  // The return walk is the event-return convoy that both members walk.
+  const returning=(s:any)=>(s.activeConvoy?.purpose==='event-return'||s.activeConvoy?.walkingActivity==='event-return')&&
+    fighters.every(name=>s.activeConvoy.participants.includes(name));
+  const context=live.clients[W].page.context();
+  // T20: a boss that moved between two members' requests, each froze its own point.
+  let moving=true;
+  const moved=async(route:Route)=>{
+    const body=route.request().method()==='POST'?route.request().postDataJSON():null;
+    if(!moving||body?.character!==P||body.activity!=='event'||body.key!=='mrpumpkin')return route.fallback();
+    submissions.push({at:Date.now(),cancel:!!body.cancel,destination:body.destination});
+    await route.fallback({postData:JSON.stringify({...body,destination:{...body.destination,x:body.destination.x+40}})});
+  };
+  await context.route('**/party-api/shared-travel',moved);
+  try{
+    step('T20 walk to Pumpkin with a moved destination');
+    await live.post('/formation',{character:W,eventSelections:['mrpumpkin']});
+    await expect.poll(async()=>{const s=await live.state();
+      return s.activeConvoy?.walkingActivity==='event'&&s.activeConvoy.walkingEvent==='mrpumpkin'&&fighters.every(n=>s.activeConvoy.participants.includes(n));
+    },{timeout:120_000,message:'The event walk must start within the rendezvous window'}).toBe(true);
+    await expect.poll(async()=>{const s=await live.state();return fighters.every(n=>s.eventAttendance?.[n]?.mrpumpkin?.attending===true);},
+      {timeout:180_000,message:'The walkers must join the boss fight'}).toBe(true);
+    moving=false;
+    // T16's start: both on Green.
+    // The first Green hits of the play, so the read needs no start time.
+    step('Green');
+    await live.post('/formation',{character:W,eventSelections:['mrgreen']});
+    await expect.poll(async()=>Promise.all(fighters.map(name=>hits(name,'mrgreen'))).then(values=>values.every(Boolean)),{timeout:120_000}).toBe(true);
+    const leaving=step('T16 leaving Green');
+    await live.post('/formation',{character:W,eventSelections:['mrpumpkin']});
+    await expect.poll(()=>bothOnPumpkin(leaving),{timeout:120_000,message:'Both native fighters must damage Pumpkin without an active return holding either member'}).toBe(true);
+    const split=step('T17 split: the priest on Green under a Pumpkin leader');
+    await live.post('/formation',{character:P,follow:false,eventSelections:['mrgreen']});
+    await expect.poll(async()=>await hits(W,'mrpumpkin',split)&&await hits(P,'mrgreen',split),{timeout:120_000,message:'The warrior must damage Pumpkin and the priest Green'}).toBe(true);
+    const following=step('T17 following the Pumpkin leader');
+    await live.post('/formation',{character:P,follow:true});
+    await expect.poll(()=>bothOnPumpkin(following),{timeout:120_000,message:'Both native fighters must damage Pumpkin without an active return holding either member'}).toBe(true);
+    const back=step('Green again');
+    await live.post('/formation',{character:W,eventSelections:['mrgreen']});
+    await expect.poll(async()=>Promise.all(fighters.map(name=>hits(name,'mrgreen',back))).then(values=>values.every(Boolean)),{timeout:120_000,message:'Both fighters must damage Green'}).toBe(true);
+    step('T19 the Green return, an escape and Resume');
+    await live.post('/formation',{character:W,eventSelections:[]});
+    await expect.poll(async()=>returning(await live.state()),{timeout:60_000,message:'The deselection must start the Green return with both members'}).toBe(true);
+    await info.attach('active-checkpoint-return-before-handoff',{body:JSON.stringify(await live.state()),contentType:'application/json'});
+    const group=`party:${W}`,from=await taskSeq(live,group);
+    await live.post('/escape',{});
+    await expect.poll(async()=>(await taskTrail(live,group,from)).trail.some(([d,k,by])=>d==='suspended'&&k==='event-return'&&by==='escape'),
+      {timeout:30_000,message:'The escape suspends the event return'}).toBe(true);
+    expect(returning(await live.state()),'no event return walk under the escape').toBe(false);
+    await live.post('/escape/resume',{});
+    await expect.poll(async()=>(await taskTrail(live,group,from)).trail.some(([d,k])=>d==='resumed'&&k==='event-return'),
+      {timeout:60_000,message:'The event return resumes after the escape'}).toBe(true);
+    await expect.poll(async()=>returning(await live.state()),{timeout:60_000,message:'The resumed return must walk both members'}).toBe(true);
+    step('T18 restart during the return');
+    const cycle=(await live.state()).eventReturn?.cycleId;
+    expect(cycle,'precondition: the return is live before the restart').toBeTruthy();
+    await live.restartCoordinator();
+    const restarted=Date.now();
+    await expect.poll(async()=>{const s=await live.state();return fighters.every(name=>
+      s.characters[name]?.seenAt>restarted&&s.eventReturn?.participants?.includes(name));},{timeout:30_000,message:'The restored return must list both members'}).toBe(true);
+    expect((await live.state()).eventReturn?.cycleId,'the restart keeps the cycle of the return').toBe(cycle);
+    const pumpkin=step('Pumpkin after the restored return');
+    await live.post('/formation',{character:W,eventSelections:['mrpumpkin']});
+    await expect.poll(()=>bothOnPumpkin(pumpkin),{timeout:120_000,message:'Both native fighters must damage Pumpkin without an active return holding either member'}).toBe(true);
+    await info.attach('active-return-handoff-combat',{body:JSON.stringify({seeds,steps,samples:samples.slice(-60),submissions,state:await live.state()}),contentType:'application/json'});
+    step('back to the checkpoint');
+    await live.post('/formation',{character:W,eventSelections:[]});
+    await expect.poll(async()=>{const s=await live.state();return !s.eventReturn&&fighters.every(name=>
+      s.characters[name]?.map===checkpoint.map&&!s.characters[name]?.joinedEvent&&Math.hypot(s.characters[name].x-checkpoint.x,s.characters[name].y-checkpoint.y)<100);},
+      {timeout:240_000,message:'After Pumpkin attendance, both fighters must actually return to their saved navigation checkpoint'}).toBe(true);
+  }finally{
+    moving=false;
+    await context.unroute('**/party-api/shared-travel',moved);
+    await info.attach('active-return-handoff-final',{body:JSON.stringify({steps,samples:samples.slice(-60),submissions,state:await live.state()}),contentType:'application/json'});
+    await info.attach('native-event-http-transport',{body:JSON.stringify(await transport.finish()),contentType:'application/json'});
+    if(status)await info.attach('native-event-status-metadata',{body:JSON.stringify(await status.finish()),contentType:'application/json'});
+    await live.post('/formation',{character:W,eventSelections:[]});
+    await live.post('/formation',{character:P,follow:true,eventSelections:[]}).catch(()=>{});
+    for(const type of ['mrgreen','mrpumpkin'])await endEvent(live,type);
+  }
+}

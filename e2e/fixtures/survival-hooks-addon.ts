@@ -1,6 +1,6 @@
 // The survival owner's fixture add-on: one add-on that registers survival's one decision hook an add-on answers,
 // `survival.refuses`, and every survival notice, and reads each published read at each notice, so
-// e2e/live-survival-hooks.spec.ts proves each `HOOKS` row is told at its change and answers its read.
+// W47 (e2e/survival-hooks-rows.ts) proves each `HOOKS` row is told at its change and answers its read.
 // Its refusal stays unset until a row sets one, so registering it changes no play. The character
 // half registers on a character's page (`registerCharacterHalf`); the coordinator half joins the
 // live coordinator's registry through e2e/live-coordinator.cjs `/party-api/e2e-survival-hooks`, as

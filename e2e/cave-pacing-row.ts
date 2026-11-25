@@ -5,23 +5,25 @@ import {taskSeq,taskTrail} from './task-records';
 import {killNativeCharacter} from './hunt-interruption-helpers';
 import {caveView,caveAct,voteAndSettle} from './cave-harness';
 
-// The Cave pacing row, moved in the tasks owner step 8 (the test cut) from live-cave.spec.ts into the default
-// fixture's table, last, because it narrows the Cave's encounters (G.events.dreams) for the rest
-// of the run. It first walks the two fighters, the Cave's members, to the spot live-cave.spec.ts's
-// fixture logs them in at.
+// The Cave pacing row, moved in the tasks owner step 8 from live-cave.spec.ts at 21fe30a2b. W41b plays
+// it (e2e/cave-rows.ts `pacingRegroupPlay`). It narrows the Cave's encounters (G.events.dreams) for
+// the rest of the run. It first walks the two fighters, the Cave's members, to the spot where
+// live-cave.spec.ts's fixture logged them in.
 const caveSpot={map:'main',x:816,y:1180};
-export async function cavePacingRow(live:LiveGame,info:TestInfo,page:Page){
+// `afterEntry` runs once the visit is active, before the pacing route: a window plays more of the
+// same visit there (W41b's regroup, e2e/cave-rows.ts caveRegroupPlay).
+export async function cavePacingRow(live:LiveGame,info:TestInfo,page:Page,afterEntry?:()=>Promise<void>){
   const fighters=['E2EWarrior','E2EPriest'];
   await live.post('/formation',{leader:'E2EWarrior'});
   await live.post('/formation',{character:'E2EPriest',follow:true});
-  // The party travel, the dashboard's Travel that the default reset also sends, makes the spot the
+  // The party travel, the dashboard's Travel, makes the spot the
   // party's farm destination, so the farm approach holds the fighters there. The row's admin
   // teleport left the reset's square as the destination: in the end run at a699982a7 the leader's
   // farm approach walked it from the spot back toward the square within a second, and the idle
   // merchant's stand return cast Town to the market. The merchant is no Cave member and stays out.
   await live.post('/travel',caveSpot);
   await expect.poll(async()=>!(await live.state()).activeConvoy,{timeout:180_000,message:'The party travel to the Cave spot must end'}).toBe(true);
-  // The trip task ends one task tick after its walk arrives (defaultFixtureReset waits the same way).
+  // The trip task ends one task tick after its walk arrives.
   await expect.poll(async()=>(await live.tasks()).groups.find((g:any)=>g.id==='party:E2EWarrior')?.live?.kind,{timeout:30_000,message:'The trip task must end before the visit'}).not.toBe('manual');
   for(const name of fighters)await expect.poll(async()=>live.clients[name].run(`character.map==='${caveSpot.map}'&&Math.hypot(character.real_x-(${caveSpot.x}),character.real_y-(${caveSpot.y}))<=${ARRIVAL_TOLERANCE}`),
     {timeout:60_000,message:'The fighters must stand at the Cave spot'}).toBe(true).catch(async error=>{
@@ -42,6 +44,7 @@ export async function cavePacingRow(live:LiveGame,info:TestInfo,page:Page){
   expect(['idle','cave',undefined],'precondition: the party has a task before the visit').not.toContain(taskBefore);
   await act({action:'enter'});
   await expect.poll(async()=>(await view()).state.phase,{timeout:60_000}).toBe('active');
+  await afterEntry?.();
   await voteAndSettle(view,act);
   const initial=await live.state(),cave=(await view()).members[0].observation.cave;
   const target=cave.points.filter((p:any)=>p.kind==='farm'&&!p.done).sort((a:any,b:any)=>Math.hypot(a.x-initial.characters.E2EWarrior.x,a.y-initial.characters.E2EWarrior.y)-Math.hypot(b.x-initial.characters.E2EWarrior.x,b.y-initial.characters.E2EWarrior.y))[0];

@@ -1,9 +1,9 @@
 // The groups and tasks owner's fixture add-on: one add-on
 // that registers every 01 hook an add-on answers and hears every 01 notice, so
-// e2e/live-tasks-hooks.spec.ts proves each `HOOKS` and `SLOTS` row is asked at its decision point or
-// told at its change. Each answer stays unset until a row sets it through the route's `answers` op,
-// so registering it changes no play. e2e/live-coordinator.cjs `/party-api/e2e-tasks-hooks` joins it to
-// the live coordinator's registry, as the movement fixture does.
+// W34's tasks round (e2e/tasks-hooks-rows.ts) proves each `HOOKS` and `SLOTS` row is asked at its
+// decision point or told at its change. Each answer stays unset until a row sets it through the route's
+// `answers` op, so registering it changes no play. e2e/live-coordinator.cjs `/party-api/e2e-tasks-hooks`
+// joins it to the live coordinator's registry, as the movement fixture does.
 import type { AddonTaskAsk, Registration, TargetModeView } from '../../runtime/hooks/addon-api.ts';
 import { keepCapped } from './hooks-fixture-kit.ts';
 

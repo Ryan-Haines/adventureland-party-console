@@ -103,7 +103,7 @@ export const up3Row=(mode:'farm'|'hunt')=>async(live:LiveGame,info:TestInfo)=>{
             const sends=read.respawns[P]!,rtt=await live.clients[P].run('Math.max(0,...(parent.pings||[]))') as number;
             result.sv28={refused,sends,rtt,next:refused.map(r=>{const next=sends.find(s=>s.at>r.at);return next?{waitedMs:next.at-r.at,ms:Number(r.ms)}:null;})};
             for(const n of result.sv28.next)if(n){
-              expect.soft(n.waitedMs,'SV28: the next respawn waits out the server\'s ms').toBeGreaterThanOrEqual(n.ms-rtt);
+              expect.soft(n.waitedMs,"SV28: the next respawn waits out the server's ms").toBeGreaterThanOrEqual(n.ms-rtt);
               expect.soft(n.waitedMs,'SV28: the next respawn goes within one respawn tick of the ms').toBeLessThanOrEqual(n.ms+250+rtt);
             }
             console.log('SURVIVAL-UP3 '+JSON.stringify({sends:sends.length,refused:refused.length,next:result.sv28.next,notice:result.death.notices.length}));

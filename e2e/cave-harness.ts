@@ -1,8 +1,8 @@
 import type {Page} from '@playwright/test';
 import {expect,type LiveGame} from './live-fixtures';
 
-// The Cave dashboard view and action the Cave specs and rows drive (cave-pacing-row.ts,
-// live-cave.spec.ts, live-cave-headless.spec.ts, live-cave-talk.spec.ts).
+// The Cave dashboard view and action the Cave rows drive (cave-pacing-row.ts, cave-rows.ts,
+// cave-headless-rows.ts).
 export type CaveView=()=>Promise<any>;
 export type CaveAct=(body:Record<string,unknown>)=>Promise<any>;
 export const caveView=(live:LiveGame,page:Page):CaveView=>async()=>await (await page.request.get(live.url+'/party-api/daily-dungeons',{maxRetries:1})).json();

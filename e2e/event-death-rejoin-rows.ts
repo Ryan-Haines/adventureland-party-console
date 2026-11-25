@@ -24,8 +24,8 @@ function noSurvivalWaits(before:Record<string,BandsRead>,after:Record<string,Ban
 // Gaps: ambient monsters are peaceful and the boss neither hurts nor dies, so the only
 // death is the scripted one; no other players; events without a walk path (Slenderman's
 // search) are left out.
-// The UP-1 rows run as steps of live-movement-owner.spec.ts's table of rows that start from the
-// default fixture.
+// W30a plays the horseman UP-1 row (e2e/event-session-rows.ts `horsemanSessionPlay`). W32a plays
+// `cantJoinRow` (`admissionSessionPlay`).
 
 // A coordinator answer that the party's earlier walk to the same event failed. The stub keeps
 // that harder case, so the respawned follower's rejoin ladder must climb past it.
@@ -176,19 +176,4 @@ export async function cantJoinRow(live:LiveGame,info:TestInfo){
       await live.post('/formation',{character:W,eventSelections:[]}).catch(()=>{});
       await live.admin('delete E.icegolem;broadcast_e();output=true').catch(()=>{});
     }
-}
-
-// The UP-1 and UP-3 rows each seed their own event and kill the priest. Each row ends its event and clears the event selection; the reset
-// waits until both fighters stand alive with no party recovery live and brings the party back to
-// Main. Each row's probes come undone as the row ends (installProbe), so the next row reads only
-// its own records.
-export async function deathReset(live:LiveGame){
-  await live.post('/formation',{character:W,eventSelections:[]});
-  for(const type of ['mrgreen','horseman','icegolem'])await endEvent(live,type).catch(()=>{});
-  await live.admin('delete E.icegolem;broadcast_e();output=true').catch(()=>{});
-  await expect.poll(async()=>{const s=await live.state();return fighters.every(n=>s.characters[n]&&!s.characters[n].rip)&&(!s.combatRecovery||s.combatRecovery.phase==='complete');},
-    {timeout:240_000,message:'Both fighters must stand alive with no party recovery before the next row'}).toBe(true);
-  // Every row starts on Main, where the fixture puts the party, wherever the last event left it.
-  await live.admin(`output=(()=>{for(const n of ${JSON.stringify(['E2EWarrior','E2EPriest'])}){const p=get_player(n);transport_player_to(p,'main');resend(p,'u+cid');}return true;})()`);
-  await expect.poll(async()=>{const s=await live.state();return fighters.every(n=>s.characters[n]?.map==='main');},{timeout:60_000}).toBe(true);
 }

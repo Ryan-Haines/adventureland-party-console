@@ -1,10 +1,10 @@
 // Lifecycle's fixture add-on: one add-on that answers `lifecycle.ready` and hears every 13 notice, so
-// e2e/live-lifecycle-hooks.spec.ts proves each `HOOKS` row is asked at its decision point or told at its
-// change. Its coordinator half hears the Pause, Play, drain, shutdown, reload, start and worker notices
-// and keeps them in a file under the E2E data directory, since the table restarts the coordinator; the
-// harness (e2e/live-coordinator.cjs) registers it again at each start while the marker file exists.
-// Its character half answers `lifecycle.ready` with a hold while the table sets one, hears the
-// readiness, hold and report notices, reads `lifecycle.held` and `lifecycle.drain` at each, and keeps
+// W48's hooks table (e2e/lifecycle-hooks-rows.ts) proves each `HOOKS` row is asked at its decision point
+// or told at its change. Its coordinator half hears the Pause, Play, drain, shutdown, reload, start and
+// worker notices and keeps them in a file under the E2E data directory, since the table restarts the
+// coordinator; the harness (e2e/live-coordinator.cjs) registers it again at each start while the marker
+// file exists. Its character half answers `lifecycle.ready` with a hold while the table sets one, hears
+// the readiness, hold and report notices, reads `lifecycle.held` and `lifecycle.drain` at each, and keeps
 // what it heard in local storage, which outlives the CODE reload. With no hold set it answers ready,
 // so registering it changes no play.
 import type { ReadyAnswer, Registration } from '../../runtime/hooks/addon-api.ts';

@@ -1,7 +1,7 @@
 // The events owner's fixture add-on: one add-on that registers the events owner's two decision hooks an add-on answers, `event.attend`
 // and `event.kind` (on both realms), and every events notice of the coordinator, and reads
-// `event.presence` and `event.schedule` at each notice, so e2e/live-events-hooks.spec.ts proves each
-// `HOOKS` row is told at its change and answers its read. Its refusal stays unset until a row sets
+// `event.presence` and `event.schedule` at each notice, so W34's events round (e2e/events-hooks-rows.ts)
+// proves each `HOOKS` row is told at its change and answers its read. Its refusal stays unset until a row sets
 // one, and its event kind is attended only once a row selects it, so registering it changes no play.
 // It joins the live coordinator's registry through e2e/live-coordinator.cjs `/party-api/e2e-events-hooks`,
 // as the survival fixture does. The types come from the add-on API only.

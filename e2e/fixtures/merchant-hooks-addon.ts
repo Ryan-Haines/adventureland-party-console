@@ -1,5 +1,5 @@
 // The merchant jobs owner's fixture add-on: one add-on that answers the merchant jobs owner's two add-on hooks and hears every 08 notice, so
-// e2e/live-merchant-hooks.spec.ts proves each `HOOKS` and `SLOTS` row of runtime/hooks/rows/08-merchant.ts
+// W58 (e2e/gathering-session-rows.ts) proves each `HOOKS` and `SLOTS` row of runtime/hooks/rows/08-merchant.ts
 // is asked at its decision point or told at its change. Its coordinator half declares a kind at
 // priority 90 (the job owner runs it at 74) and proposes one job of it per pass from a list each row
 // sets: a PVP listing, a blacklisted listing, then a listing on the home realm. Its character half
