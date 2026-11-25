@@ -207,7 +207,7 @@ The browser E2E suite cannot yet replace game movement/geometry, multi-character
 | `priest-formation.test.cjs` | Retain | Coverage absent from console E2E: Default defense requires one shared target; local attackers cannot nominate independently. |
 | `production-journal.test.cjs` | Retain | Coverage absent from console E2E: lost completion reply retries its durable receipt without executing the game operation again. |
 | `production-reconciliation.test.cjs` | Retain | Coverage absent from console E2E: production inspection is read-only and explicit unknown resolution survives replay and late completion. |
-| `public-handoff.test.cjs` | Retain | Coverage absent from console E2E: completed transfers never expose stale timeout flags to older dashboards. |
+| `public-handoff.test.cjs` | Removed | The `timedOut` flag it checked had no reader: the dashboard ships with the console, so no older one reads the Steam switch (test-windows QUESTIONS.md U6). The public state carries the roster's switch as it is. |
 | `queue-markers.test.cjs` | Retain | Coverage absent from console E2E: snake Hunt to Phoenix cancellation resumes one queue and both marker displays without resetting CODE. |
 | `rare-farming-return.test.cjs` | Retain | Coverage absent from console E2E: rejected return dispatch survives serialization and retries. |
 | `rare-hunting-client.test.cjs` | Retain | Coverage absent from console E2E: active assistance permission survives the first grouped fight handoff but expires with its revision or heartbeat. |

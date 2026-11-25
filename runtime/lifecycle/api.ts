@@ -117,9 +117,9 @@ export { characterConnections } from "./roster/connection-status.ts";
 export type { CharacterConnection } from "./roster/connection-status.ts";
 export type { AccountCharacter, createRosterProjection } from "./roster/roster-projection.ts";
 // The wire shapes the dashboard reads: the console control's status() and the Steam switch the public
-// state carries (publicHandoff), with its phase.
+// state carries as the roster keeps it, with its phase.
 export type { HandoffPhase } from "./roster/handoff.ts";
-export type SteamSwitch = NonNullable<ReturnType<typeof import("./roster/public-handoff.ts").publicHandoff>>;
+export type SteamSwitch = import("./roster/handoff.ts").Handoff;
 export type ConsoleControlState = ReturnType<ReturnType<typeof import("./coordinator/control.ts").createConsoleControl>["status"]>;
 // The managed console build's status, which the status owner's build control shows, and
 // whether a deployment phase is still running (tools/console-build/contracts.ts, a pure file

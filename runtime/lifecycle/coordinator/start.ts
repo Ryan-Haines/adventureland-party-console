@@ -11,7 +11,7 @@ import { validFarmingLocation } from '../../hunting/api.ts';
 // build, grouped-combat.cjs and roster.cjs each bundled most of the console, so the coordinator held
 // three copies of its modules (docs/efficiency.md, Coordinator, One copy of the modules).
 import { evaluateGroup } from '../../coordinator/targeting/api.ts';
-import { installRosterRoutes, publicHandoff } from '../roster/index.ts';
+import { installRosterRoutes } from '../roster/index.ts';
 import { memberHolds } from './lease.ts';
 import { confirmOffline, type OwnershipPorts } from '../roster/ownership.ts';
 import type { Question } from '../rules.ts';
@@ -209,7 +209,6 @@ export function loadCoordinatorDependencies(require: NodeRequire) {
   return {
     evaluateGroup,
     installRosterRoutes,
-    publicHandoff,
     child_process,
     account_info,
     game_files,

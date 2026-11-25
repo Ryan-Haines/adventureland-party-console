@@ -43,14 +43,15 @@ test('convoy replacement history retains each destination and navigation revisio
  assert.equal(entries[2].details.revisions.L,7);
 });
 
-test('null destination selection retains shared focus and original dictionary lookup', () => {
+// QUESTIONS.md U6: the `statuses["null"]` lookup is gone, so a null character reads no "null" key.
+test('null destination selection selects nothing, even with a saved null key', () => {
   const location = {map: 'main', x: 1, y: 2};
-  const state = {leader: null, followers: {}, statuses: {}, monsterFocus: ['rat'],
+  const state = {leader: null, followers: {}, statuses: {null: location}, monsterFocus: ['rat'],
     monsterFocusByCharacter: {null: []}, monsterPrioritiesByCharacter: {},
     monsterChoices: [{id: 'rat', locations: [location]}]};
   assert.equal(selectCoordinatorMonsterDestination(state, null), null);
-  state.statuses.null = location;
-  assert.deepEqual(selectCoordinatorMonsterDestination(state, null), {id: 'rat', location});
+  state.statuses.W = location;
+  assert.deepEqual(selectCoordinatorMonsterDestination(state, 'W'), {id: 'rat', location}, 'a named character takes the shared focus');
 });
 
 test('unselected Hunt leader does not query members, clock or destination zones', () => {

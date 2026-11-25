@@ -22,7 +22,7 @@ function gameSessionId(value: unknown): string | undefined {
   return value;
 }
 function validateBridge(body: Record<string, unknown>): string {
-  if (typeof body.clientId !== 'string' || !body.clientId || body.clientId.length > BRIDGE_ID_MAX_LENGTH || ![1, BRIDGE_MULTI_VERSION].includes(Number(body.version)))
+  if (typeof body.clientId !== 'string' || !body.clientId || body.clientId.length > BRIDGE_ID_MAX_LENGTH || Number(body.version) !== BRIDGE_MULTI_VERSION)
     throw new RosterConflict('Unsupported Steam bridge');
   return body.clientId;
 }
@@ -30,7 +30,7 @@ function validateBridge(body: Record<string, unknown>): string {
 export class BridgeSession {
   private character: string | null = null;
   private realm: string | null = null;
-  private lease: { id: string; at: number; version: number; sessionId?: string } | null = null;
+  private lease: { id: string; at: number; sessionId?: string } | null = null;
   private readonly state: RosterOwnership;
   private readonly service: SteamHandoff;
   private readonly ports: BridgePorts;
@@ -41,10 +41,11 @@ export class BridgeSession {
   }
   // A lease counts while the bridge's last post still counts its window online: the one presence
   // reading (the movement owner's `presence`), which connection-status.ts asks of the same posts.
-  ready(version = 1): boolean { return !!this.lease && this.lease.version >= version && fresh(this.lease.at, this.ports.now(), 'presence', 0, true); }
+  // Only the multi-character bridge (BRIDGE_MULTI_VERSION) posts: the bridge ships with this console.
+  ready(): boolean { return !!this.lease && fresh(this.lease.at, this.ports.now(), 'presence', 0, true); }
   sessionId(): string | undefined { return this.ready() ? this.lease?.sessionId : undefined; }
   currentRealm(): string | null {
-    return this.ready(2) && this.character === this.state.native ? this.realm : null;
+    return this.ready() && this.character === this.state.native ? this.realm : null;
   }
   connected(): boolean {
     return this.ready() && !!this.character && this.character === this.state.native
@@ -54,7 +55,7 @@ export class BridgeSession {
     const clientId = validateBridge(body), sessionId = gameSessionId(body.sessionId);
     if (this.lease && this.lease.id !== body.clientId && this.ready() && !this.canReconnect(body))
       throw new RosterConflict("Another Steam window currently owns the bridge");
-    this.lease = { id: clientId, at: this.ports.now(), version: Number(body.version), sessionId };
+    this.lease = { id: clientId, at: this.ports.now(), sessionId };
     return typeof body.character === "string" && this.ports.owned(body.character) ? body.character : null;
   }
   private canReconnect(body: Record<string, unknown>): boolean {
@@ -81,7 +82,7 @@ export class BridgeSession {
     // The Steam window's kept bound firings (bridge.ts `boundsFired`) go to the status owner's bound record. A window
     // with no character connected still reports its own, the bridge post's and the slot check's.
     boundsReported(body.boundsFired, character ?? "Steam window");
-    if (body.version === BRIDGE_MULTI_VERSION && this.group && (!this.state.handoff || this.state.handoff.multi || this.state.handoff.phase === "complete")) {
+    if (this.group && (!this.state.handoff || this.state.handoff.multi || this.state.handoff.phase === "complete")) {
       const op = this.state.handoff;
       if (op?.multi && body.operationId === op.id) {
         if (typeof body.error === "string") this.group.fail(op.id, body.error);

@@ -86,7 +86,6 @@ export function startCoordinatorApplication(
   const {
     evaluateGroup,
     installRosterRoutes,
-    publicHandoff,
     child_process,
     account_info,
     game_files,
@@ -1039,7 +1038,6 @@ export function startCoordinatorApplication(
       accountCharacter: ownedCharacter,
       activity: cardLines,
       now: () => Date.now(),
-      handoff: publicHandoff,
       aldata: publicALDataState,
       servers: rosterProjection.servers,
       roster: rosterPayload,

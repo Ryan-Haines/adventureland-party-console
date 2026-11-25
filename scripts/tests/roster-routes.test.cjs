@@ -1,6 +1,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { installRosterRoutes } = require('../../runtime/lifecycle/roster/routes.ts');
+const { BRIDGE_MULTI_VERSION } = require('../../runtime/lifecycle/rules.ts');
 const {createCoordinatorOwnershipPorts}=require('../../runtime/lifecycle/roster/ownership.ts');
 const { createCoordinatorRun } = require('../../runtime/lifecycle/character/run.ts');
 // A bridge post counts its window online for the one presence reading.
@@ -43,7 +44,7 @@ function fixture(overrides = {}) {
     await routes.get('/party-api' + path)({ body, params: { slot } }, response);
     return response;
   };
-  const bridge = (body = {}) => request('/steam/bridge', { version: 1, clientId: 'window', character: 'Priest', ...body });
+  const bridge = (body = {}) => request('/steam/bridge', { version: BRIDGE_MULTI_VERSION, clientId: 'window', character: 'Priest', ...body });
   return { state, ports, online, installed, request, bridge, advance: value => { now += value; } };
 }
 test('startup preserves explicit failed handoff errors',()=>{
@@ -253,22 +254,22 @@ test('ordinary polls and bridge reloads still execute a newly requested logout',
   } finally { f.installed.dispose(); }
 });
 
-test('legacy release receipts and failed logouts can recover a connected Engage', async () => {
-  for (const version of [1, 2]) {
-    for (const failed of [false, true]) {
-      const f = fixture();
-      try {
-        await f.bridge({ version });
-        if (version === 1) await f.request('/slots/:slot/logout', {}, '0');
-        else await f.request('/steam/action', { action: 'logout', character: 'Priest' });
-        if (failed) f.state.handoff.phase = 'failed';
-        await f.bridge({ version, running: ['Priest'], ...(failed ? {} : { operationId: 'op', released: true, from: 'Priest' }) });
-        assert.equal(f.state.handoff, null);
-        assert.equal(f.state.native, 'Priest');
-        assert.deepEqual(f.state.steam, ['Priest']);
-      } finally { f.installed.dispose(); }
-    }
+// QUESTIONS.md U6: bridge v1 is gone, so its post is refused and only the multi bridge's receipts recover.
+test('release receipts and failed logouts can recover a connected Engage, and a v1 bridge is refused', async () => {
+  for (const failed of [false, true]) {
+    const f = fixture();
+    try {
+      await f.bridge();
+      await f.request('/steam/action', { action: 'logout', character: 'Priest' });
+      if (failed) f.state.handoff.phase = 'failed';
+      await f.bridge({ running: ['Priest'], ...(failed ? {} : { operationId: 'op', released: true, from: 'Priest' }) });
+      assert.equal(f.state.handoff, null);
+      assert.equal(f.state.native, 'Priest');
+      assert.deepEqual(f.state.steam, ['Priest']);
+    } finally { f.installed.dispose(); }
   }
+  const f = fixture();
+  try { assert.equal((await f.bridge({ version: 1 })).code, 409); } finally { f.installed.dispose(); }
 });
 
 test('new Steam sessions cannot cancel transfers or take a headless assignment', async () => {

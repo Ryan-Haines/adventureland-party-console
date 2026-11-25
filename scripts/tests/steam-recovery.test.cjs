@@ -188,7 +188,7 @@ test('steamRecoveryAttemptsBound: a CODE that never reports healthy trips the bo
     const {boundFirings}=require('../../runtime/status/coordinator/api.ts');
     const before=boundFirings().counts.steamRecoveryAttemptsBound||0;
     const session=bridgeSession(BridgeSession,()=>now);
-    await session.receive({clientId:'bridge-1',version:1,character:'P',boundsFired:firings});
+    await session.receive({clientId:'bridge-1',version:require('../../runtime/lifecycle/rules.ts').BRIDGE_MULTI_VERSION,character:'P',boundsFired:firings});
     assert.equal(boundFirings().counts.steamRecoveryAttemptsBound,before+1);
     const entry=boundFirings().entries.at(-1); assert.equal(entry.owner,'13'); assert.equal(entry.subject,'P');
     boundsSent(firings.length); assert.deepEqual(boundsPending(),[]);
@@ -220,7 +220,7 @@ test('a slot check and a bridge post that never answer end at their kept bounds 
     const {BridgeSession}=require('../../runtime/lifecycle/roster/bridge-session.ts');
     const {boundFirings}=require('../../runtime/status/coordinator/api.ts');
     const session=bridgeSession(BridgeSession,()=>Date.now());
-    await session.receive({clientId:'bridge-2',version:1,character:null,boundsFired:firings});
+    await session.receive({clientId:'bridge-2',version:require('../../runtime/lifecycle/rules.ts').BRIDGE_MULTI_VERSION,character:null,boundsFired:firings});
     assert.deepEqual(boundFirings().entries.slice(-2).map(e=>[e.bound,e.subject]),[['steamSlotCheckMs','Steam window'],['steamBridgeRequestMs','Steam window']]);
   } finally {boundsSent(boundsPending().length);f.host.__partySteamBridge?.dispose();f.close();}
 });

@@ -19,10 +19,10 @@ function publicStateRuntime(){
   aldata:{merchants:[{id:'Trader',lastSeen:new Date(now-1000).toISOString(),serverRegion:'US',serverIdentifier:'II'},
     {id:'OldTrader',lastSeen:new Date(now-121000).toISOString(),serverRegion:'US',serverIdentifier:'II'}]}};
  const my_acc={response:{servers:[{key:'SR_USII'},{key:'SR_EUI'}]}},PARTY_CLASSES=['merchant','priest'];
- const funcs={publicHandoff:()=>({phase:'idle'}),publicALDataState:()=>({hasKey:true,listings:[{id:'listing'}],trades:[{id:'trade'}]}),
+ const funcs={handoff:()=>({phase:'idle'}),publicALDataState:()=>({hasKey:true,listings:[{id:'listing'}],trades:[{id:'trade'}]}),
   rosterPayload:()=>[{name:'P'}],slotPayload:()=>[{character:'P',state:'online'}],publicEventSchedules:()=>[],publicAnniversaryState:()=>({live:false}),
   publicMerchantJob:job=>job&&({...job,priority:50}),mluckScheduleStatus:()=>[],bankboiPublicState:()=>[{name:'B'}],realmControlPayload:()=>({activeRealm:'SR_USII'})};
- const ports={now:()=>now,handoff:()=>funcs.publicHandoff(),aldata:()=>funcs.publicALDataState(),servers:()=>my_acc.response.servers,
+ const ports={now:()=>now,handoff:()=>funcs.handoff(),aldata:()=>funcs.publicALDataState(),servers:()=>my_acc.response.servers,
   roster:()=>funcs.rosterPayload(),slots:()=>funcs.slotPayload(),classes:PARTY_CLASSES,eventSchedules:()=>funcs.publicEventSchedules(),
   anniversary:()=>funcs.publicAnniversaryState(),job:job=>funcs.publicMerchantJob(job),luckSchedule:()=>funcs.mluckScheduleStatus(),
   bankbois:()=>funcs.bankboiPublicState(),realmControl:()=>funcs.realmControlPayload(),consoleControl:()=>null,activity:()=>null};

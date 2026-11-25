@@ -683,11 +683,13 @@ interface DestinationState<Location> {
  */
 export function selectCoordinatorMonsterDestination<Location extends Position>(state: DestinationState<Location>,
   name: string | null): { id: string; location: Location } | null {
-  const status = state.statuses[String(name)];
-  const own = name !== state.leader && !state.followers[String(name)] &&
-    Object.prototype.hasOwnProperty.call(state.monsterFocusByCharacter, String(name));
-  const focus = own ? state.monsterFocusByCharacter[String(name)] : state.monsterFocus || [];
-  const priorities = state.monsterPrioritiesByCharacter[String(name)] || {};
+  // No character selects no destination; a saved "null" key is never read.
+  if (name === null) return null;
+  const status = state.statuses[name];
+  const own = name !== state.leader && !state.followers[name] &&
+    Object.prototype.hasOwnProperty.call(state.monsterFocusByCharacter, name);
+  const focus = own ? state.monsterFocusByCharacter[name] : state.monsterFocus || [];
+  const priorities = state.monsterPrioritiesByCharacter[name] || {};
   if (!status || !Array.isArray(state.monsterChoices)) return null;
   const selected = new Set(focus.filter(id => id !== 'all'));
   const candidates = state.monsterChoices.flatMap(monster =>

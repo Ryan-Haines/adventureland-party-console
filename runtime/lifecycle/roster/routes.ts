@@ -60,10 +60,10 @@ export function installRosterRoutes(
     bridgeReady: () => bridge.ready(),
     steamSessionId: () => bridge.sessionId(),
   });
-  const group: SteamGroup = new SteamGroup(state, { ...ports, realmContext, steamSessionId: () => bridge.sessionId(), bridgeReady: (): boolean => bridge.ready(2), prepareSteam: name => ports.prepareSteam?.(name) || Promise.resolve() });
+  const group: SteamGroup = new SteamGroup(state, { ...ports, realmContext, steamSessionId: () => bridge.sessionId(), bridgeReady: (): boolean => bridge.ready(), prepareSteam: name => ports.prepareSteam?.(name) || Promise.resolve() });
   const bridge: BridgeSession = new BridgeSession(state, service, ports, group);
   router.get("/party-api/steam/connection", (_request, response) => {
-    response.json({ connected: bridge.connected(), ready: bridge.ready(2) });
+    response.json({ connected: bridge.connected(), ready: bridge.ready() });
   });
   if (state.handoff && !["complete", "failed", "awaiting-realm-choice"].includes(state.handoff.phase)) {
     state.handoff.phase = "failed";
@@ -111,7 +111,7 @@ export function installRosterRoutes(
   }
   async function prepareSteam(action: unknown, name: string): Promise<void> {
     if (!(action === "login" || action === "primary") || !ports.prepareSteam) return;
-    if (!ports.owned(name) || !bridge.ready(2)) throw new RosterConflict("Run the Steam bridge and choose an owned character");
+    if (!ports.owned(name) || !bridge.ready()) throw new RosterConflict("Run the Steam bridge and choose an owned character");
     if (state.handoff && state.handoff.phase !== "complete") throw new RosterConflict("Resolve the pending Steam operation first");
     if (!needsRealmChoice(action, name)) await ports.prepareSteam(name);
   }

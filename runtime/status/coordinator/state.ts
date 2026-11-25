@@ -749,7 +749,6 @@ type OverviewPorts<Handoff> = Omit<
   "handoff" | "eventSchedules" | "bankbois" | "job"
 > & {
   accountCharacter?: Parameters<typeof projectBankbois>[2];
-  handoff: (value: Handoff) => unknown;
   stamp: (job: MerchantWork) => MerchantWork;
   collectionSlots: (name: string | null | undefined) => number;
   collectionNearby: (name: string | null | undefined) => boolean;
@@ -771,7 +770,7 @@ export function createCoordinatorPublicOverview<Handoff>(
   const route = createPublicStateRoute(state, {
     ...ports,
     job,
-    handoff: () => ports.handoff(state.steamSwitch),
+    handoff: () => state.steamSwitch,
     eventSchedules: () => projectEventSchedules(state.statuses, state.leader, () => ports.now()),
     bankbois: () => projectBankbois(state.bankbois, state.bankboiTransaction, ports.accountCharacter),
   });
