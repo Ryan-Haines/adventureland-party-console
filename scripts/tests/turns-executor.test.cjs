@@ -24,6 +24,8 @@ test('TC32: an attack accepted before a target reset settles nothing of the new 
     assert.deepEqual(w.sent,[]);
     assert.deepEqual(w.notices.filter(n=>n.hook==='skills.dropped').map(n=>[n.skill,n.reason]),[['attack','insufficient MP']]);
     global.character.mp=1000;
+    // The next update: a second pass in the refused pass's update returns that pass's read.
+    w.advance(1);
     w.turns.pass('tick');
     assert.deepEqual(w.sent.map(s=>s[1].id),['A']);
     // A target reset (runner.ts resetTargeting) moves the epoch; the next pass sends at the new target.

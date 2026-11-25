@@ -1,18 +1,37 @@
-import {test,expect} from './live-fixtures';
+// The ChronAL clock harness's self-test (test-windows DESIGN.md 4.1: C15, C16, E54, E55). It tests
+// the test clock, not the game or an owner rule, so it needs no game stack: one browser and the
+// clock broker on loopback. live-game.spec.ts imported it into the live project until step 12.
+// Usage: node --test e2e/chronal-clock-reconnect.test.mts
+import {test as nodeTest,before} from 'node:test';
+import {chromium,expect,type Browser,type Page} from '@playwright/test';
 import {startNetworkClock} from '../tools/sim/network-clock-broker.mts';
 import {createServer,request} from 'node:http';
 import {connect,type Socket} from 'node:net';
 import {readFileSync} from 'node:fs';
-import {execFile} from 'node:child_process';
+import {execFile,execFileSync} from 'node:child_process';
 import {promisify} from 'node:util';
 import {performance as nativePerformance} from 'node:perf_hooks';
 import path from 'node:path';
 import {pathToFileURL} from 'node:url';
-import {environment} from './fixtures';
-import {waitForBrowserClockStartup} from './chronal-browser-startup';
+import {waitForBrowserClockStartup} from './chronal-browser-startup.ts';
+
+// The child clocks' environment, as e2e/fixtures.ts `environment` builds it: no live console
+// credentials or E2E launch settings reach them.
+const environment=(extra:Record<string,string>)=>({...Object.fromEntries(Object.entries(process.env).filter(([name])=>!/^(AL_|E2E_)/.test(name))),...extra});
+// e2e/game/setup.mjs builds the browser clock bundle for a Playwright run; this file builds it
+// itself, so a planted break in tools/sim/browser-clock.cjs reaches the page.
+before(()=>{execFileSync(process.execPath,['tools/sim/build-browser-clock.mts'],{stdio:'inherit',windowsHide:true});});
+// The wrapper hands each test a page in its own context and the browser, as Playwright's fixtures
+// did, and writes each attachment as a diagnostic line of the test's output.
+type Info={attach(name:string,body:{body:string;contentType:string}):Promise<void>};
+const test=(title:string,body:(fixtures:{page:Page;browser:Browser},info:Info)=>Promise<void>)=>
+  nodeTest(title,{skip:process.env.E2E_GAMEPLAY_BACKEND==='native'&&'ChronAL-only transport; native parity uses its native clock.'},async t=>{
+    const browser=await chromium.launch();
+    try{await body({page:await (await browser.newContext()).newPage(),browser},{attach:async(name,{body})=>t.diagnostic(`${name}: ${body}`)});}
+    finally{await browser.close();}
+  });
 
 test('ChronAL browser clock recovers an initial rejected handshake without losing virtual progress',async({page},info)=>{
- test.skip(process.env.E2E_GAMEPLAY_BACKEND==='native','This regression exercises only the ChronAL transport; native parity uses its native clock.');
  const clock=await startNetworkClock(4),sockets=new Set<Socket>();
  const attempts:Array<{at:number;rejected:boolean}>=[];
  const reads:Array<{at:number;rejected:boolean}>=[];
@@ -74,7 +93,6 @@ test('ChronAL browser clock recovers an initial rejected handshake without losin
 });
 
 test('ChronAL late joining actors preserve relative startup timers',async({page,browser:browserHost},info)=>{
- test.skip(process.env.E2E_GAMEPLAY_BACKEND==='native','ChronAL-only transport initialization regression.');
  const ioReceipts:Array<{started:number;finished?:number;closedBeforeReply?:boolean}>=[];
  const nativeWall=()=>Math.floor(nativePerformance.timeOrigin+nativePerformance.now());
  // The caller may already use another pool's observation Date. Its private

@@ -64,3 +64,64 @@ scenarioTable("the events source reads a presence from status and attendance and
    assert.deepEqual(row(null, { activity: 'farm' }, { owner: '08', reason: 'job' }), []);
  }],
 ]);
+
+// The events source over the tasks owner, as the coordinator's task tick runs them: each tick the
+// source describes the party's event tasks from the planted state, and a Hunt source describes its
+// mission. The live rows planted the same tasks through `taskOps` and a page timer (test-windows
+// QUESTIONS.md U13).
+const { createTaskOwner } = require('../../runtime/tasks/coordinator/owner.ts');
+const { askSources } = require('../../runtime/tasks/coordinator/sources.ts');
+const { eventSource } = require('../../runtime/events/coordinator/source.ts');
+function eventTasks(planted) {
+  let now = 1000;
+  const party = { id: 'party:W', kind: 'party', members: ['W', 'P'] };
+  const owner = createTaskOwner({ now: () => now, notify() {}, snapshot() {} });
+  owner.sync([party]);
+  const events = eventSource({ presence: name => presence(planted, name), eventReturn: () => planted.eventReturn, merchantReturn: () => undefined, commandHold: () => null });
+  const hunt = { slot: 'mission', ask: { kind: 'hunt-mission', owner: 'hunt:1', members: ['W', 'P'] }, end: 'released' };
+  const tick = () => {
+    now += 1000;
+    askSources(owner, [party], now, view => [{ name: events.name, answers: events.hooks['task.request'](view) }, { name: 'core:hunt', answers: [hunt] }]);
+    owner.tick();
+  };
+  const ring = () => owner.ring(party.id).map(r => [r.decision, r.kind, r.by ?? r.code ?? null]);
+  return { owner, tick, ring, group: party.id, planted, at: () => now };
+}
+const onGoobrawl = over => ({ statuses: { W: { server: 'USII', map: 'goobrawl', joinedEvent: 'goobrawl' }, P: { server: 'USII', map: 'main' } },
+  eventAttendance: { W: { goobrawl: instance({ ended: true, attending: false }) } }, ...over });
+scenarioTable('the events source over the tasks owner: a return under a higher task, and a stale marker after a reload', eventTasks, [
+ // T16 to T19's F19 half (test-windows DEVIATIONS.md W27): an escape, a Hunt turn-in and a death
+ // recovery each take the party from the event return, which waits with its record and resumes
+ // when the task ends. The return's row suspends (rules.ts `event-return`); a cancel would end it,
+ // and the source's next description would start a new one.
+ ['an escape, a Hunt turn-in and a death recovery each suspend the event return, which keeps its record and resumes', ({ owner, tick, ring, group, planted, at }) => {
+   planted.eventReturn = { event: 'mrgreen', cycleId: 'c1', participants: ['W', 'P'], phase: 'evacuating', startedAt: 900 };
+   tick();
+   for (const kind of ['escape', 'hunt-turn-in', 'death-recovery']) {
+     const from = ring().length;
+     assert.equal(owner.live(group).owner, 'event-return:c1', `precondition: the return is live before the ${kind}`);
+     const handle = owner.request(group, { kind, owner: `f19:${kind}`, deadline: at() + 600_000 });
+     assert.equal(handle.status, 'granted', `the ${kind} takes the party`);
+     tick();
+     assert.deepEqual(ring().slice(from).filter(([d, k]) => d === 'suspended' && k === 'event-return'), [['suspended', 'event-return', kind]], `The ${kind} suspends the event return`);
+     assert.equal(owner.live(group).kind, kind, `no event return walk under the ${kind}: the walk follows the live task`);
+     assert.deepEqual(owner.held(group).filter(h => h.source === 'core:event').map(h => [h.owner, h.handle.status]), [['event-return:c1', 'waiting']], `the ${kind} keeps the return's record`);
+     owner.release(handle);
+     tick();
+     assert.ok(ring().slice(from).some(([d, k]) => d === 'resumed' && k === 'event-return'), `The event return resumes after the ${kind}`);
+     assert.deepEqual(ring().slice(from).filter(([d, k]) => d === 'ended' && k === 'event-return'), [], `the ${kind} never ends the return`);
+   }
+ }, { statuses: {} }],
+ // T36's stale-marker half (DEVIATIONS.md W34): after a reload the warrior still reports the
+ // ended Goobrawl from its map, and the finished return (`eventReturnLast`, saved across the
+ // reload) leaves that occurrence nothing to await, so the source asks no event task and the Hunt
+ // keeps the party.
+ ['a stale joinedEvent after a reload gives no presence and suspends no Hunt', ({ owner, tick, ring, group, planted }) => {
+   assert.equal(planted.statuses.W.joinedEvent, 'goobrawl', 'precondition: the warrior still reports the stale event');
+   tick(); tick();
+   assert.deepEqual(['W', 'P'].map(name => presence(planted, name)), [null, null], 'no presence from a stale joinedEvent');
+   assert.equal(owner.live(group).kind, 'hunt-mission');
+   assert.deepEqual(ring().filter(([d, k]) => d === 'granted' && k.startsWith('event') || d === 'suspended' && k.startsWith('hunt')), [],
+     'a stale joinedEvent after a reload suspends no Hunt');
+ }, onGoobrawl({ eventReturnLast: { event: 'goobrawl', occurrence: 'g1' } })],
+]);

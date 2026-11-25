@@ -78,3 +78,21 @@ test('waiting retains original target across reconciliation and wakes on stock o
  state.bankSnapshot={packs:{items0:[{item:{name:'offeringp'}}]}};assert.equal(upgradeOfferingReady(state,mark),true);
  state.bankSnapshot=null;state.upgradeOfferingRules=[];assert.equal(upgradeOfferingReady(state,mark),true);
 });
+// A27's required absent source across a coordinator restart (test-windows DEVIATIONS.md W52): the
+// manual mark that waits for its required offering is saved, loads through the items owner's saved
+// intents, and reconciles against the same bag as one mark that still waits. The live row restarted
+// the coordinator between the wait and the read (QUESTIONS.md U13).
+test('a manual mark waiting for its required offering is still one waiting mark after a coordinator restart',()=>{
+ const state=fixture();
+ state.upgradeOfferingRules=[rule({name:'helmet',floor:0,ceiling:1})];
+ const bag=[{slot:20,item:{name:'helmet',level:0},meta:{upgradeable:true}}];
+ const command=createUpgradeCommands(state,{key:i=>i.name+'@+'+(i.level||0),persist(){},queue(){},reconcile(){}});
+ assert.equal(command.handle({type:'upgrade-mark',character:'M',slot:20,item:{name:'helmet',level:0},tiers:1}),null);
+ recordOfferingWait(state,{owner:'M',mark:state.upgrades.M[0],level:0,offering:'offeringp'});
+ const saved=JSON.parse(JSON.stringify({upgrades:state.upgrades}));
+ const loaded=initialItemIntents(saved,{declared:require('../../runtime/settings/coordinator/table.ts').declared});
+ const marks=reconcileUpgradeMarks(loaded.upgrades.M,{},bag).marks;
+ assert.equal(marks.length,1,"the restart keeps the merchant's one mark");
+ assert.equal(marks[0].waitingOffering?.offering,'offeringp','the mark still waits for its offering');
+ assert.equal(marks[0].requestId,state.upgrades.M[0].requestId,'the same request');
+});
