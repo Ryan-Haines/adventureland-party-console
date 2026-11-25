@@ -4589,6 +4589,10 @@
     "targeting.monsterPriority": { side: "both", type: "the saved priority table", door: `${CHARACTER_DOOR2}#MONSTER_PRIORITY` },
     "targeting.validPriorities": { side: "both", type: "boolean", door: `${CHARACTER_DOOR2}#validMonsterPriorities` },
     "targeting.attackDamageType": { side: "character", type: "DamageType | undefined", door: `${CHARACTER_DOOR2}#effectiveAttackDamageType` },
+    // The reflect lists a character with no saved entry plays, which the settings menu's Combat section shows.
+    "targeting.defaultReflectLists": { side: "both", type: "ReflectLists", door: `${CHARACTER_DOOR2}#defaultLists` },
+    // The monsters each reflect list can hold in a game data monster table, which the Combat section's pickers offer.
+    "targeting.reflectChoices": { side: "both", type: "ReflectChoices", door: `${CHARACTER_DOOR2}#reflectChoices` },
     "targeting.passingStatus": { side: "coordinator", type: "the passing encounters' status", door: `${COORDINATOR_DOOR2}#createPassingStatus` },
     "targeting.uniqueReferences": { side: "coordinator", type: "Target[]", door: `${COORDINATOR_DOOR2}#uniqueReferences` },
     "targeting.targetIdentity": { side: "both", type: "string", door: `${COORDINATOR_DOOR2}#targetIdentity` },
@@ -9203,10 +9207,11 @@
     "character-card": { file: P + "connected-character-card.tsx", slot: "card-section" },
     "farming-line": { file: P + "farming-mode-control.tsx", slot: "card-section", part: "farming-line" },
     "merchant-controls": { file: P + "merchant-card-controls.tsx", slot: "card-section", part: "merchant" },
-    "interface-settings": { file: P + "party-inventory-panels.tsx", slot: "dialog-section", part: "interface-settings" },
+    "interface-settings": { file: P + "account-sections.tsx", slot: "dialog-section", part: "interface-settings" },
+    "settings-menu": { file: P + "settings-menu.tsx", core: "frame", cite: "docs/settings-menu.md, the one settings menu, whose sections carry their own areas" },
     "bank": { file: P + "bank-sheet.tsx", slot: "dialog-section", part: "bank" },
     "stand": { file: P + "stand-sheet.tsx", slot: "dialog-section", part: "stand" },
-    "market-settings": { file: P + "stand-sheet.tsx", slot: "dialog-section", part: "market-settings" },
+    "market-settings": { file: P + "marketplace-settings.tsx", slot: "dialog-section", part: "market-settings" },
     "wtb-orders": { file: P + "stand-sheet.tsx", slot: "dialog-section", part: "wtb-orders" },
     "mail": { file: P + "send-mail-dialog.tsx", slot: "dialog-section", part: "mail" },
     "catalog": { file: P + "equipment-catalog-dialog.tsx", slot: "dialog-section", part: "catalog" },
@@ -9221,7 +9226,7 @@
     "wtb-order": { file: P + "wtborder-dialog.tsx", slot: "dialog-section", part: "wtb-order" },
     "travel": { file: P + "character-travel-dialog.tsx", slot: "dialog-section", part: "travel" },
     "farming-area": { file: P + "farming-area-picker.tsx", slot: "dialog-section", part: "farming-area" },
-    "event-settings": { file: P + "event-limits-dialog.tsx", slot: "dialog-section", part: "event-settings" },
+    "event-settings": { file: P + "event-limits-form.tsx", slot: "dialog-section", part: "event-settings" },
     "cave-settings": { file: P + "dungeon-settings.tsx", slot: "dialog-section", part: "cave-settings" },
     "anniversary": { file: P + "anniversary-dialog.tsx", slot: "dialog-section", part: "anniversary" },
     "giveaway": { file: P + "party-management-panels.tsx", slot: "dialog-section", part: "giveaway" },
@@ -9238,7 +9243,7 @@
     "session-controls": { file: P + "character-session-controls.tsx", core: "login integrity", cite: "questions/design/slot-coverage.md C3" },
     "cipher": { file: P + "cipher-controls.tsx", within: "event-settings" },
     "cipher-dialog": { file: P + "cipher-controls.tsx", within: "event-settings" },
-    "card-monster": { file: P + "connected-character-card.tsx", within: "character-card" },
+    "card-monster": { file: P + "farming-settings-section.tsx", within: "farming-settings" },
     "card-awaiting": { file: P + "connected-character-card.tsx", core: "frame", cite: "questions/design/slot-coverage.md P8" },
     "combat-log": { file: P + "connected-combat-log.tsx", within: "character-card" },
     "build-load": { file: P + "console-build-control.tsx", core: "run control", cite: "questions/design/slot-coverage.md T1" },
@@ -9255,8 +9260,8 @@
     "equipment": { file: P + "equipment.tsx", within: "character-card" },
     "events-menu": { file: P + "event-selection-control.tsx", slot: "event-list" },
     "farming-area-map": { file: P + "farming-area-picker.tsx", within: "farming-area" },
-    "farming-settings": { file: P + "farming-mode-control.tsx", slot: "settings-section" },
-    "clear-blacklist": { file: P + "farming-mode-control.tsx", core: "confirmation", cite: "questions/design/slot-coverage.md C19" },
+    "farming-settings": { file: P + "farming-settings-section.tsx", slot: "settings-section" },
+    "clear-blacklist": { file: P + "farming-settings-section.tsx", core: "confirmation", cite: "questions/design/slot-coverage.md C19" },
     "gear-comparison-side": { file: P + "gear-comparison-dialog.tsx", within: "gear-comparison" },
     "hosting": { file: P + "hosting-settings.tsx", core: "run control", cite: "questions/design/slot-coverage.md D8" },
     "hunt-blacklist-picker": { file: P + "hunt-blacklist-picker.tsx", within: "farming-settings" },
@@ -9277,8 +9282,11 @@
     "mail-sent": { file: P + "mailbox-controls.tsx", within: "mail" },
     "market-preferences": { file: P + "market-preferences.tsx", within: "market-settings" },
     "cancel-job": { file: P + "merchant-cancel-job-control.tsx", core: "confirmation", cite: "merchant-cancel-job-control.tsx:45, the confirm step of cancelling a merchant job" },
-    "collection-settings": { file: P + "merchant-collection-settings.tsx", within: "merchant-controls" },
-    "collection-settings-body": { file: P + "merchant-collection-settings.tsx", within: "merchant-controls" },
+    "collection-settings": { file: P + "merchant-collection-settings.tsx", within: "settings-menu" },
+    "collection-settings-body": { file: P + "merchant-collection-settings.tsx", within: "settings-menu" },
+    "combat-settings": { file: P + "combat-settings-section.tsx", within: "settings-menu" },
+    "monster-list-picker": { file: P + "monster-list-picker.tsx", within: "combat-settings" },
+    "restock-settings": { file: P + "restock-controls.tsx", within: "settings-menu" },
     "commerce-estimate": { file: P + "merchant-commerce-dialog.tsx", within: "commerce" },
     "merchant-visit": { file: P + "merchant-visit-control.tsx", within: "character-card" },
     "metrics-chart": { file: P + "metrics-chart.tsx", within: "metrics" },
@@ -9302,10 +9310,10 @@
     "passive-hunting": { file: P + "passive-hunting-menu.tsx", slot: "rare-list", part: "passive-hunting" },
     "passive-hunting-help": { file: P + "passive-hunting-menu.tsx", within: "passive-hunting" },
     "pending-card": { file: P + "pending-character-cards.tsx", core: "login integrity", cite: "questions/design/slot-coverage.md P9" },
-    "display": { file: P + "pin-top-bar.tsx", within: "interface-settings" },
+    "display": { file: P + "pin-top-bar.tsx", within: "settings-menu" },
     "restock": { file: P + "restock-controls.tsx", within: "character-card" },
     "roster-picker": { file: P + "roster-picker.tsx", core: "login integrity", cite: "questions/design/slot-coverage.md D44" },
-    "routines": { file: P + "routine-priorities-dialog.tsx", slot: "merchant-routines", part: "routines" },
+    "routines": { file: P + "routine-priorities-section.tsx", slot: "merchant-routines", part: "routines" },
     "send-to-party": { file: P + "send-to-party-control.tsx", within: "character-card" },
     "rule-conflicts": { file: P + "shared-rule-conflicts.tsx", core: "confirmation", cite: "questions/design/slot-coverage.md C30" },
     "market": { file: P + "stand-sheet.tsx", slot: "list-view" },
@@ -38177,15 +38185,14 @@ ${hook}`, was = errors.get(key3);
     const entry = (saved) => saved && typeof saved === "object" ? saved[name2] : void 0;
     return { magic: names(entry(magic)) ?? defaultLists.magic, physical: names(entry(physical)) ?? defaultLists.physical };
   }
-  function reflectChoices() {
-    const monsters3 = gameMonsters() ?? {};
+  function reflectChoices(monsters3) {
     const rated = (field) => Object.entries(monsters3).filter(([, m]) => Number(m?.[field]) > 0).map(([type]) => type).sort();
     return { magic: rated("reflection"), physical: rated("dreturn") };
   }
   function reflectCheck(list4) {
     return (value) => {
       if (!value || typeof value !== "object" || Array.isArray(value)) return false;
-      const loaded = gameMonsters(), choices = loaded ? new Set(reflectChoices()[list4]) : null;
+      const loaded = gameMonsters(), choices = loaded ? new Set(reflectChoices(loaded)[list4]) : null;
       return Object.values(value).every((entry) => {
         const types = names(entry);
         return !!types && (!choices || types.every((type) => choices.has(type)));
@@ -38494,6 +38501,7 @@ ${hook}`, was = errors.get(key3);
     MONSTER_PRIORITY: () => MONSTER_PRIORITY,
     collectPassing: () => collectPassing,
     createCrabRangeRecovery: () => createCrabRangeRecovery,
+    defaultLists: () => defaultLists,
     effectiveAttackDamageType: () => effectiveAttackDamageType,
     huntSwitchAllows: () => huntSwitchAllows,
     installPorcupineEquipment: () => installPorcupineEquipment,
@@ -38501,6 +38509,7 @@ ${hook}`, was = errors.get(key3);
     installTargeting: () => installTargeting,
     passingIdentity: () => passingIdentity,
     passiveStopRequired: () => passiveStopRequired,
+    reflectChoices: () => reflectChoices,
     validMonsterPriorities: () => validMonsterPriorities
   });
 

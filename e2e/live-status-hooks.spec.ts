@@ -143,7 +143,7 @@ test('status hooks: one fixture add-on registers every hook and event', async ({
     // issues a key, shows it once, saves a lock through the settings writer and revokes the key.
     await test.step('L: the Apps screen issues a key once, locks a setting and revokes the key', async () => {
       const at = Date.now(), name = 'e2eScreenApp';
-      const settings = dashboard.getByRole('dialog', { name: 'Interface settings', exact: true });
+      const settings = dashboard.getByRole('dialog', { name: 'Settings', exact: true });
       // The page renders its buttons before React hydrates them, so the open click repeats until
       // the dialog shows.
       const open = async () => {
@@ -153,6 +153,7 @@ test('status hooks: one fixture add-on registers every hook and event', async ({
           if (!await settings.isVisible()) await dashboard.getByRole('button', { name: 'Interface settings', exact: true }).click();
           await expect(settings).toBeVisible();
         }).toPass();
+        await settings.getByRole('tab', { name: 'Apps', exact: true }).click();
         return settings.getByRole('region', { name: 'Apps' });
       };
       let apps = await open();

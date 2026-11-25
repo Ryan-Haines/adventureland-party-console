@@ -261,6 +261,7 @@ test.describe("offline observation persistence", () => {
     expect(before.attack).toBe(137);
     await page.goto(app.url);
     await page.getByRole('button',{name:'Interface settings',exact:true}).click();
+    await page.getByRole('tab',{name:'Characters',exact:true}).click();
     await page.getByRole('button',{name:'Inspect M',exact:true}).click();
     const portrait=page.getByRole('button',{name:'View M stats',exact:true});
     await expect.poll(()=>portrait.locator('img').evaluateAll(images=>images.some(image=>(image as HTMLImageElement).complete&&(image as HTMLImageElement).naturalWidth>0))).toBe(true);
@@ -283,6 +284,7 @@ test.describe("offline observation persistence", () => {
     expect(after.characterSnapshots.M).toEqual(before);
     await page.goto(app.url);
     await page.getByRole("button", { name: "Interface settings", exact: true }).click();
+    await page.getByRole("tab", { name: "Characters", exact: true }).click();
     await page.getByRole("button", { name: "Inspect M", exact: true }).click();
     await expect(page.getByText("Offline · saved observation", { exact: false })).toBeVisible();
     await expect.poll(()=>page.getByRole('button',{name:'View M stats',exact:true}).locator('img').evaluateAll(images=>images.some(image=>(image as HTMLImageElement).complete&&(image as HTMLImageElement).naturalWidth>0))).toBe(true);
@@ -311,7 +313,7 @@ test.describe('never-loaded account character inspection',()=>{
  test('owned offline profiles load lazily without starting a character or exposing private account data',async({page,app},info)=>{
   const before=await app.state();expect(before.characters.M).toBeUndefined();expect(before.characterSnapshots?.M).toBeUndefined();
   await page.goto(app.url);const foreign=await page.request.get(app.url+'/party-api/characters/Unowned/inspection');expect(foreign.status()).toBe(404);
-  await page.getByRole('button',{name:'Interface settings',exact:true}).click();await page.getByRole('button',{name:'Inspect M',exact:true}).click();await expect(page.getByRole('button',{name:'Inspect Coat +2',exact:true})).toBeVisible();await page.getByRole('button',{name:'View M stats',exact:true}).click();await expect(page.getByText('Derived stats unavailable for this saved profile.',{exact:true})).toBeVisible();await expect(page.getByText('HP: 321',{exact:true})).toBeVisible();
+  await page.getByRole('button',{name:'Interface settings',exact:true}).click();await page.getByRole('tab',{name:'Characters',exact:true}).click();await page.getByRole('button',{name:'Inspect M',exact:true}).click();await expect(page.getByRole('button',{name:'Inspect Coat +2',exact:true})).toBeVisible();await page.getByRole('button',{name:'View M stats',exact:true}).click();await expect(page.getByText('Derived stats unavailable for this saved profile.',{exact:true})).toBeVisible();await expect(page.getByText('HP: 321',{exact:true})).toBeVisible();
   const first=await(await page.request.get(app.url+'/party-api/characters/M/inspection')).json(),second=await(await page.request.get(app.url+'/party-api/characters/M/inspection')).json();expect(second).toEqual(first);expect(first.character.gold).toBe(124);expect(first.character.inspection.calculated).toBe(false);expect(JSON.stringify(first)).not.toMatch(/shells|session|billing|auth=/i);
   const after=await app.state();expect(after.characters.M).toBeUndefined();expect(after.activeSlots).toEqual(before.activeSlots);await info.attach('owned-offline-profile',{body:JSON.stringify({first,second,beforeSlots:before.activeSlots,afterSlots:after.activeSlots}),contentType:'application/json'});await info.attach('offline-profile-basic-stats',{body:await page.screenshot(),contentType:'image/png'});
  });

@@ -1,7 +1,6 @@
 'use client';
 import { AddonSlot } from '../../../runtime/hooks/dashboard/slots';
 import { useState } from 'react';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { bossEvents, eventKinds, validEventLimits, type EventLimits } from '../../../runtime/events/api';
 import {CipherControls,type CipherView} from './cipher-controls';
 import {defaultCipherSettings} from '../../../runtime/events/api.ts';
@@ -11,7 +10,8 @@ const button = 'rounded border border-slate-500 bg-slate-950 px-3 py-2 text-emer
 // Graveyard Rising's monsters: every type the events owner's kind row lets the party fight there, all of them
 // picked by default.
 const graveyardMonsters = eventKinds().find(kind => kind.name === 'graveyard')?.targets.only ?? [];
-export function EventLimitsDialog({ event, label, limits, inherited, onClose, onSave, onAnniversary, cipherView, onManual, cipherOwner }: {
+// One event's settings for one character, which open under the event's row in the Events tab.
+export function EventLimitsForm({ event, label, limits, inherited, onClose, onSave, onAnniversary, cipherView, onManual, cipherOwner }: {
   cipherOwner?:string;
   cipherView?:CipherView; onManual?:(mix:string[],limits:EventLimits)=>Promise<unknown>;
   event: string; label: string; limits: EventLimits; inherited: boolean;
@@ -30,9 +30,8 @@ export function EventLimitsDialog({ event, label, limits, inherited, onClose, on
   const {bossApproach:_saved,...rest}=limits;
   const value:EventLimits = { ...rest, deathLimit: deaths.trim() ? Number(deaths) : null, timeLimitMinutes: minutes.trim() ? Number(minutes) : null,
     ...(event==='graveyard'?{monsters}:{}),...(event==='witchcipher'?{cipher}:{}),...(bossEvents.includes(event)&&approach==='fight-adds'?{bossApproach:approach}:{}) };
-  return <Dialog open onOpenChange={open => { if (!open && !saving) onClose(); }}>
-    <DialogContent data-area="event-settings" className={`max-h-[90vh] overflow-y-auto border border-slate-500 bg-[#101c1a] text-emerald-50 [&_[data-slot=dialog-close]]:border [&_[data-slot=dialog-close]]:border-slate-500 [&_[data-slot=dialog-close]]:bg-slate-950 [&_[data-slot=dialog-close]]:text-emerald-50 [&_[data-slot=dialog-close]]:hover:bg-slate-800 ${event==='witchcipher'?'sm:max-w-2xl':''}`}>
-      <DialogHeader><DialogTitle>{label} settings</DialogTitle><DialogDescription className="text-slate-300">Blank means unlimited. Exceeding a limit skips the current event instance, then resumes farming or attends the next eligible event.</DialogDescription></DialogHeader>
+  return <section data-area="event-settings" aria-label={`${label} settings`} className="grid gap-3 rounded border border-slate-500 bg-[#101c1a] p-3 text-sm text-emerald-50">
+      <div><h4 className="font-semibold">{label} settings</h4><p className="text-slate-300">Blank means unlimited. Exceeding a limit skips the current event instance, then resumes farming or attends the next eligible event.</p></div>
       <label className="space-y-2">Death limit<input aria-label="Death limit" type="number" min="0" step="1" value={deaths} disabled={inherited || saving} onChange={e => setDeaths(e.target.value)} placeholder="Unlimited" className="block w-full rounded border border-slate-500 bg-slate-950 p-2 text-emerald-50" /></label>
       <p className="text-xs text-slate-300">Stop rejoining after more than this many deaths. 0 stops after the first death.</p>
       <label className="space-y-2">Time limit (mins)<input aria-label="Time limit (mins)" type="number" min="0.01" step="any" value={minutes} disabled={inherited || saving} onChange={e => setMinutes(e.target.value)} placeholder="Unlimited" className="block w-full rounded border border-slate-500 bg-slate-950 p-2 text-emerald-50" /></label>
@@ -58,6 +57,5 @@ export function EventLimitsDialog({ event, label, limits, inherited, onClose, on
         }}>Save event settings</button>}
       </div>
       <AddonSlot name="dialog-section" part="event-settings" subject={event} />
-    </DialogContent>
-  </Dialog>;
+  </section>;
 }

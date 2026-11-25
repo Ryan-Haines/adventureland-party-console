@@ -305,6 +305,10 @@ export const READS = {
   'targeting.monsterPriority': { side: 'both', type: 'the saved priority table', door: `${CHARACTER_DOOR}#MONSTER_PRIORITY` },
   'targeting.validPriorities': { side: 'both', type: 'boolean', door: `${CHARACTER_DOOR}#validMonsterPriorities` },
   'targeting.attackDamageType': { side: 'character', type: 'DamageType | undefined', door: `${CHARACTER_DOOR}#effectiveAttackDamageType` },
+  // The reflect lists a character with no saved entry plays, which the settings menu's Combat section shows.
+  'targeting.defaultReflectLists': { side: 'both', type: 'ReflectLists', door: `${CHARACTER_DOOR}#defaultLists` },
+  // The monsters each reflect list can hold in a game data monster table, which the Combat section's pickers offer.
+  'targeting.reflectChoices': { side: 'both', type: 'ReflectChoices', door: `${CHARACTER_DOOR}#reflectChoices` },
   'targeting.passingStatus': { side: 'coordinator', type: "the passing encounters' status", door: `${COORDINATOR_DOOR}#createPassingStatus` },
   'targeting.uniqueReferences': { side: 'coordinator', type: 'Target[]', door: `${COORDINATOR_DOOR}#uniqueReferences` },
   'targeting.targetIdentity': { side: 'both', type: 'string', door: `${COORDINATOR_DOOR}#targetIdentity` },

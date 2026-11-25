@@ -36,25 +36,25 @@ test('searchable menu saves separate enable, movement, priority and generator ch
  }finally{await act(async()=>view?.unmount());}
 });
 
-const farmingModule={exports:load('farming-mode-control.tsx',{'@/components/ui/*':new Proxy({},{get:(_,key)=>String(key)})})};
-// The two mode rows' core entries with their declared buttons (runtime/hooks/core.ts), which the farming card labels its pair from.
-const entries=slot=>require('../../runtime/hooks/core.ts').coreRegistrations.flatMap(r=>(r.slots??[]).filter(s=>s.slot===slot).map(s=>({mode:s.mode,addon:r.name,button:s.button})));
 
-test('closing nested monster details preserves both passive hunting and farming dialogs',async()=>{
- const props={combatEntries:entries('combat-mode'),targetEntries:entries('target-mode'),combatMode:'default',targetMode:'farming',effectiveMode:'default',blacklist:{},catalog:[{id:'bee',name:'Bee'}],onClearBlacklist:async()=>{},onSelect(){},onRareChange:async()=>{},
-  renderMonsterDetails:(id,close)=>React.createElement('Dialog',{open:true,'data-monster':id,onOpenChange:open=>{if(!open)close()}},React.createElement('button',{'aria-label':'Close monster',onClick:close}))};
+const {farmingSection,farmingModel}=require('./helpers/farming-section.cjs');
+const FarmingSettingsSection=farmingSection({'@/components/ui/*':new Proxy({},{get:(_,key)=>String(key)})});
+test('closing nested monster details preserves both passive hunting and the settings menu',async()=>{
+ // The outer Dialog stands for the settings menu, which draws the Farming section in its body.
+ const model=farmingModel({},{monsters:[{id:'bee',name:'Bee'}]});
  let view;try{
-  await act(async()=>view=create(React.createElement(function ControlledFarming(){const [settingsOpen,setSettingsOpen]=React.useState(false);return React.createElement(farmingModule.exports.FarmingModeControl,{...props,settingsOpen,onSettingsOpenChange:setSettingsOpen});})));
-  await act(async()=>view.root.findAllByType('Button').find(n=>n.props['aria-label']==='Farming settings').props.onClick());
+  await act(async()=>view=create(React.createElement('Dialog',{open:true},React.createElement(FarmingSettingsSection,{model,name:'R'}))));
   await act(async()=>view.root.findAllByType('Button').find(n=>text(n)==='Open passive hunting menu').props.onClick());
   const search=()=>view.root.findByProps({'aria-label':'Filter passive hunting monsters'});
   await act(async()=>search().props.onChange({target:{value:'bee'}}));
-  for(const dismiss of ['x','escape']) {
+  // A second inspect opens and closes the same way.
+  for(let round=0;round<2;round++) {
    await act(async()=>view.root.findAllByType('button').find(n=>n.props['aria-label']==='Inspect Bee').props.onClick());
-   const dialogs=view.root.findAllByType('Dialog').filter(dialog=>dialog.props.open);assert.equal(dialogs.length,3);assert.ok(dialogs.every(dialog=>dialog.props.open));
+   const dialogs=view.root.findAllByType('Dialog').filter(dialog=>dialog.props.open);assert.equal(dialogs.length,3);
    assert.ok(dialogs[1].findAllByType('Dialog').includes(dialogs[2]),'monster dialog must be nested inside passive hunting');
-   await act(async()=>dismiss==='x'?view.root.findByProps({'aria-label':'Close monster'}).props.onClick():dialogs[2].props.onOpenChange(false));
-   const remaining=view.root.findAllByType('Dialog').filter(dialog=>dialog.props.open);assert.equal(remaining.length,2);assert.ok(remaining.every(dialog=>dialog.props.open));assert.equal(search().props.value,'bee');
+   await act(async()=>dialogs[2].props.onOpenChange(false));
+   const remaining=view.root.findAllByType('Dialog').filter(dialog=>dialog.props.open);assert.equal(remaining.length,2);assert.equal(search().props.value,'bee');
   }
+  assert.deepEqual(model.calls.filter(([name])=>name==='openSettings'),[],'closing the monster details leaves the settings menu open');
  }finally{await act(async()=>view?.unmount());}
 });

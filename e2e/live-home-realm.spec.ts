@@ -63,10 +63,11 @@ test('home realm change confirms every active character including merchant', asy
     // SSR buttons can appear before the React event handlers hydrate. Repeating
     // this idempotent open action verifies the dialog rather than losing a click.
     await expect(async () => {
-      const settings = page.getByRole('dialog', {name:'Interface settings',exact:true});
+      const settings = page.getByRole('dialog', { name: 'Settings', exact: true });
       if (!await settings.isVisible()) await page.getByRole('button', {name:'Interface settings',exact:true}).click();
       await expect(settings).toBeVisible({timeout:1000});
     }).toPass({timeout:20_000});
+    await page.getByRole('dialog', { name: 'Settings', exact: true }).getByRole('tab', { name: 'Realm', exact: true }).click();
     const destination=page.getByRole('option', {name:/US I \(/});
     const picker=page.getByLabel('Change realm', {exact:true});
     await expect(async()=>{

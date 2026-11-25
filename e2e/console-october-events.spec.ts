@@ -7,13 +7,13 @@ test('October event settings persist monster exclusions and cipher policy', asyn
   await expect(page.getByText('Headless Horseman —',{exact:false})).toBeVisible();
   await expect(page.getByText('Trick or Treat —',{exact:false})).toBeVisible();
   await page.getByRole('button',{name:'Graveyard Rising settings',exact:true}).click();
-  let dialog=page.getByRole('dialog',{name:'Graveyard Rising settings',exact:true});
+  let dialog=page.getByRole('region',{name:'Graveyard Rising settings',exact:true});
   for(const name of ['Zombie','Ghoul','Gargoyle'])await expect(dialog.getByRole('checkbox',{name,exact:true})).toBeChecked();
   await dialog.getByRole('checkbox',{name:'Gargoyle',exact:true}).uncheck();
   await dialog.getByRole('button',{name:'Save event settings'}).click();
   await expect.poll(async()=>(await app.state()).eventLimitsByCharacter?.W?.graveyard?.monsters).toEqual(['zombie','ghoul']);
   await page.getByRole('button',{name:"Witch's Cipher settings",exact:true}).click();
-  dialog=page.getByRole('dialog',{name:"Witch's Cipher settings",exact:true});
+  dialog=page.getByRole('region',{name:"Witch's Cipher settings",exact:true});
   await expect(dialog.getByRole('spinbutton',{name:'Gather ingredients (minutes)',exact:true})).toHaveCount(0);
   await expect(dialog.getByRole('region',{name:'Shared realm board',exact:true})).toBeVisible();
   await dialog.getByRole('spinbutton',{name:'Minimum clues',exact:true}).fill('4');

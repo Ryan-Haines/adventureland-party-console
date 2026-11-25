@@ -82,7 +82,8 @@ test.describe('the character card and the top bar', () => {
     // name and the card's activity line.
     await page.evaluate(() => window.scrollTo(0, 0));
     await header.getByRole('button', { name: 'Interface settings', exact: true }).click();
-    const settings = page.getByRole('dialog', { name: 'Interface settings' });
+    const settings = page.getByRole('dialog', { name: 'Settings', exact: true });
+    await settings.getByRole('tab', { name: 'Display', exact: true }).click();
     await settings.getByRole('checkbox', { name: 'Pin top bar' }).check();
     await page.keyboard.press('Escape');
     await expect(settings).toBeHidden();
@@ -112,6 +113,7 @@ test.describe('the character card and the top bar', () => {
     await page.reload();
     await page.evaluate(() => window.scrollTo(0, 0));
     await header.getByRole('button', { name: 'Interface settings', exact: true }).click();
+    await settings.getByRole('tab', { name: 'Display', exact: true }).click();
     await expect(settings.getByRole('checkbox', { name: 'Pin top bar' })).toBeChecked();
     await settings.getByRole('checkbox', { name: 'Pin top bar' }).uncheck();
     await page.keyboard.press('Escape');
@@ -154,7 +156,8 @@ test('the mode rows: the combat modes in row 1 and the target modes in row 2, ea
 
 // A settings control stays locked until the dashboard's
 // first config read; a select's keyboard typeahead changes nothing; a write refused as
-// out of date shows the console's notice. The card's combat lines are the settings control here.
+// out of date shows the console's notice. W's Combat section in the settings menu is the settings
+// control here; the header's gear opens the menu while the card's own controls are still locked.
 test('the settings controls: locked before the config read, no typeahead writes, the out-of-date notice', async ({ page, app }) => {
   const writes: string[] = [];
   page.on('request', request => { if (request.method() === 'POST' && request.url().endsWith('/party-api/settings')) writes.push(request.postData() || ''); });
@@ -163,8 +166,11 @@ test('the settings controls: locked before the config read, no typeahead writes,
   const held = new Promise<void>(resolve => { release = resolve; });
   await page.route(/\/party-api\/state\?.*section=config/, async route => { await held; await route.continue(); });
   await page.goto(app.url);
-  const card = page.locator('article').filter({ has: page.getByRole('heading', { name: 'W', exact: true }) });
-  const heal = card.getByLabel('Heal first below (% HP) for W', { exact: true });
+  await page.getByRole('button', { name: 'Interface settings', exact: true }).click();
+  const menu = page.getByRole('dialog', { name: 'Settings', exact: true });
+  await menu.getByRole('tab', { name: 'W', exact: true }).click();
+  await menu.getByRole('tab', { name: 'Combat', exact: true }).click();
+  const heal = menu.getByLabel('Heal first below (% HP) for W', { exact: true });
   await expect(heal).toBeDisabled();
   expect(writes).toEqual([]);
   release();
@@ -176,7 +182,7 @@ test('the settings controls: locked before the config read, no typeahead writes,
   expect(other.status()).toBe(200);
   await heal.fill('55');
   await heal.press('Enter');
-  await expect(card.getByRole('alert')).toContainText('was not saved: the page was out of date');
+  await expect(menu.getByRole('alert')).toContainText('was not saved: the page was out of date');
   const saved = (await (await page.request.get(app.url + '/party-api/settings')).json()).settings.find((entry: any) => entry.field === 'healFirstBelow')?.value?.W;
   expect(saved).toBe(70);
 });

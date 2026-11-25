@@ -30,7 +30,8 @@ test('Trick or Treat shows character allowance and honest shared account counts'
   };
   let row=await open('W');
   await expect(row).toContainText('Character: 0/7');await expect(row).toContainText('Account: up to 5/14');
-  await page.locator('article').filter({has:page.getByRole('heading',{name:'W',exact:true})}).getByRole('button',{name:/^Events \(/}).click();
+  // Escape closes the settings menu, so the next card's Events button opens it at that card.
+  await page.keyboard.press('Escape');
   await expect(row).toHaveCount(0);row=await open('P');
   await expect(row).toContainText('Character: 5/7');await expect(row).toContainText('Account: up to 5/14');
   await row.scrollIntoViewIfNeeded();

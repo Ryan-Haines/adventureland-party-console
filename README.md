@@ -50,7 +50,7 @@ Node 26.12.1 is the minimum security baseline for CVE-2026-111497 (the Brotli de
    show_json(parent.user_id + "-" + parent.user_auth)
    ```
 
-4. Open [http://localhost:3010](http://localhost:3010), then **Interface settings > Load setup**. Your account is already connected through the launcher. Setup asks where and how you play Adventure Land, then shows you the right steps to link it. Some setups include a one-time security certificate installation on the computer running the game. For headless play, you can skip linking and continue to the dashboard.
+4. Open [http://localhost:3010](http://localhost:3010), then the header's **Interface settings** gear, **Account > Hosting > Load setup**. Your account is already connected through the launcher. Setup asks where and how you play Adventure Land, then shows you the right steps to link it. Some setups include a one-time security certificate installation on the computer running the game. For headless play, you can skip linking and continue to the dashboard.
 5. Select your characters in the dashboard and play!
 6. Optional: [set up ALData](#optional-aldata-setup) to publish market classifieds.
 

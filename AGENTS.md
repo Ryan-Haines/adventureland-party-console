@@ -6,6 +6,7 @@
 - Keep dashboard controls on dark, opaque backgrounds with explicit high-contrast text and borders.
 - Do not rely on the default outline-button colors; they can render as light gray on white in this dashboard.
 - For outline, icon, cancel, and secondary-action buttons, set background, text, border, and hover colors explicitly and verify readability against the surrounding panel.
+- A dashboard setting belongs in a section of the one settings menu ([the settings menu](docs/settings-menu.md)); a button that opens it names its tab and section through `openSettings`. Never add a separate settings dialog.
 
 # Coordinator development
 

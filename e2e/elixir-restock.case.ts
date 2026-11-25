@@ -4,27 +4,30 @@ test('elixir restock defaults, searchable type and opt-ins persist independently
   await page.goto('/');
   const card=page.locator('article').filter({has:page.getByRole('heading',{name:'W',exact:true})});
   await card.getByRole('button',{name:'Merchant restock',exact:true}).click();
-  await expect(card.getByLabel('Elixir min')).toHaveValue('1');
-  await expect(card.getByLabel('Elixir max')).toHaveValue('2');
-  await expect(card.getByRole('checkbox',{name:'Automatically consume elixirs'})).toBeChecked();
-  await expect(card.getByRole('checkbox',{name:'Buy or craft elixir when out of stock'})).not.toBeChecked();
-  await card.getByRole('button',{name:'Select elixir type',exact:true}).click();
+  // The restock line opens the settings menu at W's Restock section.
+  const menu=page.getByRole('dialog',{name:'Settings',exact:true});
+  await expect(menu.getByLabel('Elixir min')).toHaveValue('1');
+  await expect(menu.getByLabel('Elixir max')).toHaveValue('2');
+  await expect(menu.getByRole('checkbox',{name:'Automatically consume elixirs'})).toBeChecked();
+  await expect(menu.getByRole('checkbox',{name:'Buy or craft elixir when out of stock'})).not.toBeChecked();
+  await menu.getByRole('button',{name:'Select elixir type',exact:true}).click();
   await expect(page.getByRole('combobox',{name:'Select elixir type search'})).toBeVisible();
   await page.getByRole('combobox',{name:'Select elixir type search'}).fill('luck');
   await page.getByRole('option',{name:/Liquid Luck/}).click();
-  await card.getByLabel('Elixir min').fill('3');
-  await card.getByLabel('Elixir max').fill('4');
-  await card.getByRole('checkbox',{name:'Buy or craft elixir when out of stock'}).check();
-  await card.getByRole('button',{name:'Save restock'}).click();
+  await menu.getByLabel('Elixir min').fill('3');
+  await menu.getByLabel('Elixir max').fill('4');
+  await menu.getByRole('checkbox',{name:'Buy or craft elixir when out of stock'}).check();
+  await menu.getByRole('button',{name:'Save restock'}).click();
   await expect.poll(async()=>(await app.state()).restockPolicies.W.elixir).toEqual({item:'elixirluck',min:3,max:4,autoConsume:true,autoAcquire:true});
   expect((await app.state()).restockPolicies.W.hp).toEqual({item:'hpot1',min:5,max:20});
   await app.restartCoordinator();
   await page.reload();
-  await expect(card.getByRole('button',{name:'Select elixir type'})).toContainText('Liquid Luck');
-  await expect(card.getByLabel('Elixir min')).toHaveValue('3');
+  await card.getByRole('button',{name:'Merchant restock',exact:true}).click();
+  await expect(menu.getByRole('button',{name:'Select elixir type'})).toContainText('Liquid Luck');
+  await expect(menu.getByLabel('Elixir min')).toHaveValue('3');
   const invalid=await page.request.post(app.url+'/party-api/restock',{data:{character:'W',elixir:{item:'sword',min:1,max:2}},headers:{Origin:app.url}});
   expect(invalid.status()).toBe(400);
-  await info.attach('elixir-restock-controls',{body:await card.screenshot(),contentType:'image/png'});
+  await info.attach('elixir-restock-controls',{body:await menu.screenshot(),contentType:'image/png'});
 });
 
 test('gold history defaults to confirmed consumable costs without double charging purchases',async({page,app},info)=>{

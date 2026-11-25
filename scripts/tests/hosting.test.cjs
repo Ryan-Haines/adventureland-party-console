@@ -36,7 +36,7 @@ test('ALData preparation opens a mail draft and makes no paid send request',asyn
  const {ALDATA_AUTH_MAIL}=require('../../runtime/items/api.ts');
  const context={client:{},ALDATA_AUTH_MAIL,PartyActionError:class extends Error{},
   performAction:async(client,url,body,options)=>{calls.push([url,body,options]);return{key:'unique-key'};},
-  setALDataBusy(){},setActionError(error){assert.equal(error,null)},setMailDraft:draft=>drafts.push(draft),setSettingsOpen(){},setMailOpen:open=>opened.push(open)};
+  setALDataBusy(){},setActionError(error){assert.equal(error,null)},setMailDraft:draft=>drafts.push(draft),openSettings(){},setMailOpen:open=>opened.push(open)};
  vm.createContext(context);vm.runInContext(ts.transpileModule(source,{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText,context);
  await context.aldataAction('send');
  assert.deepEqual(JSON.parse(JSON.stringify(calls)),[['/aldata/key',null,{method:'GET'}]]);assert.deepEqual(JSON.parse(JSON.stringify(drafts)),[{recipient:'earthiverse',subject:'aldata_auth',message:'unique-key'}]);

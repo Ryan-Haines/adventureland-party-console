@@ -39,7 +39,6 @@ import {
 } from '@/components/ui/select';
 import { ChevronDown } from 'lucide-react';
 import { abbreviatedGold } from './abbreviated-gold';
-import { RoutinePrioritiesDialog } from './routine-priorities-dialog';
 import { StandPriceButton } from './stand-price-button';
 import type { PartyConsoleModel } from './use-party-console';
 
@@ -47,8 +46,7 @@ import { usePanelModel } from './use-panel-model';
 // The gold an NPC pays for one copy: the items owner's itemValue, rounded as the game pays it.
 const npcValue = (item: Item, meta: ItemMeta | null | undefined) => Math.round(itemValue(item, meta ?? undefined) ?? 0);
 export function PartyManagementPanels({ model }: { model: PartyConsoleModel }) {
-  return model.routinesOpen ||
-    model.donationOpen ||
+  return model.donationOpen ||
     model.giveawayOpen ||
     !!model.standItem ||
     !!model.npcSaleItem ||
@@ -92,9 +90,6 @@ function PartyManagementPanelsConnected({ base }: { base: PartyConsoleModel }) {
     npcSaleBusy,
     setNpcSaleItem,
     confirmNpcSale,
-    routinesOpen,
-    setRoutinesOpen,
-    saveRoutinePriorities,
   } = model;
   // The stand dialog's price choices: each price is computed once, for its label and its press.
   const defaultPrice = Number(standItem?.defaultPrice), inputPrice = Number(standItem?.price);
@@ -572,18 +567,6 @@ function PartyManagementPanelsConnected({ base }: { base: PartyConsoleModel }) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-      <RoutinePrioritiesDialog
-        open={routinesOpen}
-        onOpenChange={setRoutinesOpen}
-        priorities={state.merchantRoutinePriorities || {}}
-        kinds={state.merchantAddonKinds}
-        enabled={{
-          ...state.merchantAutomations,
-          fishing: state.gatheringModes?.includes('fishing') === true,
-          mining: state.gatheringModes?.includes('mining') === true,
-        }}
-        onSave={saveRoutinePriorities}
-      />
     </>
   );
 }

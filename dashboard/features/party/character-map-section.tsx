@@ -27,7 +27,9 @@ import { caveMap } from '../../../runtime/lifecycle/api.ts';
 // strip's dock element. Both rows share one open state (map-dock-state.ts),
 // and the body shows in only one of them. The strip closes it on Escape
 // through the same toggle button.
-export const CharacterMapSection = memo(function CharacterMapSection({ char: base, dock }: { char: Char; dock?: HTMLElement | null }) {
+// `statuses` are the card's status icons that do not fit right of the XP bar (status-icon-row.tsx);
+// they fill the location row's empty right side.
+export const CharacterMapSection = memo(function CharacterMapSection({ char: base, dock, statuses }: { char: Char; dock?: HTMLElement | null; statuses?: ReactNode }) {
   const docked = dock !== undefined;
   const portal = (body: ReactNode) => dock ? createPortal(body, dock) : body;
   const position = useCharacterData(base.name, 'position');
@@ -86,6 +88,7 @@ export const CharacterMapSection = memo(function CharacterMapSection({ char: bas
         <span className={docked ? "truncate" : undefined}>
           {mapLabel} [{Math.round(char.x)}, {Math.round(char.y)}]
         </span>
+        {statuses ? <span data-status-row className="ml-2 flex min-w-0 flex-1 flex-wrap justify-end gap-1">{statuses}</span> : null}
       </div>
       {open && here ? portal(
         <div className={docked ? "relative h-full overflow-hidden border-b border-emerald-800/80 bg-[#07110f]" : "relative mt-2 aspect-[4/3] overflow-hidden rounded-md border border-emerald-800/80 bg-[#07110f]"}>
@@ -146,4 +149,4 @@ export const CharacterMapSection = memo(function CharacterMapSection({ char: bas
       </Dialog>
     </div>
   );
-}, (previous, next) => previous.char.name === next.char.name && previous.dock === next.dock);
+}, (previous, next) => previous.char.name === next.char.name && previous.dock === next.dock && previous.statuses === next.statuses);

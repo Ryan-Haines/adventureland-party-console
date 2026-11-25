@@ -5,7 +5,7 @@ import { useEffect, useLayoutEffect, useRef } from 'react';
 export interface DragPosition { x: number; y: number; width: number; offsetX: number; offsetY: number }
 
 // The drag-to-reorder list of the event selection (event-selection-control.tsx) and the merchant
-// routines (routine-priorities-dialog.tsx). Each row carries `data-<attribute>` with its id. After a
+// routines (routine-priorities-section.tsx). Each row carries `data-<attribute>` with its id. After a
 // move the rows slide from the places `remember` recorded, unless the player asks for reduced
 // motion; while a row is dragged the list scrolls when the preview sits within 40 px of its top or
 // bottom; `rowAt` finds the row under the pointer. `layout` is the list's order, so each new order

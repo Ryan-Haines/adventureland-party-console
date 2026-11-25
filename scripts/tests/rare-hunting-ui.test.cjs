@@ -8,7 +8,7 @@ const tags=new Proxy({},{get:(_,key)=>String(key)});
 const stubs={'@/components/ui/*':tags,'lucide-react':tags,'./sprite-crop':tags,'./sprite':tags,'./farming-area-preview':tags,
   './monster-spawns':tags,'./passive-hunting-menu':tags};
 const {FarmingAreaPicker}=load('farming-area-picker.tsx',stubs),{MonsterFocusPicker}=load('monster-focus-picker.tsx',stubs);
-const {FarmingModeControl}=load('farming-mode-control.tsx',stubs),{HuntSettingsControl,RelocationControl}=load('hunt-settings-control.tsx',stubs);
+const {HuntSettingsControl,RelocationControl}=load('hunt-settings-control.tsx',stubs);
 const text=n=>typeof n==='string'?n:(n.children||[]).map(text).join('');
 async function mount(Component,props){
   let view;await act(async()=>{view=create(React.createElement(Component,props));});
@@ -58,16 +58,16 @@ test('Fairy stays searchable but only exposes an explanation, never a focus togg
     assert.ok(view.root().findAll(n=>n.props.role==='status').some(n=>text(n).includes('Passively hunt fairy')));
   } finally { await view.unmount(); }
 });
+const {farmingSection,farmingModel}=require('./helpers/farming-section.cjs');
+const FarmingSettingsSection=farmingSection(stubs);
 test('passive menu forwards independent rule patches without replacing other settings',async()=>{
-  const writes=[];
-  const view=await mount(FarmingModeControl,{policy:'auto',effectiveMode:'default',blacklist:{},catalog:[],passiveRareHunts:{tinyp:false,phoenix:true},
-    combatEntries:[],targetEntries:[],combatMode:'default',targetMode:'default',settingsOpen:true,onSettingsOpenChange(){},onSelect(){},
-    onClearBlacklist:async()=>{},onRareChange:async patch=>writes.push(patch)});
+  const model=farmingModel({passiveRareHunts:{tinyp:false,phoenix:true}});
+  const view=await mount(FarmingSettingsSection,{model,name:'R'});
   try {
     const menu=view.root().findByType('PassiveHuntingMenu');
     assert.equal(menu.props.settings.rules.phoenix.enabled,true);
     const patch={rules:{tinyp:{enabled:true}}};await act(async()=>menu.props.onSave(patch));
-    assert.deepEqual(writes,[patch]);assert.equal(view.root().findByType('PassiveHuntingMenu').props.settings.rules.phoenix.enabled,true);
+    assert.deepEqual(model.calls,[['post','/rare-hunting',patch]]);assert.equal(view.root().findByType('PassiveHuntingMenu').props.settings.rules.phoenix.enabled,true);
   } finally { await view.unmount(); }
 });
 

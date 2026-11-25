@@ -10,9 +10,10 @@ const leaves=['character-session-controls','event-selection-control','monster-de
  'xp-meter','monster-route-button','connected-combat-log','upgrade-offering-controls','shared-rule-conflicts',
  'inventory-panel','lucky-slot-tracker','deconstruction-confirmation','map-canvas','sprite-crop'];
 // The counted components by file: the export the replay wraps and the count it adds to.
-// active-statuses.tsx holds the status row at older refs, which the benchmark compares against.
-const COUNTED={'connected-character-card.tsx':['ConnectedCharacterCard','card'],'connected-inventory.tsx':['ConnectedInventory','inventory'],
- 'character-map-section.tsx':['CharacterMapSection','map'],'active-statuses.tsx':['ActiveStatuses','status'],'status-icon-row.tsx':['StatusIconRow','status']};
+// active-statuses.tsx holds the status row at older refs, which the benchmark compares against, and
+// status-icon-row.tsx exports StatusIconRow at refs before its icons split into StatusCells lines.
+const COUNTED={'connected-character-card.tsx':[['ConnectedCharacterCard'],'card'],'connected-inventory.tsx':[['ConnectedInventory'],'inventory'],
+ 'character-map-section.tsx':[['CharacterMapSection'],'map'],'active-statuses.tsx':[['ActiveStatuses'],'status'],'status-icon-row.tsx':[['StatusCells','StatusIconRow'],'status']};
 const MEMO=Symbol.for('react.memo');
 // The suffixes esbuild tries on a bare relative import, in its order.
 const REF_EXTENSIONS=['','.tsx','.ts','.jsx','.js','.cjs','.mjs','/index.tsx','/index.ts','/index.js'];
@@ -97,9 +98,12 @@ async function replay({ref,steps=20}={}){
    });
    b.onResolve({filter:/^replay-real:/},args=>({path:args.path.slice('replay-real:'.length)}));
    b.onLoad({filter:/.*/,namespace:'replay-count'},args=>{
-    const file=path.basename(args.path),[name,key]=COUNTED[file],real=JSON.stringify('replay-real:'+args.path);
+    const file=path.basename(args.path),[names,key]=COUNTED[file],real=JSON.stringify('replay-real:'+args.path);
+    // The file's ref exports one of the names; the others stay undefined, and none at all fails.
+    const present=names.map(name=>`real.${name}`).join('||');
     return {contents:`import * as real from ${real};import {counted} from 'replay:count';export * from ${real};`+
-     `export const ${name}=counted(${JSON.stringify(key)},real.${name},${JSON.stringify(file)},${JSON.stringify(name)});`,resolveDir:root,loader:'js'};
+     `if(!(${present}))counted(${JSON.stringify(key)},undefined,${JSON.stringify(file)},${JSON.stringify(names.join(' or '))});`+
+     names.map(name=>`export const ${name}=real.${name}===undefined?undefined:counted(${JSON.stringify(key)},real.${name},${JSON.stringify(file)},${JSON.stringify(name)});`).join(''),resolveDir:root,loader:'js'};
    });
    b.onLoad({filter:/\.[cm]?[jt]sx?$/},args=>{
     if(!ref)return;
@@ -128,9 +132,8 @@ async function replay({ref,steps=20}={}){
  global.IS_REACT_ACT_ENVIRONMENT=true;
  const characters={A:{name:'A',ctype:'warrior',level:1,gold:1,hp:100,max_hp:100,mp:100,max_mp:100,map:'main',x:0,y:0},M:{name:'M',ctype:'merchant',level:1,gold:1,hp:100,max_hp:100,mp:100,max_mp:100,map:'main',x:0,y:0}};
  const state={characters,marked:{},merchantCharacter:'M',activeSlots:[],monsterFocus:['goo']};
- let actionValue='first',called;
  const fields={state,chars:Object.values(characters),standItem:null,monsters:[],monsterAchievements:{},selectedFocus:state.monsterFocus,
-   threshold:'100',itemCollectionThreshold:'2',thresholdError:null,itemCollectionThresholdError:null,save:()=>{called=actionValue;}};
+   threshold:'100',itemCollectionThreshold:'2',thresholdError:null,itemCollectionThresholdError:null};
  const model=cardModel(shape,fields);
  const updateVitals=(name,value)=>writeVitals?writeVitals(client,name,value):client.setQueryData(characterKey(name,'vitals'),value);
  const cacheMs=[];
@@ -154,19 +157,17 @@ async function replay({ref,steps=20}={}){
   for(let i=1;i<=steps;i++)await act(async()=>{updateVitals('A',{...characters.A,x:i,conditions:[]});await flush();});
   const movement={renders:delta(before),elapsedMs:performance.now()-start};
   before={...counts};
-  for(let i=0;i<steps;i++)await act(async()=>{tree.update(render(cardModel(shape,{...fields,donationAmount:String(i),save:()=>{called='unrelated-latest';}})));});
+  for(let i=0;i<steps;i++)await act(async()=>{tree.update(render(cardModel(shape,{...fields,donationAmount:String(i)})));});
   const unrelated=delta(before);
-  props.MerchantCardControls.collectionSettings.onThresholdSave();const unrelatedCalled=called;
   before={...counts};
-  const next=cardModel(shape,{...fields,thresholdError:'Invalid threshold',save:()=>{called='latest';}});
+  const next=cardModel(shape,{...fields,thresholdError:'Invalid threshold'});
   await act(async()=>tree.update(render(next)));
-  const errors=delta(before),error=props.MerchantCardControls.collectionSettings.thresholdError;
-  props.MerchantCardControls.collectionSettings.onThresholdSave();
+  const errors=delta(before);
   before={...counts};await act(async()=>{updateVitals('A',{...characters.A,x:steps,hp:50,conditions:[]});await flush();});
   const hp=delta(before);
   before={...counts};await act(async()=>{client.setQueryData(characterKey('A','inventory'),{items:[],slots:{},inventorySize:1});await flush();});
   const inventory=delta(before);
-  return {cacheMs,movement,unrelated,unrelatedCalled,errors,error,called,hp,inventory};
+  return {cacheMs,movement,unrelated,errors,hp,inventory};
  }finally{if(tree)await act(async()=>tree.unmount());client.clear();global.document=oldDocument;global.window=oldWindow;}
 }
 module.exports={replay,modelShape,cardModel};

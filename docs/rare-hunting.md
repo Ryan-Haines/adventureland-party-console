@@ -1,6 +1,6 @@
 # Passive rare hunting and Phoenix patrol
 
-Farming settings opens a searchable passive-hunting catalog. Each monster has an
+A character's Farming section of the settings menu opens a searchable passive-hunting catalog. Each monster has an
 independent enable checkbox, Keep moving to destination option, and priority (0–1000,
 higher first). New selections default to keeping movement off and priority 100;
 Fairy retains priority 101. Existing selections migrate without changing behavior.

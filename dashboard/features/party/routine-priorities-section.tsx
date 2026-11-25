@@ -4,30 +4,20 @@ import type { AddonKindRow } from '../../../runtime/merchant-jobs/api';
 import { createPortal } from 'react-dom';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
 import { GripVertical } from 'lucide-react';
 import { Input } from '@/components/ui/input';
-import { useEffect, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import { useReorderList, type DragPosition } from '@/lib/use-reorder-list';
 import { automaticRoutine, defaultMerchantRoutinePriorities, merchantRoutinePriority, movedRoutinePriorities, ROUTINE_DIALOG_LABELS, typedRoutinePriority } from '../../../runtime/merchant-jobs/api.ts';
 
-export function RoutinePrioritiesDialog({
-  open,
-  onOpenChange,
+// The merchant's Routines section in the settings menu, which was the Routine priorities dialog.
+// The card's "Routines" button keeps its place and look and opens the menu here.
+export function RoutinePrioritiesSection({
   priorities,
   enabled,
   kinds = [],
   onSave,
 }: {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
   priorities: Record<string, number>;
   enabled: Record<string, boolean>;
   kinds?: readonly AddonKindRow[];
@@ -45,18 +35,9 @@ export function RoutinePrioritiesDialog({
   const { listRef, remember, rowAt } = useReorderList('routine', dragged, dragPosition, draft);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
-  const wasOpen = useRef(false);
-  // Polling replaces `priorities` with a fresh object every second. Seed the
-  // form only as the dialog opens; never overwrite a draft while it is open.
-  useEffect(() => {
-    if (open && !wasOpen.current) {
-      setError('');
-      setDragged(null);
-      setDraft(priorities);
-      setEnabledDraft(enabled);
-    }
-    wasOpen.current = open;
-  }, [open, priorities, enabled]);
+  // Polling replaces `priorities` with a fresh object every second, so the form seeds only when
+  // the section opens and Cancel seeds it again; a poll never overwrites the draft.
+  const reset = () => { setError(''); setDragged(null); setDraft(priorities); setEnabledDraft(enabled); };
   // the merchant jobs owner's merchantRoutinePriority orders the list: a routine with no saved value sorts at its fallback
   // of 50, and a saved one is clamped to the merchant jobs owner's range.
   const sortedRoutines = Object.entries(ROUTINE_DIALOG_LABELS).sort(
@@ -77,15 +58,14 @@ export function RoutinePrioritiesDialog({
     setDraft(next);
   };
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent data-area="routines" className="flex max-h-[85vh] flex-col overflow-hidden border-amber-800 bg-[#091614] text-emerald-50 sm:max-w-2xl">
-        <DialogHeader>
-          <DialogTitle>Merchant routines · {Object.keys(ROUTINE_DIALOG_LABELS).filter(key => !disabledRoutine(key) && (!(automaticRoutine(key) || key === 'fishing' || key === 'mining') || enabledDraft[key] !== false)).length}/{Object.keys(ROUTINE_DIALOG_LABELS).length} enabled</DialogTitle>
-          <DialogDescription>
+      <section data-area="routines" className="space-y-4">
+        <div>
+          <h3 className="font-semibold">Merchant routines · {Object.keys(ROUTINE_DIALOG_LABELS).filter(key => !disabledRoutine(key) && (!(automaticRoutine(key) || key === 'fishing' || key === 'mining') || enabledDraft[key] !== false)).length}/{Object.keys(ROUTINE_DIALOG_LABELS).length} enabled</h3>
+          <p className="text-slate-300">
             Higher priorities run first. Equal priorities run oldest first.
             Enabled controls only automatic scheduling.
-          </DialogDescription>
-        </DialogHeader>
+          </p>
+        </div>
         <OverlaidBy fields={["merchantRoutinePriorities"]} />
         <div ref={listRef}
                 onPointerMove={event => {
@@ -100,7 +80,7 @@ export function RoutinePrioritiesDialog({
                 }}
                 onPointerUp={() => {setDragged(null);setDragPosition(null);dragOriginal.current=null;}}
                 onPointerCancel={() => {if(dragOriginal.current)setDraft(dragOriginal.current);setDragged(null);setDragPosition(null);}}
- className="min-h-0 flex-1 space-y-2 overflow-y-auto">
+ className="space-y-2">
           {sortedRoutines.map(([key, label]) => (
             <div
               key={key}
@@ -180,12 +160,12 @@ export function RoutinePrioritiesDialog({
             {error}
           </p>
         )}
-        <DialogFooter className="shrink-0 border-t border-emerald-900 bg-[#091614] pt-3">
+        <div className="flex justify-end gap-2 border-t border-emerald-900 pt-3">
           <Button
             disabled={saving}
             className="border-slate-600 bg-black text-slate-100 hover:bg-slate-800 hover:text-white"
             variant="outline"
-            onClick={() => onOpenChange(false)}
+            onClick={reset}
           >
             Cancel
           </Button>
@@ -216,8 +196,7 @@ export function RoutinePrioritiesDialog({
           >
             Save routines
           </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        </div>
+      </section>
   );
 }

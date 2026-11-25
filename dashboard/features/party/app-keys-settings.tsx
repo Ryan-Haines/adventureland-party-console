@@ -1,8 +1,8 @@
 "use client";
-// Interface settings "Apps": the app keys screen and the per-setting app lock. The player issues a
-// key per app with the scopes it may use and its "Counts as my own commands" switch, sees each key's
-// last use and revokes it. The console shows a new key once. Each setting has its lock against
-// app changes, saved through the settings owner's writer.
+// The settings menu's Account > Apps section: the app keys screen and the per-setting app lock.
+// The player issues a key per app with the scopes it may use and its "Counts as my own commands"
+// switch, sees each key's last use and revokes it. The console shows a new key once. Each setting
+// has its lock against app changes, saved through the settings owner's writer.
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { AppKey, AppScope } from "../../../runtime/status/api.ts";

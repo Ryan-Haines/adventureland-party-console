@@ -65,7 +65,7 @@ export function PartyHeader({ model, onLogs, metricsActive, onMetrics, recordIco
     setStandOpen,
     setMarketOpen,
     setBankOpen,
-    setSettingsOpen,
+    openSettings,
     setRealmDestination,
     aldataKey,
     aldataAction,
@@ -82,7 +82,7 @@ export function PartyHeader({ model, onLogs, metricsActive, onMetrics, recordIco
               size="icon"
               variant="outline"
               onClick={() => {
-                setSettingsOpen(true);
+                openSettings({ tab: 'account' });
                 setRealmDestination(
                   state.realmControl?.activeRealm ||
                     state.realmControl?.currentRealm ||
@@ -97,7 +97,7 @@ export function PartyHeader({ model, onLogs, metricsActive, onMetrics, recordIco
             >
               <Settings className="size-3.5" />
             </Button>
-            <ConsoleUpdateIndicator open={() => setSettingsOpen(true)} /><ConnectionLine loading={model.coordinatorLoading} unavailable={model.coordinatorUnavailable} /><ConsolePausedIndicator control={state.consoleControl} /><HandControlCount hands={state.handControlByCharacter} slots={state.activeSlots} /><AddonSlot name="top-bar" part="status" state={state} /></div>
+            <ConsoleUpdateIndicator open={() => openSettings({ tab: 'account', section: 'console' })} /><ConnectionLine loading={model.coordinatorLoading} unavailable={model.coordinatorUnavailable} /><ConsolePausedIndicator control={state.consoleControl} /><HandControlCount hands={state.handControlByCharacter} slots={state.activeSlots} /><AddonSlot name="top-bar" part="status" state={state} /></div>
             <span className="mt-1 block font-mono text-[10px] leading-3 text-emerald-100/70">{state.gameVersion ? `Game v${state.gameVersion} · ` : ''}Console{' '}
               {updates
                 ? `v${updates.displayVersion || updates.current}`

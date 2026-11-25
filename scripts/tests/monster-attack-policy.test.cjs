@@ -90,9 +90,11 @@ scenarioTable("the attack block reads the reflect lists and the attack's damage 
   }],
   ["TG10: a list takes only the monsters game data rates for it",()=>{
   const settings = targetingSavedFields.settings, magic = settings.reflectMagicByCharacter.check, physical = settings.reflectPhysicalByCharacter.check;
-  setGameMonsters({ bee: {}, sparkbot: { reflection: 10 }, goblin: { reflection: 50 }, porcupine: { dreturn: 4800 }, armadillo: { dreturn: 30 } });
+  const table = { bee: {}, sparkbot: { reflection: 10 }, goblin: { reflection: 50 }, porcupine: { dreturn: 4800 }, armadillo: { dreturn: 30 } };
+  setGameMonsters(table);
   try {
-    assert.deepEqual(reflectChoices(), { magic: ['goblin', 'sparkbot'], physical: ['armadillo', 'porcupine'] });
+    // The dashboard's Combat section asks the same read with its catalog's definitions.
+    assert.deepEqual(reflectChoices(table), { magic: ['goblin', 'sparkbot'], physical: ['armadillo', 'porcupine'] });
     assert.equal(magic({ P: ['sparkbot'] }), true);
     assert.equal(magic({ P: ['bee'] }), false);
     assert.equal(magic({ P: 'sparkbot' }), false);
@@ -106,11 +108,12 @@ scenarioTable("the attack block reads the reflect lists and the attack's damage 
   ["movement.gameMonsters: the reflect choices read the coordinator's game data",()=>{
   setGameMonsters({ sparkbot: { reflection: 10 }, porcupine: { dreturn: 4800 } });
   const saved = globalThis.__partyHooks;
+  const magic = targetingSavedFields.settings.reflectMagicByCharacter.check;
   try {
-    assert.deepEqual(reflectChoices(), { magic: ['sparkbot'], physical: ['porcupine'] });
-    // A realm where core:movement does not answer reads the table as not loaded: no choices yet.
+    assert.equal(magic({ P: ['porcupine'] }), false);
+    // A realm where core:movement does not answer reads the table as not loaded, so the check keeps the list.
     globalThis.__partyHooks = createRegistry();
-    assert.deepEqual(reflectChoices(), { magic: [], physical: [] });
+    assert.equal(magic({ P: ['porcupine'] }), true);
   } finally { globalThis.__partyHooks = saved; setGameMonsters(null); }
   }],
   ["TG12: a skill is blocked by its own damage type, not the attacker's",()=>{

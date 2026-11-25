@@ -19,7 +19,7 @@ test('Hunt blacklist full catalog scrolls and sprites select their own monster',
   await page.goto(live.url);
   const warrior=page.locator('article').filter({has:page.getByRole('heading',{name:'E2EWarrior',exact:true})});
   await warrior.getByRole('button',{name:'Farming settings',exact:true}).click();
-  await page.getByRole('dialog',{name:'Farming settings · E2EWarrior',exact:true}).getByRole('button',{name:'Add',exact:true}).click();
+  await page.getByRole('dialog', { name: 'Settings', exact: true }).getByRole('button',{name:'Add',exact:true}).click();
   const picker=page.getByRole('dialog',{name:'Add to Hunt blacklist',exact:true});
   const list=picker.getByRole('region',{name:'Hunt blacklist monsters'});
   const rows=list.getByRole('button',{name:/^Inspect /});

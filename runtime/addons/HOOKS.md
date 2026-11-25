@@ -802,6 +802,8 @@ An add-on reads one with `ctx.read(name, ...args)` or `read(name, ...args)` (REA
 | `targeting.monsterPriority` | 04 | both | the saved priority table |
 | `targeting.validPriorities` | 04 | both | boolean |
 | `targeting.attackDamageType` | 04 | character | DamageType \| undefined |
+| `targeting.defaultReflectLists` | 04 | both | ReflectLists |
+| `targeting.reflectChoices` | 04 | both | ReflectChoices |
 | `targeting.passingStatus` | 04 | coordinator | the passing encounters' status |
 | `targeting.uniqueReferences` | 04 | coordinator | Target[] |
 | `targeting.targetIdentity` | 04 | both | string |

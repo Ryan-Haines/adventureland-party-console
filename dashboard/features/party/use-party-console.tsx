@@ -27,6 +27,7 @@ import { RestockPolicy } from "./restock-policy";
 import { SelectedItem } from "./selected-item";
 import { StandListing } from "./stand-listing";
 import { auditedCharacters } from "./field-read-audit";
+import type { SettingsTarget } from "./settings-target";
 import { joinItemMeta } from "./item-catalog-meta";
 
 export function usePartyConsole() {
@@ -47,10 +48,9 @@ export function usePartyConsole() {
     [bankOpen, setBankOpen] = useState(false),
     [standOpen, setStandOpen] = useState(false),
     [marketOpen, setMarketOpen] = useState(false),
-    [settingsOpen, setSettingsOpen] = useState(false),
-    // Character cards can briefly disappear before a restarted coordinator
-    // receives its first reports. Keep dialog ownership above those cards.
-    [farmingSettingsCharacter, setFarmingSettingsCharacter] = useState<string | null>(null),
+    // The settings menu's place, or null while it is closed. It lives above the character cards,
+    // which can briefly disappear before a restarted coordinator receives its first reports.
+    [settingsTarget, openSettings] = useState<SettingsTarget | null>(null),
     [realmDestination, setRealmDestinationState] = useState(""),
     [realmConfirmOpen, setRealmConfirmOpenState] = useState(false),
     [realmSetHome, setRealmSetHomeState] = useState(false),
@@ -102,7 +102,6 @@ export function usePartyConsole() {
       acknowledged: boolean;
     } | null>(null),
     [autoNpcSaleItem, setAutoNpcSaleItemState] = useState<(InventoryEntry & { character?: string }) | null>(null),
-    [routinesOpen, setRoutinesOpen] = useState(false),
     [commerceMode, setCommerceMode] = useState<"buy" | "craft" | "exchange" | null>(null),
     [donationOpen, setDonationOpenState] = useState(false),
     [donationAmount, setDonationAmountState] = useState(""),
@@ -212,7 +211,7 @@ export function usePartyConsole() {
         const result = await performAction<{ key?: string }>(client, "/aldata/key", null, { method: "GET" });
         if (!result.key) throw new Error("Generate an ALData key first");
         setMailDraft({ ...ALDATA_AUTH_MAIL, message: result.key });
-        setSettingsOpen(false); setMailOpen(true);
+        openSettings(null); setMailOpen(true);
         return;
       }
       const endpoint =
@@ -698,7 +697,6 @@ export function usePartyConsole() {
     enabled: Record<string, boolean>,
   ) {
     await post("/merchant/routine-priorities", { priorities, enabled });
-    setRoutinesOpen(false);
   }
   async function cancelMerchantJob(id?: string) {
     if (!id) return;
@@ -830,6 +828,8 @@ export function usePartyConsole() {
           price: String(Math.max(1, Math.round(value))),
         },
     );
+  // The Merchant section clears both threshold refusals when it opens.
+  const clearCollectionErrors = useCallback(() => { setThresholdError(null); setItemCollectionThresholdError(null); }, []);
   return {
     realmError,
     createError,
@@ -844,7 +844,7 @@ export function usePartyConsole() {
     travelError,
     aldataAuthStatus,
     setTravelError,
-    clearCollectionErrors: () => { setThresholdError(null); setItemCollectionThresholdError(null); },
+    clearCollectionErrors,
     coordinatorLoading: !coreQuery.data && !coreQuery.isError,
     coordinatorUnavailable: coreQuery.isError,
     setAnniversaryOpen,
@@ -857,8 +857,7 @@ export function usePartyConsole() {
     setStandOpen,
     setMarketOpen,
     setBankOpen,
-    setSettingsOpen,
-    setFarmingSettingsCharacter,
+    openSettings,
     setRealmDestination,
     aldataKey,
     aldataAction,
@@ -878,7 +877,6 @@ export function usePartyConsole() {
     clearMerchantWork,
     setForceStand,
     cancelMerchantJob,
-    setRoutinesOpen,
     gather,
     refresh,
     setCommerceMode,
@@ -966,8 +964,7 @@ export function usePartyConsole() {
     buyALDataListing,
     buyPontyListing,
     sellALDataOrder,
-    settingsOpen,
-    farmingSettingsCharacter,
+    settingsTarget,
     realmDestination,
     setRealmSetHome,
     setRealmConfirmOpen,
@@ -1009,7 +1006,6 @@ export function usePartyConsole() {
     npcSaleItem,
     npcSaleBusy,
     confirmNpcSale,
-    routinesOpen,
     saveRoutinePriorities,
   };
 }

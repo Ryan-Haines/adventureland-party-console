@@ -7,12 +7,13 @@ const execute = promisify(execFile);
 test('Settings launches a disposable god party, repeats Cave entry and destroys its stack', async ({ page, app, context }, info) => {
   test.setTimeout(1_800_000);
   page.setDefaultTimeout(30000);
-  const settings = page.getByRole('dialog', { name: 'Interface settings' });
+  const settings = page.getByRole('dialog', { name: 'Settings', exact: true });
   const openSettings = async () => {
     await expect(async () => {
       if (!await settings.isVisible()) await page.getByRole('button', { name: 'Interface settings', exact: true }).click();
       await expect(settings).toBeVisible({ timeout: 1000 });
     }).toPass({ timeout: 30000 });
+    await settings.getByRole('tab', { name: 'Console', exact: true }).click();
   };
   await page.goto(app.url);
   await expect(page.getByRole('heading', { name: 'W', exact: true })).toBeVisible();

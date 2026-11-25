@@ -1,12 +1,11 @@
 "use client";
 import { CaveEventRow } from './dungeon-settings';
-import { memo, useState, useEffect, useRef } from "react";
+import { Fragment, memo, useState, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
-import { EventLimitsDialog } from "./event-limits-dialog";
+import { EventLimitsForm } from "./event-limits-form";
 import { GripVertical, Settings } from "lucide-react";
 
 import { useClock } from "@/hooks/use-clock";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { eventDisplayNames, eventPolicy, selectedEvents, supportedEvents, eventPriorityOrder, eventLimits, eventListRows, type EventLimits } from '../../../runtime/events/api';
 import { useQueryClient } from '@tanstack/react-query';
 import { performAction } from './query-actions';
@@ -37,15 +36,25 @@ function dailyResetLabel(now:number, clockOffsetMs=0) {
   const local=new Intl.DateTimeFormat(undefined,{weekday:'short',hour:'numeric',minute:'2-digit',timeZoneName:'short'}).format(next);
   return `${local} (${Math.floor(seconds/3600)}h ${Math.floor(seconds/60)%60}m ${seconds%60}s)`;
 }
-export const EventSelectionControl = memo(function EventSelectionControl({ state, name, onChange, onPriorityChange, onLimitsChange, onAnniversary }: {
+// The card's "Events (n)" button keeps its place and look and opens the settings menu at the
+// character's section of the Events tab.
+export const EventsButton = memo(function EventsButton({ state, name, onOpen }: { state: EventSelectionState; name: string; onOpen: () => void }) {
+  return <button type="button" onClick={onOpen} className="cursor-pointer rounded border border-slate-500 bg-[#101c1a] px-2 py-1 text-xs text-emerald-100 hover:bg-[#20332e]">Events ({selectedEvents(state, name).length}) ▾</button>;
+});
+
+// One character's section of the Events tab, which was the card's Events popover: the Cave row,
+// the event list with its priority order and selection, and each event's settings, which open
+// under the event's row (`event` opens one from the start).
+export function EventSelectionSection({ state, name, event: opened, onChange, onPriorityChange, onLimitsChange, onAnniversary, onCave }: {
   onLimitsChange: (event: string, limits: EventLimits) => Promise<unknown> | void; onPriorityChange: (events: string[]) => Promise<unknown> | void; state: EventSelectionState; name: string; onAnniversary: () => void; onChange: (events: string[]) => void;
+  event?: string; onCave: () => void;
 }) {
   const [dragged, setDragged] = useState<string | null>(null);
   const savedOrder = eventPriorityOrder(state, name);
   const [draft, setDraft] = useState<string[] | null>(null);
   const order = draft ?? savedOrder;
   const [dragPosition, setDragPosition] = useState<DragPosition | null>(null);
-  const [settings, setSettings] = useState<string | null>(null);
+  const [settings, setSettings] = useState<string | null>(opened ?? null);
   const [error, setError] = useState('');
   const client = useQueryClient();
   const dragOrder = useRef<string[] | null>(null);
@@ -84,15 +93,13 @@ export const EventSelectionControl = memo(function EventSelectionControl({ state
     .catch((failure: unknown) => setError(failure instanceof Error ? failure.message : String(failure))); };
   return <>
     {dragged && dragPosition && createPortal(<div data-testid="event-drag-preview" aria-hidden="true" className="pointer-events-none fixed z-[100] flex items-center justify-between rounded border border-cyan-300 bg-slate-900 px-3 py-3 text-emerald-50 shadow-2xl" style={{left:dragPosition.x,top:dragPosition.y,width:dragPosition.width}}><span>{eventDisplayNames[dragged]}</span><span>{order.length-order.indexOf(dragged)} <GripVertical className="ml-3 inline size-4" /></span></div>, document.body)}
-    <Popover onOpenChange={open => { if (!open && dragged) cancelDrag(); }}>
-    <PopoverTrigger className="cursor-pointer rounded border border-slate-500 bg-[#101c1a] px-2 py-1 text-xs text-emerald-100 hover:bg-[#20332e]">Events ({selected.length}) ▾</PopoverTrigger>
-    <PopoverContent data-area="events-menu" data-addon-slot="event-list" align="start" className="max-h-[min(40rem,var(--available-height))] w-[30rem] max-w-[calc(100vw-1rem)] flex flex-col overflow-hidden rounded border border-slate-500 bg-[#101c1a] p-3 text-xs text-emerald-50 shadow-xl">
+    <section data-area="events-menu" data-addon-slot="event-list" className="flex flex-col rounded border border-slate-500 bg-[#101c1a] p-3 text-xs text-emerald-50">
       {policy.inherited && <p className="mb-2 text-amber-200">Using {policy.source}’s events</p>}
       <OverlaidBy fields={["eventPrioritiesByCharacter", "eventLimitsByCharacter"]} />
-      <CaveEventRow />
+      <CaveEventRow onSettings={onCave} />
       <p className="mt-2 text-slate-300">Higher numbers attend first. Drag to reorder.</p>
       {error && <p role="alert" className="text-red-300">{error}</p>}
-      <div ref={listRef} className="mt-2 min-h-0 space-y-2 overflow-y-auto"
+      <div ref={listRef} className="mt-2 space-y-2"
         onPointerMove={e => {
           if (!dragged || !dragPosition) return;
           setDragPosition({...dragPosition,x:e.clientX-dragPosition.offsetX,y:e.clientY-dragPosition.offsetY});
@@ -113,7 +120,7 @@ export const EventSelectionControl = memo(function EventSelectionControl({ state
         // The member's own skip shows, and its leader's unless the leader's was a manual move.
         const own = listed.find(row => row.member === name && row.event === event.id && row.reason);
         const ignored = (own ?? listed.find(row => row.member === policy.source && row.event === event.id && row.reason && !row.rejoin))?.reason;
-        return <div key={event.id} data-event={event.id} className={`flex items-center gap-2 rounded border bg-slate-950 px-2 py-2 text-emerald-50 ${dragged === event.id ? 'border-cyan-300 opacity-25' : 'border-emerald-900/70'}`}>
+        return <Fragment key={event.id}><div data-event={event.id} className={`flex items-center gap-2 rounded border bg-slate-950 px-2 py-2 text-emerald-50 ${dragged === event.id ? 'border-cyan-300 opacity-25' : 'border-emerald-900/70'}`}>
           <button type="button" aria-label={`Move ${event.name}`} title="Drag to reorder; use arrow keys to move" disabled={!supported || policy.inherited}
             style={{touchAction:'none'}} className="shrink-0 cursor-grab rounded border border-slate-600 bg-[#10201b] p-1 text-slate-200 hover:bg-slate-700 hover:text-white active:cursor-grabbing disabled:opacity-30"
             onPointerDown={e => {
@@ -141,11 +148,9 @@ export const EventSelectionControl = memo(function EventSelectionControl({ state
               <span className="block text-slate-300">Once daily at 00:00 UTC · Available during Halloween</span>
             </>}
             {!!event.next&&event.realmOffsetHours!==undefined&&<span className="block text-slate-300">{realmTimeLabel(event.next,event.realmOffsetHours)}</span>}{event.confirmed&&<span className="block text-cyan-200">Realm schedule confirmed</span>}{event.stale ? " · timing stale" : ""}{ignored && <span className="block text-amber-200">Skipped this instance: {ignored}</span>}{own?.rejoin && <button type="button" onClick={() => rejoin(event.id)} className="mt-1 block rounded border border-amber-500 bg-slate-950 px-2 py-0.5 text-amber-100 hover:bg-slate-800">Rejoin</button>}{!!event.occurrences?.length&&<details className="mt-1 text-slate-300"><summary className="cursor-pointer">Next seven days</summary>{event.occurrences.slice().sort((a,b)=>a.at-b.at).map((entry,i)=><div key={i}>{new Date(entry.at).toLocaleString()}</div>)}</details>}</span>
-          <button type="button" aria-label={`${event.name} settings`} disabled={!supported} onClick={() => setSettings(event.id)} className="ml-auto rounded border border-slate-500 bg-slate-950 p-2 text-pink-200 hover:bg-slate-800"><Settings className="size-4" /></button>
-        </div>;
-      })}
-      </div>
-      {settings && <EventLimitsDialog key={settings} event={settings} label={eventDisplayNames[settings] ?? settings}
+          <button type="button" aria-label={`${event.name} settings`} aria-expanded={settings === event.id} disabled={!supported} onClick={() => setSettings(current => current === event.id ? null : event.id)} className="ml-auto rounded border border-slate-500 bg-slate-950 p-2 text-pink-200 hover:bg-slate-800"><Settings className="size-4" /></button>
+        </div>
+        {settings === event.id && <EventLimitsForm key={settings} event={settings} label={eventDisplayNames[settings] ?? settings}
         limits={eventLimits(state, name)[settings] ?? {deathLimit:null,timeLimitMinutes:null}}
         cipherView={schedules.get('witchcipher')?.cipher}
         cipherOwner={cipherSource!==policy.source?cipherSource:undefined}
@@ -155,6 +160,8 @@ export const EventSelectionControl = memo(function EventSelectionControl({ state
           await saveCipher({...limits,cipher:{...limits.cipher!,automatic:false,manual:{id:requestId(),round:board.id,cracks:board.cracks??0,mix}}},true);
         }}
         inherited={policy.inherited} onClose={() => setSettings(null)} onSave={(event,limits)=>event==='witchcipher'&&cipherSource!==policy.source?saveCipher(limits):onLimitsChange(event,limits)} onAnniversary={onAnniversary} />}
-    </PopoverContent>
-  </Popover></>;
-});
+        </Fragment>;
+      })}
+      </div>
+    </section></>;
+}

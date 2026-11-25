@@ -1,17 +1,9 @@
 "use client";
-import { AddonSlot } from '../../../runtime/hooks/dashboard/slots';
 import { commerceRuleKey, defaultStandPrice, markMatches } from '../../../runtime/items/api.ts';
 import { standDraft, standIsFull } from './stand-capacity';
-import { HostingSettings } from "./hosting-settings";
-import { AddonSettings } from '../../../runtime/hooks/dashboard/settings-page';
-import { PinTopBarSetting } from './pin-top-bar';
-import { AppKeysSettings } from './app-keys-settings';
-import { ConsoleUpdateSettings } from './console-updates';
-import { AccountSettings } from "./account-settings";
 import { lazy, useCallback, useState } from "react";
 import { DeconstructionConfirmation, type DeconstructionSelection } from "./deconstruction-confirmation";
 import { DeferredPanel } from "./deferred-panel";
-import { DashboardStateImport } from "./dashboard-state-import";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -22,15 +14,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { Copy, Eye, EyeOff, RefreshCw, UserPlus } from "lucide-react";
 const BankSheet = lazy(() =>
   import("./bank-sheet").then((module) => ({ default: module.BankSheet })),
 );
@@ -56,16 +39,12 @@ const forwardedActions = ['setStandItem', 'setNpcSaleItem', 'setAutoNpcSaleItem'
   'saveStandBid', 'buyALDataListing', 'buyPontyListing', 'sellALDataOrder'] as const;
 
 export function PartyInventoryPanels({ model }: { model: PartyConsoleModel }) {
-  return model.realmConfirmOpen || model.bankOpen || model.standOpen || model.marketOpen || model.settingsOpen ? (
+  return model.realmConfirmOpen || model.bankOpen || model.standOpen || model.marketOpen ? (
     <PartyInventoryPanelsConnected base={model} />
   ) : null;
 }
 function PartyInventoryPanelsConnected({ base }: { base: PartyConsoleModel }) {
   const [deconstructionSelection, setDeconstructionSelection] = useState<DeconstructionSelection | null>(null);
-  // The browser gives the Clipboard API only to a secure origin, so on a console
-  // reached by its LAN address over plain HTTP the Copy key control selects the key for Ctrl+C instead.
-  const [secureOrigin] = useState(() => typeof window !== 'undefined' && window.isSecureContext);
-  const [copyNote, setCopyNote] = useState(false);
   // Live WTB, a tab of the Market dialog, and the stand count the bank stock as owned, so the
   // bank section loads while either is open.
   const market = base.marketOpen || base.standOpen;
@@ -84,18 +63,10 @@ function PartyInventoryPanelsConnected({ base }: { base: PartyConsoleModel }) {
     setStandOpen,
     marketOpen,
     setMarketOpen,
-    settingsOpen,
-    setSettingsOpen,
+    openSettings,
     realmDestination,
-    setRealmDestination,
     setRealmSetHome,
     setRealmConfirmOpen,
-    setCreateOpen,
-    aldataBusy,
-    aldataAction,
-    aldataKeyVisible,
-    aldataKey,
-    setALDataKeyVisible,
     realmConfirmOpen,
     realmBusy,
     realmSetHome,
@@ -274,12 +245,7 @@ function PartyInventoryPanelsConnected({ base }: { base: PartyConsoleModel }) {
     [post, setActionError],
   );
 
-  const onAutoStandBuys = useCallback(
-    async (enabled: boolean) => {
-      await post('/merchant/native-stand', { action: 'configure', enabled });
-    },
-    [post],
-  );
+  const onMarketplaceSettings = useCallback(() => openSettings({ tab: 'account', section: 'marketplace' }), [openSettings]);
   const onStandEdit = useCallback(
     (listing: StandListing) => {
       const knownMeta = catalogAllItems.find(
@@ -343,8 +309,8 @@ function PartyInventoryPanelsConnected({ base }: { base: PartyConsoleModel }) {
   );
   const onALDataSetup = useCallback(() => {
     setMarketOpen(false);
-    setSettingsOpen(true);
-  }, [setMarketOpen, setSettingsOpen]);
+    openSettings({ tab: 'account', section: 'aldata' });
+  }, [setMarketOpen, openSettings]);
 
   return (
     <>
@@ -502,9 +468,8 @@ function PartyInventoryPanelsConnected({ base }: { base: PartyConsoleModel }) {
           buyable={catalogBuyable}
           bids={standBids}
           nativeStand={state.nativeStand}
-          autoStandBuys={state.autoStandBuys === true}
           autoBlacklistMerchants={state.autoBlacklistMerchants !== false}
-          onAutoStandBuys={onAutoStandBuys}
+          onMarketplaceSettings={onMarketplaceSettings}
           priceHistory={standPriceHistory}
           marketIgnoredItems={state.marketIgnoredItems || []}
           blacklist={state.merchantBlacklist || emptyRecord()}
@@ -522,284 +487,6 @@ function PartyInventoryPanelsConnected({ base }: { base: PartyConsoleModel }) {
           onInspect={onStandInspect}
         />
       </DeferredPanel>
-      <Dialog open={settingsOpen} onOpenChange={setSettingsOpen}>
-        <DialogContent data-area="interface-settings" className="max-h-[85dvh] overflow-y-auto border-slate-700 bg-[#0b1916] text-emerald-50 sm:max-w-xl">
-          <DialogHeader>
-            <DialogTitle>Interface settings</DialogTitle>
-            <DialogDescription>
-              Manage saved dashboard state, character connections, and market
-              access.
-            </DialogDescription>
-          </DialogHeader>
-          {state.steamSwitch?.phase === 'failed' && (
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => void model.recoverSteamHandoff()}
-              className="border-amber-700 bg-[#171007] text-amber-100 hover:bg-amber-950 hover:text-white"
-            >
-              Recover Steam handoff after characters are offline
-            </Button>
-          )}
-          {settingsOpen && <DashboardStateImport />}
-          <div className="rounded border border-violet-800 bg-[#07090d] p-4 text-slate-100">
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <p className="font-semibold text-violet-100">Realm</p>
-                <p
-                  className={`font-mono text-[10px] uppercase ${state.realmControl?.split ? "text-rose-300" : "text-slate-400"}`}
-                >
-                  Current:{' '}
-                  {state.realmControl?.split
-                    ? 'Mixed realms'
-                    : state.realmControl?.realms.find(
-                        (realm) =>
-                          realm.key === state.realmControl?.currentRealm,
-                      )?.label ||
-                      state.realmControl?.currentRealm ||
-                      'Unknown'}{' '}
-                  · Home:{' '}
-                  {state.realmControl?.realms.find(
-                    (realm) => realm.key === state.realmControl?.homeRealm,
-                  )?.label ||
-                    state.realmControl?.homeRealm ||
-                    'Unknown'}
-                </p>
-              </div>
-              {state.realmControl?.operation &&
-              !['complete', 'failed'].includes(
-                state.realmControl.operation.phase,
-              ) ? (
-                <RefreshCw className="h-4 w-4 animate-spin text-violet-300" />
-              ) : null}
-            </div>
-            {state.realmControl?.split ? (
-              <div className="mt-3 grid gap-1 rounded border border-rose-800 bg-rose-950/40 p-2 text-xs text-rose-100">
-                {state.realmControl.characters.map((member) => (
-                  <span key={member.name}>
-                    {member.name}: {member.realm || 'offline'}
-                  </span>
-                ))}
-              </div>
-            ) : null}
-            {!state.realmControl?.homeRealm &&
-            state.realmControl?.homeCharacters?.length ? (
-              <div className="mb-3 rounded border border-amber-700 bg-black p-2 text-xs text-amber-100">
-                <p>Home realms differ or are unconfirmed:</p>
-                {state.realmControl.homeCharacters.map((member) => (
-                  <p key={member.name}>
-                    {member.name}: {member.home || 'unconfirmed'}
-                  </p>
-                ))}
-              </div>
-            ) : null}
-            <div className="mt-4 flex gap-2">
-              <Select
-                value={realmDestination}
-                onValueChange={(value) => {
-                  if (value) setRealmDestination(value);
-                  setRealmSetHome(false);
-                }}
-              >
-                <SelectTrigger
-                  aria-label="Change realm"
-                  className="border-violet-600 bg-black text-violet-50 hover:border-violet-400"
-                >
-                  <SelectValue placeholder="Change realm…" />
-                </SelectTrigger>
-                <SelectContent alignItemWithTrigger={false} className="border-violet-700 bg-[#07090d] text-violet-50">
-                  {(state.realmControl?.realms || []).map((realm) => (
-                    <SelectItem
-                      key={realm.key}
-                      value={realm.key}
-                      disabled={realm.pvp}
-                      className="focus:bg-violet-950 focus:text-white disabled:text-slate-600"
-                    >
-                      {realm.label} ({realm.players.toLocaleString()} players)
-                      {realm.pvp ? ' — disabled' : ''}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <Button
-                type="button"
-                variant="outline"
-                disabled={
-                  !realmDestination ||
-                  (!state.realmControl?.split &&
-                    realmDestination === state.realmControl?.currentRealm &&
-                    realmDestination === state.realmControl?.homeRealm) ||
-                  Boolean(
-                    state.realmControl?.operation &&
-                    !['complete', 'failed'].includes(
-                      state.realmControl.operation.phase,
-                    ),
-                  )
-                }
-                onClick={() => setRealmConfirmOpen(true)}
-                className="shrink-0 border-violet-500 bg-black text-violet-100 hover:bg-violet-950 hover:text-white"
-              >
-                Change realm
-              </Button>
-            </div>
-            {state.realmControl?.operation ? (
-              <div
-                className={`mt-3 rounded border p-2 text-xs ${state.realmControl.operation.phase === "failed" ? "border-rose-700 bg-rose-950/40 text-rose-200" : state.realmControl.operation.phase === "complete" ? "border-emerald-700 bg-emerald-950/40 text-emerald-200" : "border-violet-700 bg-violet-950/30 text-violet-100"}`}
-              >
-                <p className="font-semibold capitalize">
-                  {state.realmControl.operation.phase.replace(/-/g, ' ')}
-                </p>
-                {state.realmControl.operation.error ? (
-                  <p>{state.realmControl.operation.error}</p>
-                ) : null}
-                {(state.realmControl.operation.characters || []).map(
-                  (member) => (
-                    <p key={member.name}>
-                      {member.name}: {member.realm || 'waiting'}
-                      {state.realmControl?.operation?.setHome
-                        ? member.homeConfirmed
-                          ? ' — home confirmed'
-                          : ' — waiting for home confirmation'
-                        : ''}
-                    </p>
-                  ),
-                )}
-              </div>
-            ) : null}
-          </div>
-          <div className="rounded border border-cyan-900/70 bg-black/20 p-4">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <p className="font-semibold">Characters</p>
-                <p className="font-mono text-[10px] uppercase text-slate-400">
-                  Create and add characters to your account roster.
-                </p>
-              </div>
-              <Button
-                variant="outline"
-                onClick={() => {
-                  setSettingsOpen(false);
-                  setCreateOpen(true);
-                }}
-                className="border-cyan-600 bg-black text-cyan-100 hover:bg-cyan-950 hover:text-white"
-              >
-                <UserPlus className="mr-2 h-4 w-4" />
-                Create character
-              </Button>
-            </div>
-            <AccountSettings state={state} />
-          </div>
-          <div className="rounded border border-slate-800 bg-black/20 p-4">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <p className="font-semibold">ALData</p>
-                {model.aldataAuthPending ? (
-                  <output className="block text-sm text-amber-200">
-                    Waiting for mail delivery and ALData verification… Do not
-                    resend; each message costs gold.
-                  </output>
-                ) : null}
-                <p className="font-mono text-[10px] uppercase text-slate-400">
-                  Auth: {model.aldataAuthStatus ?? state.aldata?.auth ?? 'NO'} ·
-                  Publish: {state.aldata?.publishStatus || 'idle'}
-                </p>
-              </div>
-              <Button
-                size="sm"
-                variant="outline"
-                disabled={aldataBusy}
-                onClick={() => void aldataAction('check')}
-                className="border-slate-500 bg-black text-slate-100 hover:bg-slate-800 hover:text-white"
-              >
-                Check status
-              </Button>
-            </div>
-            <div className="mt-4 flex gap-2">
-              <Input
-                id="aldata-key"
-                readOnly
-                type={aldataKeyVisible ? 'text' : 'password'}
-                value={aldataKey}
-                placeholder={
-                  state.aldata?.hasKey
-                    ? 'Stored key — reveal to view'
-                    : 'No key generated'
-                }
-                className="border-slate-800 bg-black/40 font-mono text-xs"
-              />
-              <Button
-                size="icon"
-                variant="outline"
-                onClick={() => {
-                  if (!aldataKey) void aldataAction('reveal');
-                  setALDataKeyVisible((value) => !value);
-                }}
-                aria-label="Reveal key"
-                className="border-slate-500 bg-black text-slate-100 hover:bg-slate-800 hover:text-white"
-              >
-                {aldataKeyVisible ? (
-                  <EyeOff className="h-4 w-4" />
-                ) : (
-                  <Eye className="h-4 w-4" />
-                )}
-              </Button>
-              <Button
-                size="icon"
-                variant="outline"
-                disabled={!aldataKey}
-                onClick={() => {
-                  // With no clipboard, or a refused write, the key shows selected with the note.
-                  const select = () => {
-                    setALDataKeyVisible(true);
-                    setCopyNote(true);
-                    requestAnimationFrame(() => (document.getElementById('aldata-key') as HTMLInputElement | null)?.select());
-                  };
-                  if (secureOrigin) navigator.clipboard.writeText(aldataKey).catch(select);
-                  else select();
-                }}
-                aria-label="Copy key"
-                className="border-slate-500 bg-black text-slate-100 hover:bg-slate-800 hover:text-white"
-              >
-                <Copy className="h-4 w-4" />
-              </Button>
-            </div>
-            {copyNote ? <p role="status" className="mt-1 text-xs text-slate-300">The key is selected: press Ctrl+C to copy it. The browser did not copy it to the clipboard.</p> : null}
-            <div className="mt-3 grid gap-2 sm:grid-cols-2">
-              <Button
-                disabled={aldataBusy}
-                onClick={() => void aldataAction('generate')}
-                className="bg-slate-700 text-white hover:bg-slate-600"
-              >
-                Generate key
-              </Button>
-              <Button
-                disabled={aldataBusy || !state.aldata?.hasKey}
-                onClick={() => void aldataAction('send')}
-                className="bg-violet-700 text-white hover:bg-violet-600"
-              >
-                Prepare mail
-              </Button>
-            </div>
-            <p className="mt-3 text-xs text-slate-400">
-              Public market browsing needs no key or separate ALData server.
-              Publishing requires authentication: generate a unique key. Prepare
-              mail opens a prefilled authentication mail. Review the postage and
-              click Send; your merchant will send it. ALData stores this key in
-              plaintext; never reuse a password. Allow about a minute, then
-              check status.
-            </p>
-            {state.aldata?.error ? (
-              <p className="mt-2 text-xs text-rose-300">{state.aldata.error}</p>
-            ) : null}
-          </div>
-          <PinTopBarSetting />
-          <AppKeysSettings />
-          <AddonSettings />
-          <HostingSettings />
-          <ConsoleUpdateSettings />
-          <AddonSlot name="dialog-section" part="interface-settings" />
-        </DialogContent>
-      </Dialog>
       <Dialog
         open={realmConfirmOpen}
         onOpenChange={(open) => {

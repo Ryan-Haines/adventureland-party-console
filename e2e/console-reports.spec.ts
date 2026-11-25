@@ -26,6 +26,7 @@ test('a saved snapshot with per-copy item meta shows catalog names offline', asy
   expect((await app.state()).characters.M).toBeUndefined();
   await page.goto('/');
   await page.getByRole('button', { name: 'Interface settings', exact: true }).click();
+  await page.getByRole('tab', { name: 'Characters', exact: true }).click();
   await page.getByRole('button', { name: 'Inspect M', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Inspect Coat +3', exact: true })).toBeVisible();
   await info.attach('saved-snapshot-entry', { body: JSON.stringify((await app.state()).characterSnapshots.M.items[0]), contentType: 'application/json' });

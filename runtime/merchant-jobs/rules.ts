@@ -672,7 +672,7 @@ export function merchantRoutinePriority(
   return Number.isInteger(value) ? Math.max(ROUTINE_PRIORITY.min, Math.min(ROUTINE_PRIORITY.max, value)) : 50;
 }
 
-// The priorities dialog's two edits, v1.5.0's rule (routine-priorities-dialog.tsx). A
+// The Routines section's two edits, v1.5.0's rule (routine-priorities-section.tsx). A
 // typed value keeps its digits and clamps to the range. A drag puts `keys[index]` one below the routine
 // above it, or one above the next at the top; each routine after it stays below the one above. A chain
 // that falls under the range's floor renumbers from the top of the range down, one per routine.

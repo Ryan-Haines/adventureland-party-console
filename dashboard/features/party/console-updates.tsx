@@ -38,8 +38,8 @@ export function ConsoleUpdateIndicator({ open }: { open(): void }) {
   if (!state?.available) return null;
   return <button type="button" title="New version available" aria-label="New version available" onClick={() => {
     open();
-    // The settings dialog mounts the updates section after this press; it scrolls into view the moment
-    // it exists, and the dialog closing first ends the wait.
+    // The settings menu mounts the updates section after this press; it scrolls into view the moment
+    // it exists, and the menu closing first ends the wait.
     const show = (target: HTMLElement) => { target.scrollIntoView({ behavior: 'smooth', block: 'end' }); target.focus({ preventScroll: true }); };
     const mounted = document.getElementById('console-updates');
     if (mounted) return show(mounted);

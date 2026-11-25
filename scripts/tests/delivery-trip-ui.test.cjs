@@ -32,14 +32,14 @@ for(const routine of ['deliveries','withdrawals'])test(`${routine} checkbox defa
 
 test('disabled delivery routine stays visible and inaccessible to edits, reordering or stale saves',async()=>{
  const previous=global.window;global.window={matchMedia:()=>({matches:true})};
- const {RoutinePrioritiesDialog}=load('routine-priorities-dialog');let view,saved;
- const props={open:true,onOpenChange(){},priorities:{deliveries:90,fishing:20,mining:10},enabled:{deliveries:true},onSave:async(...args)=>{saved=args;}};
+ const {RoutinePrioritiesSection}=load('routine-priorities-section');let view,saved;
+ const props={priorities:{deliveries:90,fishing:20,mining:10},enabled:{deliveries:true},onSave:async(...args)=>{saved=args;}};
  try {
-  await act(async()=>{view=create(React.createElement(RoutinePrioritiesDialog,props));});
+  await act(async()=>{view=create(React.createElement(RoutinePrioritiesSection,props));});
   assert.equal(view.root.findByProps({'aria-label':'Marked deliveries priority'}).props.disabled,false);
   assert.equal(view.root.findAllByProps({'aria-label':'Enable Marked deliveries'}).length,0);
   await act(async()=>view.root.findByProps({'aria-label':'Marked deliveries priority'}).props.onChange({target:{value:'97'}}));
-  await act(async()=>view.update(React.createElement(RoutinePrioritiesDialog,{...props,enabled:{deliveries:false}})));
+  await act(async()=>view.update(React.createElement(RoutinePrioritiesSection,{...props,enabled:{deliveries:false}})));
   const row=view.root.findByProps({'data-routine':'deliveries'});
   assert.equal(row.props['aria-disabled'],true);assert.match(text(row),/Enable in Merchant settings/);
   assert.equal(row.findByType('Input').props.disabled,true);assert.equal(row.findByType('Input').props.value,90);
@@ -49,7 +49,7 @@ test('disabled delivery routine stays visible and inaccessible to edits, reorder
   assert.equal(row.findByType('Input').props.value,90);
   await act(async()=>view.root.findAllByType('Button').find(node=>text(node)==='Save routines').props.onClick());
   assert.equal('deliveries' in saved[0],false);assert.equal('deliveries' in saved[1],false);
-  await act(async()=>view.update(React.createElement(RoutinePrioritiesDialog,props)));
+  await act(async()=>view.update(React.createElement(RoutinePrioritiesSection,props)));
   assert.equal(view.root.findByProps({'aria-label':'Marked deliveries priority'}).props.disabled,false);
  }finally{if(view)await act(async()=>view.unmount());global.window=previous;}
 });

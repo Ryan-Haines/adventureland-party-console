@@ -60,7 +60,8 @@ const accountPreference: Row = ['account preference rejects invalid drafts and s
     // Live cards require the browser's coordinator subscription to be mounted.
     await expect(page.getByRole('heading', { name: 'W', exact: true })).toBeVisible();
     await page.getByRole('button', { name: 'Interface settings', exact: true }).click();
-    await expect(page.getByRole('dialog', { name: 'Interface settings' })).toBeVisible();
+    await expect(page.getByRole('dialog', { name: 'Settings', exact: true })).toBeVisible();
+    await page.getByRole('tab', { name: 'Characters', exact: true }).click();
   };
   await openSettings();
   const input = page.getByLabel('Default name for bankboi', { exact: true });

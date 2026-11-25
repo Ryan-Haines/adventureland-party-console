@@ -2,43 +2,37 @@
 import { CharacterSessionControls } from './character-session-controls';
 import { Checkbox } from '@/components/ui/checkbox';
 import { RadioGroupItem } from '@/components/ui/radio-group';
-import { EventSelectionControl } from './event-selection-control';
+import { EventsButton } from './event-selection-control';
 import { Coins } from 'lucide-react';
 import { abbreviatedGold } from './abbreviated-gold';
 import { CharacterMapSection } from './character-map-section';
-import { MonsterDetailsDialog } from './monster-details-dialog';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { FarmingModeControl } from './farming-mode-control';
 import { AddonCard, AddonSlot, addonSections, useAddonSlots } from '../../../runtime/hooks/dashboard/slots';
-import { CardRoutinePicks } from './card-routine-picks';
 import { CardNameStrip } from './card-name-strip';
-import { StatusIconRow } from './status-icon-row';
+import { StatusCells, useStatusIcons } from './status-icon-row';
 import { usePinTopBar } from './pin-top-bar';
 import { farmingContext } from './farming-context';
 import { GoldTargetControl } from './gold-target-control';
 import { MerchantCardControls } from './merchant-card-controls';
 import { Meter } from './meter';
 import { MonsterFocusPicker } from './monster-focus-picker';
-import { RestockControls } from './restock-controls';
+import { RestockButton } from './restock-controls';
+import { useMonsterInspection } from './farming-settings-section';
 import { CharacterStatsTrigger } from './character-stats-trigger';
 import type { CharacterCardModel, InventoryModel } from './character-card-model';
 import { XpMeter } from './xp-meter';
 import { MonsterRouteButton } from './monster-route-button';
 
-import { memo, useCallback, useEffect, useMemo, useRef, type ReactNode } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef } from 'react';
 import { useCharacterData } from './dashboard-live';
 import { ConnectedInventory } from './connected-inventory';
 import { ConnectedCombatLog } from './connected-combat-log';
 import { emptyArray, emptyRecord } from './empty-values';
 import type { Char } from './char';
-import type { PassivePatch } from './passive-hunting-menu';
-import type { PartyState } from './party-state';
 import type { SlotChoice } from './farming-mode-control';
-import type { MerchantCatalogItem } from './merchant-catalog-item';
 import { audited } from './field-read-audit';
 import { HandControlToggle } from './hand-control';
-import { useSettingsWrite } from './settings-write';
-import { CardCombatFields } from './card-combat-fields';
+import { useSettingsReady } from './settings-write';
 import { defaultSearchRadius } from '../../../runtime/hunting/api.ts';
 import { normalizedRealm } from '../../../runtime/protocol/realm.ts';
 import { CC_MAX, ccWarning } from './call-meter';
@@ -79,7 +73,7 @@ export const ConnectedCharacterCard = memo(function ConnectedCharacterCard({
     clearMerchantWork,
     setForceStand,
     cancelMerchantJob,
-    setRoutinesOpen,
+    openSettings,
     gather,
     refresh,
     setCommerceMode,
@@ -90,28 +84,11 @@ export const ConnectedCharacterCard = memo(function ConnectedCharacterCard({
     findMonsterFor,
     selectedFocus,
     setFocus,
-    saveRestock,
-    setAnniversaryOpen,
-    setSelectedBestiaryMonster,
-    setActionError,
-    setMonsterNavigateTarget,
-    setSelected,
     monsterAchievements,
-    thresholdError,
-    itemCollectionThresholdError,
-    clearCollectionErrors,
-    threshold,
-    editThreshold,
-    save,
-    itemCollectionThreshold,
-    editItemCollectionThreshold,
-    saveItemCollectionThreshold,
-    farmingSettingsCharacter,
-    setFarmingSettingsCharacter,
   } = model;
-  const onFarmingSettingsOpenChange = useCallback((open: boolean) => {
-    setFarmingSettingsCharacter(current => open ? name : current === name ? null : current);
-  }, [name, setFarmingSettingsCharacter]);
+  const onFarmingSettings = useCallback(() => openSettings({ tab: 'character', character: name, section: 'farming' }), [openSettings, name]);
+  const onEventSettings = useCallback(() => openSettings({ tab: 'events', section: name }), [openSettings, name]);
+  const onRestockSettings = useCallback(() => openSettings({ tab: 'character', character: name, section: 'restock' }), [openSettings, name]);
   // MonsterFocusPicker is memoized, but formation={state} would hand it the
   // whole (frequently-changing) state object even though routing only needs
   // leader/followers; narrowing it lets unrelated state churn skip a re-render.
@@ -136,19 +113,10 @@ export const ConnectedCharacterCard = memo(function ConnectedCharacterCard({
     (condition: import('./condition').Condition) => setSelectedCondition({ character: name, condition }),
     [setSelectedCondition, name],
   );
-  const onAnniversary = useCallback(() => setAnniversaryOpen(true), [setAnniversaryOpen]);
-  const onEventSelectionChange = useCallback(
-    (eventSelections: string[]) => formation({ character: name, eventSelections }),
-    [formation, name],
-  );
-  const onEventLimitsChange = useCallback(
-    (event: string, limits: import('../../../runtime/events/api').EventLimits) => formation({ character: name, eventLimits: { event, limits } }),
-    [formation, name],
-  );
-  const onEventPriorityChange = useCallback(
-    (eventPriorities: string[]) => formation({ character: name, eventPriorities }),
-    [formation, name],
-  );
+  const statuses = useStatusIcons(char.conditions || emptyArray(), onSelectCondition);
+  // A fresh element only when its statuses change, so the memoised location row keeps its renders.
+  const locationStatuses = useMemo(() => statuses.locationLine.length
+    ? <StatusCells conditions={statuses.locationLine} shared={statuses.shared} /> : null, [statuses.locationLine, statuses.shared]);
   const onHandChange = useCallback(
     (handControl: Partial<import('./hand-control').HandControl>) => formation({ character: name, handControl }),
     [formation, name],
@@ -162,98 +130,15 @@ export const ConnectedCharacterCard = memo(function ConnectedCharacterCard({
     [command, name],
   );
   const onGoldTargetBank = useCallback(async () => { await command(name, 'bank'); }, [command, name]);
-  const eventState = useMemo(
-    () => ({
-      leader: state.leader,
-      merchantCharacter: state.merchantCharacter,
-      followers: state.followers,
-      eventsByCharacter: state.eventsByCharacter,
-      eventAttendance: state.eventAttendance,
-      eventLimitsByCharacter: state.eventLimitsByCharacter,
-      eventPrioritiesByCharacter: state.eventPrioritiesByCharacter,
-      eventSelectionsByCharacter: state.eventSelectionsByCharacter,
-      eventSchedules: state.eventSchedules,
-    }),
-    [state.leader, state.merchantCharacter, state.followers, state.eventsByCharacter,
-      state.eventSelectionsByCharacter, state.eventPrioritiesByCharacter, state.eventLimitsByCharacter, state.eventAttendance, state.eventSchedules],
-  );
-  const onRadiusSave = useCallback(
-    (radius: number) => setFocus(name, monsterFocusSelected, monsterFocusPriorities, radius),
-    [setFocus, name, monsterFocusSelected, monsterFocusPriorities],
-  );
-  const onRareChange = useCallback(
-    async (settings: PassivePatch) => { await post('/rare-hunting', settings); },
-    [post],
-  );
-  const onHuntSettingsSave = useCallback(
-    async (patch: Partial<NonNullable<PartyState["huntSettings"]>>) => {
-      await post("/hunt-settings", { ...patch, character: name });
-    },
-    [post, name],
-  );
-  // The party's root relocation switch, through the settings route with the page's basis.
-  const settings = useSettingsWrite();
+  const ready = useSettingsReady();
   // Every control on the card that writes a saved setting shows loading and stays locked until the
   // console's settings arrive. A disabled fieldset locks the native buttons, inputs and popover
   // triggers inside it; the Base UI Checkbox and Radio render a span that only their own
   // `disabled` locks.
-  const locked = !settings.ready;
+  const locked = !ready;
   const lock = { disabled: locked, 'aria-busy': locked };
-  const onRelocate = useCallback(
-    async (on: boolean) => { await settings.write([{ field: "relocateIfCompeting", value: on }]); },
-    [settings],
-  );
-  const restockControls = useMemo(
-    () => <RestockControls character={name} value={state.restockPolicies?.[name]} onSave={saveRestock}/>,
-    [name, state.restockPolicies?.[name], saveRestock],
-  );
-  const merchantCatalogAllItems = useMemo(
-    () => state.merchantCatalog?.allItems || emptyArray<MerchantCatalogItem>(),
-    [state.merchantCatalog],
-  );
-  const renderMonsterDetails = useCallback(
-    (id: string, close: () => void): ReactNode => {
-      const monster = state.bestiaryCatalog?.find(entry => entry.id === id);
-      if (!monster) return <Dialog open onOpenChange={open => { if (!open) close(); }}>
-        <DialogContent data-area="card-monster" className="border-emerald-700 bg-[#081713] text-emerald-50">
-          <DialogHeader><DialogTitle>Monster details</DialogTitle><DialogDescription className="text-emerald-100">Details are not available for {id} yet.</DialogDescription></DialogHeader>
-        </DialogContent>
-      </Dialog>;
-      return <MonsterDetailsDialog monster={monster} catalog={merchantCatalogAllItems}
-        monsters={state.bestiaryCatalog || []} skills={state.skillCatalog || []}
-        achievement={monsterAchievements[id] || null}
-        onOpenChange={open => { if (!open) close(); }}
-        onNavigate={setMonsterNavigateTarget}
-        onInspectDrop={(itemId, monsterName) => {
-          const item = state.merchantCatalog?.allItems?.find(entry => entry.id === itemId);
-          if (item) { close(); setSelected({ character: `Dropped by ${monsterName}`, entry: { slot: -1, item: { name: itemId }, meta: item.meta } }); }
-        }} />;
-    },
-    [state.bestiaryCatalog, merchantCatalogAllItems, monsterAchievements, setMonsterNavigateTarget,
-      state.merchantCatalog, state.skillCatalog, setSelected],
-  );
-  const onInspectMonster = useCallback(
-    (id: string) => {
-      const monster = state.bestiaryCatalog?.find(entry => entry.id === id);
-      if (monster) setSelectedBestiaryMonster(monster);
-      else setActionError(`Monster details are not available for ${id} yet.`);
-    },
-    [state.bestiaryCatalog, setSelectedBestiaryMonster, setActionError],
-  );
-  const onClearBlacklist = useCallback(
-    async (monsterId?: string) => {
-      await post(
-        '/hunt-blacklist',
-        monsterId
-          ? { action: 'remove', monsterId, character: name }
-          : { action: 'clear', character: name },
-      );
-    },
-    [post, name],
-  );
-  const onAddBlacklist = useCallback(async (monsterId: string) => {
-    await post('/hunt-blacklist', {action:'add',monsterId,character:name});
-  }, [post,name]);
+  const restockControls = useMemo(() => <RestockButton onOpen={onRestockSettings} />, [onRestockSettings]);
+  const { renderMonsterDetails, onInspectMonster } = useMonsterInspection(model);
   const onSelectFarmingSlot = useCallback(
     (choice: SlotChoice) => void setFarmingSlot(choice, name),
     [setFarmingSlot, name],
@@ -266,17 +151,8 @@ export const ConnectedCharacterCard = memo(function ConnectedCharacterCard({
   const sendAddon = useCallback(async (addon: string, body: unknown) => {
     await post('/addon-command', { name: addon, character: name, body });
   }, [post, name]);
-  const collectionSettings = useMemo(
-    () => ({
-      thresholdError, itemCollectionThresholdError, onClearErrors: clearCollectionErrors,
-      threshold, onThresholdChange: editThreshold, onThresholdSave: save,
-      itemCollectionThreshold, onItemCollectionThresholdChange: editItemCollectionThreshold,
-      onItemCollectionThresholdSave: saveItemCollectionThreshold,
-    }),
-    [thresholdError, itemCollectionThresholdError, clearCollectionErrors, threshold, editThreshold,
-      save, itemCollectionThreshold, editItemCollectionThreshold, saveItemCollectionThreshold],
-  );
-  const onRoutines = useCallback(() => setRoutinesOpen(true), [setRoutinesOpen]);
+  const onRoutines = useCallback(() => openSettings({ tab: 'character', character: name, section: 'routines' }), [openSettings, name]);
+  const onMerchantSettings = useCallback(() => openSettings({ tab: 'character', character: name, section: 'merchant' }), [openSettings, name]);
   const onBuy = useCallback(() => { void refresh(true); setCommerceMode('buy'); }, [refresh, setCommerceMode]);
   const onCraft = useCallback(() => { void refresh(true); setCommerceMode('craft'); }, [refresh, setCommerceMode]);
   const onExchange = useCallback(() => { void refresh(true); setCommerceMode('exchange'); }, [refresh, setCommerceMode]);
@@ -371,7 +247,12 @@ export const ConnectedCharacterCard = memo(function ConnectedCharacterCard({
                   <span className="text-slate-400">{addon}:</span> {label}
                 </p>
               ))}
-              <XpMeter value={char.xp || 0} max={char.max_xp || 0} />
+              <div className="flex gap-3">
+                <XpMeter value={char.xp || 0} max={char.max_xp || 0} />
+                <div ref={statuses.measure} data-status-row className="mt-2 flex min-w-0 flex-1 justify-end gap-1 overflow-hidden">
+                  <StatusCells conditions={statuses.xpLine} shared={statuses.shared} />
+                </div>
+              </div>
               {char.banking ? (
                 <span className="rounded bg-amber-300/10 px-2 py-1 font-mono text-xs text-amber-300">
                   BANKING
@@ -389,7 +270,7 @@ export const ConnectedCharacterCard = memo(function ConnectedCharacterCard({
             </div>
           </div>
         </div>
-        <CharacterMapSection char={char} />
+        <CharacterMapSection char={char} statuses={locationStatuses} />
         <fieldset {...lock} className="mt-4 flex min-w-0 flex-wrap gap-x-5 gap-y-2 rounded border border-emerald-900/70 bg-black/20 p-3 text-sm">
           <label
             htmlFor={`leader-${char.name}`}
@@ -412,11 +293,7 @@ export const ConnectedCharacterCard = memo(function ConnectedCharacterCard({
             <span>Follow</span>
           </label>}
           <HandControlToggle name={char.name} slot={slot} value={state.handControlByCharacter?.[char.name]} onChange={onHandChange} />
-          <EventSelectionControl onAnniversary={onAnniversary}
-            state={eventState}
-            name={char.name}
-            onChange={onEventSelectionChange} onPriorityChange={onEventPriorityChange} onLimitsChange={onEventLimitsChange}
-          />
+          <EventsButton state={state} name={char.name} onOpen={onEventSettings} />
           <AddonSlot name="card-section" part="controls" {...card} />
         </fieldset>
         <div className="mt-5 grid gap-3">
@@ -440,37 +317,14 @@ export const ConnectedCharacterCard = memo(function ConnectedCharacterCard({
           />
           <AddonSlot name="card-section" part="vitals" {...card} />
         </div>
-        <StatusIconRow conditions={char.conditions || emptyArray()} onSelect={onSelectCondition} />
-        {settings.notice ? <p role="alert" className="text-xs text-amber-200">{settings.notice}</p> : null}
         <fieldset {...lock} className="contents">
         {char.ctype !== 'merchant' ? (
           <FarmingModeControl
-            settingsOpen={farmingSettingsCharacter === name}
-            onSettingsOpenChange={onFarmingSettingsOpenChange}
+            onSettings={onFarmingSettings}
             farmArea={farming.farmArea}
-            radius={state.monsterSearchRadiusByCharacter?.[char.name] || defaultSearchRadius}
-            radiusContext={
-              farming.followingLeader
-                ? `Following ${state.leader}: effective radius ${state.monsterSearchRadiusByCharacter?.[String(state.leader)] || defaultSearchRadius}. This input saves ${char.name}'s own radius.`
-                : "Radius for Leader"
-            }
-            onRadiusSave={onRadiusSave}
-            passiveRareHunts={state.passiveRareHunts}
-            passiveHunting={state.passiveHunting}
-            onRareChange={onRareChange}
             followingLeader={farming.followingLeader}
             effectiveCombat={farming.effectiveCombat}
-            settingsOwner={farming.owner}
             blacklist={farming.blacklist}
-            huntSettings={farming.settings}
-            onHuntSettingsSave={onHuntSettingsSave}
-            relocate={state.relocateIfCompeting}
-            onRelocate={onRelocate}
-            catalog={monsters}
-            renderMonsterDetails={renderMonsterDetails}
-            onInspectMonster={onInspectMonster}
-            onClearBlacklist={onClearBlacklist}
-            onAddBlacklist={onAddBlacklist}
             effectiveMode={
               char.farmingMode || state.partyFarmingMode || 'default'
             }
@@ -484,14 +338,11 @@ export const ConnectedCharacterCard = memo(function ConnectedCharacterCard({
             targetMode={farming.targetMode}
             effectiveTarget={farming.effectiveTarget}
             onSelect={onSelectFarmingSlot}
-            addonSettings={addonFarming.sections}
             addonStatus={addonFarming.status}
             addonCard={card}
           />
         ) : null}
         </fieldset>
-        <CardCombatFields character={char.name} merchant={char.ctype === 'merchant'} />
-        <CardRoutinePicks character={char.name} ctype={char.ctype} />
         {char.name === state.merchantCharacter ? (
           <fieldset {...lock} className="contents">
             <GoldTargetControl
@@ -514,7 +365,7 @@ export const ConnectedCharacterCard = memo(function ConnectedCharacterCard({
       </div>
       {char.name === state.merchantCharacter ? (
         <MerchantCardControls
-          collectionSettings={collectionSettings}
+          onSettings={onMerchantSettings}
           state={state}
           onBank={bankParty}
           onClear={clearMerchantWork}

@@ -18,9 +18,10 @@ export function reflectLists(magic: unknown, physical: unknown, name: string): R
   const entry = (saved: unknown) => saved && typeof saved === 'object' ? (saved as Record<string, unknown>)[name] : undefined;
   return { magic: names(entry(magic)) ?? defaultLists.magic, physical: names(entry(physical)) ?? defaultLists.physical };
 }
-// The monsters each list can hold, from the coordinator's game data; none until it loads.
-export function reflectChoices(): { magic: string[]; physical: string[] } {
-  const monsters = gameMonsters() ?? {};
+// The monsters each list can hold in a game data monster table. The realm's check reads the
+// coordinator's table and the dashboard's Combat section reads its catalog's definitions.
+export type ReflectChoices = { magic: string[]; physical: string[] };
+export function reflectChoices(monsters: Readonly<Record<string, { readonly reflection?: unknown; readonly dreturn?: unknown } | null | undefined>>): ReflectChoices {
   const rated = (field: 'reflection' | 'dreturn') => Object.entries(monsters)
     .filter(([, m]) => Number(m?.[field]) > 0).map(([type]) => type).sort();
   return { magic: rated('reflection'), physical: rated('dreturn') };
@@ -31,7 +32,7 @@ export function reflectChoices(): { magic: string[]; physical: string[] } {
 export function reflectCheck(list: 'magic' | 'physical') {
   return (value: unknown): boolean => {
     if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
-    const loaded = gameMonsters(), choices = loaded ? new Set(reflectChoices()[list]) : null;
+    const loaded = gameMonsters(), choices = loaded ? new Set(reflectChoices(loaded)[list]) : null;
     return Object.values(value as Record<string, unknown>).every(entry => {
       const types = names(entry);
       return !!types && (!choices || types.every(type => choices.has(type)));

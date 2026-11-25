@@ -71,7 +71,7 @@ test('Hunt saves a backup, accepts settings, and exits without losing preference
   expect(hunting.farmingProfiles.W.farmingPolicy).toBe('hunt');
 
   await warrior.getByRole('button', { name: 'Farming settings', exact: true }).click();
-  const settings = page.getByRole('dialog', { name: 'Farming settings · W', exact: true });
+  const settings = page.getByRole('dialog', { name: 'Settings', exact: true });
   await expect(settings).toBeVisible();
   const relocate = settings.getByRole('checkbox', { name: 'Relocate to different spawn if competing', exact: true });
   await expect(relocate).toBeChecked();

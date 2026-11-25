@@ -12,7 +12,9 @@ test('character sections collapse independently and retain inventory equipment r
   for(const button of [inventory,equipped,restock]) await expect(button).toBeVisible();
   await expect(inventory).toHaveAttribute('aria-expanded','true');
   await expect(equipped).toHaveAttribute('aria-expanded','true');
-  await expect(restock).toHaveAttribute('aria-expanded','false');
+  // The restock line opens the settings menu at the character's Restock section, so it names no
+  // expanded state.
+  await expect(restock).not.toHaveAttribute('aria-expanded');
   const positions=await Promise.all([inventory,equipped,restock].map(b=>b.boundingBox()));
   expect(positions[0]!.y).toBeLessThan(positions[1]!.y);expect(positions[1]!.y).toBeLessThan(positions[2]!.y);
   for(const button of [inventory,equipped]) if(await button.getAttribute('aria-expanded')==='true')await button.click();
@@ -28,15 +30,18 @@ test('character sections collapse independently and retain inventory equipment r
   await log.click();await expect(merchant.getByText('No combat events yet',{exact:true})).toBeVisible();
   await expect(merchant.getByRole('button',{name:'Combat log',exact:true})).toHaveCount(1);
   await log.click();await expect(merchant.getByText('No combat events yet',{exact:true})).toBeHidden();
-  if(await restock.getAttribute('aria-expanded')!=='true')await restock.click();
-  const hp=merchant.getByRole('textbox',{name:'HP min',exact:true});await hp.fill('17');
-  await restock.click();await expect(hp).toBeHidden();await restock.click();await expect(hp).toHaveValue('17');
-  await merchant.getByRole('button',{name:'Save restock',exact:true}).click();
+  await restock.click();
+  const menu=page.getByRole('dialog',{name:'Settings',exact:true});
+  await expect(menu.getByRole('tab',{name:'M',exact:true})).toHaveAttribute('aria-selected','true');
+  await expect(menu.getByRole('tab',{name:'Restock',exact:true})).toHaveAttribute('aria-selected','true');
+  const hp=menu.getByRole('textbox',{name:'HP min',exact:true});await hp.fill('17');
+  await menu.getByRole('button',{name:'Save restock',exact:true}).click();
   await expect.poll(async()=>(await app.state()).restockPolicies.M.hp.min).toBe(17);
-  await restock.click();await inventory.click();await equipped.click();
+  await page.keyboard.press('Escape');await expect(menu).toBeHidden();
+  await inventory.click();await equipped.click();
   await expect(gear.getByText(/^helmet$/i)).toBeHidden();
   await page.reload();
-  await expect(merchant.getByRole('button',{name:'Merchant restock',exact:true})).toHaveAttribute('aria-expanded','false');
+  await expect(merchant.getByRole('button',{name:'Merchant restock',exact:true})).toBeVisible();
   await expect(merchant.getByRole('button',{name:/^Inventory/})).toHaveAttribute('aria-expanded','false');
   await expect(merchant.getByRole('button',{name:'Equipped',exact:true})).toHaveAttribute('aria-expanded','false');
   await page.setViewportSize({width:800,height:1000});

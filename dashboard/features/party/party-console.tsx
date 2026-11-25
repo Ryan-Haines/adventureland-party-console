@@ -14,6 +14,7 @@ import { DashboardLive } from "./dashboard-live";
 import { DashboardQueries } from "./query-cache";
 import { DebugBrowserBanner } from './debug-browser';
 import { DiagnosticsDialog, RecordIcon, useRecordIcon } from './diagnostics-dialog';
+import { SettingsMenu } from './settings-menu';
 
 // Scrolls to `top` once the page is tall enough to hold it, as the content lays out. A scroll input
 // from the player or the returned cleanup ends the wait.
@@ -66,6 +67,7 @@ function PartyConsole({ onUp }: { onUp?: (up: boolean) => void }) {
       <PartyReferencePanels model={model} />
       <PartyManagementPanels model={model} />
       <PartyWorkspacePanels model={model} />
+      <SettingsMenu model={model} />
       <DiagnosticsDialog characters={Object.keys(model.state.characters || {})} onRead={records.markRead} />
     </>
   );

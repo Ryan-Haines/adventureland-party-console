@@ -1,5 +1,5 @@
 "use client";
-import { MerchantCollectionSettings, type MerchantCollectionSettingsProps } from "./merchant-collection-settings";
+import { MerchantSettingsButton } from "./merchant-collection-settings";
 import { AddonSlot } from "../../../runtime/hooks/dashboard/slots";
 import { useClock } from "@/hooks/use-clock";
 import { MerchantActivityLog } from "@/components/merchant-activity";
@@ -33,11 +33,10 @@ import { merchantJobLabel, merchantKind, pickupReason } from '../../../runtime/m
 import { protectedSlotsOf } from '../../../runtime/items/api.ts';
 import { useCharacterData } from './dashboard-live';
 import { audited } from './field-read-audit';
-import { SettingsLock } from './settings-lock';
 
 export const MerchantCardControls = memo(function MerchantCardControls({
   state: baseState,
-  collectionSettings,
+  onSettings,
   onBank,
   onClear,
   onForceStand,
@@ -51,7 +50,8 @@ export const MerchantCardControls = memo(function MerchantCardControls({
   onGiveaway,
 }: {
   state: PartyState;
-  collectionSettings: MerchantCollectionSettingsProps;
+  // Opens the settings menu at the merchant's Merchant section.
+  onSettings: () => void;
   onBank: (group?: string) => Promise<void>;
   onClear: () => Promise<void>;
   onForceStand: (enabled: boolean) => Promise<void>;
@@ -391,7 +391,7 @@ export const MerchantCardControls = memo(function MerchantCardControls({
           <X className="mr-1.5 h-3.5 w-3.5" />
           Clear job queue
         </Button>
-        <SettingsLock><MerchantCollectionSettings toolCrafting={state.merchantAutomations} buyUpgradeBatchSize={state.buyUpgradeBatchSize} {...collectionSettings} merchantStandLocation={state.merchantStandLocation} bankSortState={state} deliveryTripsEnabled={state.merchantAutomations?.deliveries !== false} withdrawalTripsEnabled={state.merchantAutomations?.withdrawals !== false} realms={state.realmControl?.realms} realmBlacklist={state.merchantRealmBlacklist} /></SettingsLock>
+        <MerchantSettingsButton onOpen={onSettings} />
       </div>
       <AddonSlot name="card-section" part="merchant" character={merchant?.name ?? ''} reports={merchant?.addonReports} />
     </section>

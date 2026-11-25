@@ -1,7 +1,7 @@
 'use client';
 import { AddonSlot, useAddonListView } from '../../../runtime/hooks/dashboard/slots';
 import type { ClassifiedsRow, MarketBuyRow, MarketRow, PontyRow } from './addon-kit';
-import {IgnoreMarketItemButton,IgnoredMarketItems,MarketSettingsSection} from './market-preferences';
+import {IgnoreMarketItemButton} from './market-preferences';
 import {bidAcceptsLevel, defaultStandPrice, itemGrade, marketItemKey, marketListingFresh, ownedStockKey} from '../../../runtime/items/api.ts';
 import {type MarketIgnoredItem,type MarketItemIdentity} from '../../../runtime/items/api.ts';
 import { ActiveWTBFields } from './active-wtb-fields';
@@ -111,8 +111,6 @@ import {
 
   higherLevelExplanation,
 
-  autoStandExplanation,
-
   type WTBOptions,
 
 } from './wtb-preferences';
@@ -162,11 +160,10 @@ export const StandSheet = memo(function StandSheet({
 
   nativeStand,
 
-  autoStandBuys,
 
   autoBlacklistMerchants,
 
-  onAutoStandBuys,
+  onMarketplaceSettings,
 
   onEdit,
   onEditBuy,
@@ -225,11 +222,11 @@ export const StandSheet = memo(function StandSheet({
 
   nativeStand?: PartyState['nativeStand'];
 
-  autoStandBuys: boolean;
 
   autoBlacklistMerchants: boolean;
 
-  onAutoStandBuys(enabled: boolean): Promise<void>;
+  // Opens the settings menu at Account > Marketplace.
+  onMarketplaceSettings: () => void;
 
   onEdit: (listing: StandListing) => void;
   onEditBuy: (item: Item, meta?: ItemMeta | null, price?: number) => void;
@@ -385,11 +382,6 @@ export const StandSheet = memo(function StandSheet({
 
   const [hideBlacklisted, setHideBlacklisted] = useState(true);
 
-  const [blacklistOpen, setBlacklistOpen] = useState(false);
-
-  const [confirmBlacklistClear, setConfirmBlacklistClear] = useState(false);
-
-  const [settingsError, setSettingsError] = useState('');
   // A refused market buy or sell, shown in its confirmation as Ponty's refusal is.
   const [confirmationError, setConfirmationError] = useState<string | null>(null);
   const [settingsSaving, setSettingsSaving] = useState(false);
@@ -441,10 +433,6 @@ export const StandSheet = memo(function StandSheet({
     if (confirmBidCancel && !bids[confirmBidCancel]) setConfirmBidCancel(null);
 
   }, [bids, confirmBidCancel]);
-
-  const [blacklistName, setBlacklistName] = useState('');
-
-  const [blacklistMinutes, setBlacklistMinutes] = useState('60');
 
   const [activeBidsOpen, setActiveBidsOpen] = useStoredBoolean(
 
@@ -838,13 +826,13 @@ export const StandSheet = memo(function StandSheet({
     const known=catalogById.get(item.name);
     return `${known?.name||item.name}${known?.upgradeable||known?.compoundable||known?.meta?.upgradeable||known?.meta?.compoundable||item.level?' +'+(item.level??0):''}`;
   };
-  const updateIgnored=async(actionName:'add'|'remove'|'clear',item?:MarketItemIdentity)=>{
-    setIgnoreError('');setSettingsError('');setSettingsSaving(true);
-    try{await action.mutateAsync({path:'/market/ignored-items',body:{action:actionName,...item,level:item?.level??0}});}
-    catch(error){const message=error instanceof Error?error.message:'Could not save ignored items';setIgnoreError(message);setSettingsError(message);}
+  const ignoreItem=async(item:MarketItemIdentity)=>{
+    setIgnoreError('');setSettingsSaving(true);
+    try{await action.mutateAsync({path:'/market/ignored-items',body:{action:'add',...item,level:item.level??0}});}
+    catch(error){setIgnoreError(error instanceof Error?error.message:'Could not save ignored items');}
     finally{setSettingsSaving(false);}
   };
-  const ignoreButton=(item:MarketItemIdentity)=><IgnoreMarketItemButton label={marketItemLabel(item)} disabled={settingsSaving} onIgnore={()=>void updateIgnored('add',item)}/>;
+  const ignoreButton=(item:MarketItemIdentity)=><IgnoreMarketItemButton label={marketItemLabel(item)} disabled={settingsSaving} onIgnore={()=>void ignoreItem(item)}/>;
 
   const pontyRows = [...pontyGroups.values()].map((listing) => {
 
@@ -1178,46 +1166,6 @@ export const StandSheet = memo(function StandSheet({
   };
 
   const action = usePartyAction();
-
-  // Answers whether the save went through; a refusal shows in settingsError.
-  const saveMarketSetting = async (save: () => Promise<unknown>) => {
-    setSettingsSaving(true);
-    setSettingsError('');
-    try {
-      await save();
-      return true;
-    } catch (failure) {
-
-      setSettingsError(
-
-        failure instanceof Error
-
-          ? failure.message
-
-          : 'Could not save marketplace settings',
-      );
-      return false;
-    } finally {
-
-      setSettingsSaving(false);
-
-    }
-
-  };
-
-  const updateBlacklist = (payload: Record<string, unknown>) =>
-
-    saveMarketSetting(() =>
-
-      action.mutateAsync({ path: '/merchant/blacklist', body: payload }),
-
-    );
-
-  const blacklistRecords = Object.entries(blacklist).sort(
-
-    ([, a], [, b]) => Number(b.updatedAt || 0) - Number(a.updatedAt || 0),
-
-  );
 
   const marketRows = (entries: ALDataListing[]) =>
 
@@ -1956,13 +1904,7 @@ export const StandSheet = memo(function StandSheet({
 
                   title="Marketplace settings"
 
-                  onClick={() => {
-
-                    setConfirmBlacklistClear(false);
-
-                    setBlacklistOpen(true);
-
-                  }}
+                  onClick={onMarketplaceSettings}
 
                   className="border-slate-600 bg-black text-slate-200 hover:bg-slate-900 hover:text-white"
 
@@ -2783,291 +2725,6 @@ export const StandSheet = memo(function StandSheet({
 
       </Dialog>
 
-      <Dialog
-
-        open={blacklistOpen}
-
-        onOpenChange={(value) => {
-
-          setBlacklistOpen(value);
-
-          setConfirmBlacklistClear(false);
-
-        }}
-
-      >
-
-        <DialogContent data-area="market-settings" className="flex max-h-[85vh] flex-col overflow-hidden border-slate-700 bg-[#07120f] text-emerald-50 sm:max-w-2xl">
-
-          <DialogHeader>
-
-            <DialogTitle>Marketplace settings</DialogTitle>
-
-            <DialogDescription>
-
-              Manage stand preferences, ignored items and merchant blacklist entries.
-
-            </DialogDescription>
-
-          </DialogHeader>
-
-          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto pr-1">
-
-            <section className="space-y-3 rounded border border-violet-700 bg-black p-3">
-
-              <h3 className="text-sm font-semibold text-violet-100">
-
-                Stand buy orders
-
-              </h3>
-
-              <WTBPreference
-
-                label="Automatically fill empty stand slots with highest priority buy order"
-
-                description={autoStandExplanation}
-
-                checked={autoStandBuys}
-
-                disabled={settingsSaving}
-
-                onChange={(value) =>
-
-                  void saveMarketSetting(() => onAutoStandBuys(value))
-
-                }
-
-              />
-
-            </section>
-
-            <IgnoredMarketItems items={marketIgnoredItems} label={marketItemLabel} disabled={settingsSaving}
-              onRemove={item=>void updateIgnored('remove',item)} onClear={()=>void updateIgnored('clear')}/>
-            <MarketSettingsSection title="Marketplace merchant blacklist" count={blacklistRecords.length} disabled={settingsSaving}
-              clearLabel={confirmBlacklistClear?'Really clear all?':'Clear all'} clearAriaLabel={confirmBlacklistClear?'Confirm clearing all merchant blacklist entries':'Clear all merchant blacklist entries'}
-              onClear={()=>{if(confirmBlacklistClear){setConfirmBlacklistClear(false);void updateBlacklist({action:'clear'});}else setConfirmBlacklistClear(true);}}>
-
-              <WTBPreference
-
-                label="Enable blacklisting unavailable merchants"
-
-                description="Adds a strike when the merchant reaches an advertised seller but the seller is not visible or their stand stays closed during the bounded wait. Retries pause for 1, 2, 4, 8... minutes after successive strikes. Changed or sold listings and unreachable routes do not cause strikes. Disabling this ignores automatic strikes and stops new ones; manual blocks still apply."
-
-                checked={autoBlacklistMerchants}
-
-                disabled={settingsSaving}
-
-                onChange={(enabled) =>
-
-                  void updateBlacklist({ action: 'configure', enabled })
-
-                }
-
-              />
-
-              <div className="grid grid-cols-[1fr_8rem_auto] gap-2">
-
-                <Input
-
-                  value={blacklistName}
-
-                  onChange={(event) => setBlacklistName(event.target.value)}
-
-                  placeholder="Merchant name"
-
-                  className="border-slate-700 bg-black"
-
-                />
-
-                <Input
-
-                  inputMode="numeric"
-
-                  value={blacklistMinutes}
-
-                  onChange={(event) =>
-
-                    setBlacklistMinutes(
-
-                      event.target.value.replace(/[^0-9-]/g, ''),
-
-                    )
-
-                  }
-
-                  placeholder="Minutes / -1"
-
-                  className="border-slate-700 bg-black"
-
-                />
-
-                <Button
-
-                  onClick={async () => {
-
-                    const saved = await updateBlacklist({
-                      action: 'add',
-                      seller: blacklistName.trim(),
-                      minutes: Number(blacklistMinutes),
-                    });
-                    if (saved) setBlacklistName('');
-
-                  }}
-
-                  className="bg-rose-700 text-white hover:bg-rose-600"
-
-                >
-
-                  Add
-
-                </Button>
-
-              </div>
-
-              <div className="space-y-2">
-
-                {blacklistRecords.length ? (
-
-                  blacklistRecords.map(([key, entry]) => {
-
-                    const coolingDown = entry.until === -1 || entry.until > now;
-
-                    return (
-
-                      <div
-
-                        key={key}
-
-                        className={`flex items-center gap-3 rounded border bg-black p-2 ${coolingDown ? 'border-rose-800' : 'border-amber-800'}`}
-
-                      >
-
-                        <div className="min-w-0 flex-1">
-
-                          <p
-
-                            className={
-
-                              coolingDown
-
-                                ? 'font-semibold text-rose-200'
-
-                                : 'font-semibold text-amber-200'
-
-                            }
-
-                          >
-
-                            {entry.seller}
-
-                          </p>
-
-                          <p className="font-mono text-[10px] text-slate-300">
-
-                            {entry.serverRegion || 'all regions'}{' '}
-
-                            {entry.serverIdentifier || 'all servers'} ·{' '}
-
-                            {entry.reason || 'manual'} · {entry.failures || 0}{' '}
-
-                            strikes ·{' '}
-
-                            {entry.until === -1
-
-                              ? 'blocked forever'
-
-                              : coolingDown
-
-                                ? `${Math.max(1, Math.ceil((entry.until - now) / 60000))}m until retry`
-
-                                : 'eligible for retry'}
-
-                          </p>
-
-                        </div>
-
-                        <Button
-
-                          size="sm"
-
-                          variant="outline"
-
-                          onClick={() =>
-
-                            void updateBlacklist({ action: 'clear', key })
-
-                          }
-
-                          className="border-emerald-700 bg-black text-emerald-200 hover:bg-emerald-950 hover:text-white"
-
-                        >
-
-                          Clear
-
-                        </Button>
-
-                      </div>
-
-                    );
-
-                  })
-
-                ) : (
-
-                  <p className="text-sm text-emerald-100/45">
-
-                    No merchant strike records.
-
-                  </p>
-
-                )}
-
-              </div>
-
-            </MarketSettingsSection>
-
-          </div>
-
-          {settingsError && (
-
-            <p role="alert" className="text-sm text-rose-200">
-
-              {settingsError}
-
-            </p>
-
-          )}
-
-          <AddonSlot name="dialog-section" part="market-settings" />
-          <DialogFooter className="shrink-0 border-t border-slate-700 bg-[#07120f] pt-3">
-
-
-
-            <Button
-
-              variant="outline"
-
-              onClick={() => {
-
-                setConfirmBlacklistClear(false);
-
-                setBlacklistOpen(false);
-
-              }}
-
-              className="border-slate-600 bg-black text-slate-200 hover:bg-slate-900 hover:text-white"
-
-            >
-
-              Close
-
-            </Button>
-
-          </DialogFooter>
-
-        </DialogContent>
-
-      </Dialog>
 
       <Dialog
 

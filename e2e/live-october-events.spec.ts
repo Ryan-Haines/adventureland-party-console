@@ -151,7 +151,7 @@ test('October native cipher merchant solves a constrained recipe and does not re
   await expect(page.getByRole('option',{name:/Goo.*%/i})).toBeVisible();
   await info.attach('october-ingredient-source-sprites-and-rates',{body:await page.screenshot({animations:'disabled'}),contentType:'image/png'});
   await page.keyboard.press('Escape');
-  const settings=page.getByRole('dialog',{name:"Witch's Cipher settings",exact:true});
+  const settings=page.getByRole('region',{name:"Witch's Cipher settings",exact:true});
   await settings.getByRole('spinbutton',{name:'Minimum clues',exact:true}).fill('7');
   for(const ingredient of ['Verdant Spore','Frost Scale','Ember Coal','Gloom Feather']){
     await settings.getByRole('button',{name:`View ${ingredient} details`,exact:true}).first().click();

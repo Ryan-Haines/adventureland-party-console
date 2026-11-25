@@ -12,7 +12,9 @@ import type { RecordField } from "../../settings/api";
 
 const SELECT = "rounded border border-slate-600 bg-slate-950 px-2 py-1 text-slate-100", INPUT = "w-20 " + SELECT;
 
-export function AddonSettings() {
+// The settings menu's Addons tab shows one add-on per section (`only`); with no add-on named it
+// lists every installed add-on.
+export function AddonSettings({ only }: { only?: string } = {}) {
   const list = useAddonSlots(), client = useQueryClient(), [error, setError] = useState(""), [busy, setBusy] = useState(false);
   async function save(name: string, body: { enabled?: boolean; settings?: Record<string, unknown> }) {
     setBusy(true); setError("");
@@ -74,7 +76,7 @@ export function AddonSettings() {
     <h3 className="font-semibold">Add-ons</h3>
     {list.refusals.map(refusal => <p key={refusal.name} role="alert" className="text-amber-200">Not loaded, {refusal.name}: {refusal.message}.</p>)}
     {list.loaded && !list.error && !list.addons.length ? <p className="text-slate-300">No add-ons are installed.</p> : null}
-    {list.addons.map(addon => <div key={addon.name} className="space-y-2 rounded border border-slate-700 bg-slate-900 p-3" data-addon={addon.name}>
+    {list.addons.filter(addon => !only || addon.name === only).map(addon => <div key={addon.name} className="space-y-2 rounded border border-slate-700 bg-slate-900 p-3" data-addon={addon.name}>
       <label className="flex items-center gap-3 font-semibold">
         <input type="checkbox" className="size-4 accent-violet-500" checked={addon.enabled} disabled={busy} aria-label={`${addon.name} on`}
           onChange={event => void save(addon.name, { enabled: event.target.checked })} />

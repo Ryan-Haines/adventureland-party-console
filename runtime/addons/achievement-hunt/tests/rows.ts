@@ -219,7 +219,7 @@ async function consoleJourney({ page, app }: { page: Page; app: App }, testInfo:
   // scope store and hides the minutes (user, 2026-11-09).
   const pBefore = store(await app.state(), 'P') ?? null;
   await card.getByRole('button', { name: 'Farming settings', exact: true }).click();
-  const panel = page.getByRole('dialog', { name: 'Farming settings · W', exact: true }).getByRole('region', { name: 'Achievement Hunt settings' });
+  const panel = page.getByRole('dialog', { name: 'Settings', exact: true }).getByRole('region', { name: 'Achievement Hunt settings' });
   const leave = panel.getByRole('checkbox', { name: 'Leave the target when a boss attacks' });
   const minutes = panel.getByRole('spinbutton', { name: 'Minutes before checking a boss-held target again' });
   await expect(leave).toBeChecked();
@@ -316,7 +316,7 @@ async function consoleJourney({ page, app }: { page: Page; app: App }, testInfo:
   expect((await post('/settings', { changes: [{ field: 'leader', value: 'W' }, { field: 'followers', character: 'P', value: true }] })).status()).toBe(200);
   const follower = page.locator('article').filter({ has: page.getByRole('heading', { name: 'P', exact: true }) });
   await follower.getByRole('button', { name: 'Farming settings', exact: true }).click();
-  await expect(page.getByRole('dialog', { name: 'Farming settings · W', exact: true }).getByRole('region', { name: 'Achievement Hunt settings' })
+  await expect(page.getByRole('dialog', { name: 'Settings', exact: true }).getByRole('region', { name: 'Achievement Hunt settings' })
     .getByRole('checkbox', { name: 'Leave the target when a boss attacks' })).toBeDisabled();
   await page.keyboard.press('Escape');
   expect((await post('/settings', { changes: [{ field: 'leader', value: null }, { field: 'followers', character: 'P', value: false }] })).status()).toBe(200);

@@ -144,7 +144,7 @@ test("the merchant card's gathering rows and stand fullness read their owners' a
     const root=createRoot(document.getElementById('root')), client=createDashboardClient(), none=async()=>{};
     window.stand={standIsFull, standFullMessage};
     window.mount=(state)=>root.render(<QueryClientProvider client={client}><MerchantCardControls state={state}
-      collectionSettings={{onClearErrors(){},threshold:'',onThresholdChange(){},onThresholdSave:none,itemCollectionThreshold:'',onItemCollectionThresholdChange(){},onItemCollectionThresholdSave:none}}
+      onSettings={()=>{}}
       onBank={none} onClear={none} onForceStand={none} onCancelJob={none} onRoutines={()=>{}} onGather={none} onBuy={()=>{}} onCraft={()=>{}}
       onExchange={()=>{}} onDonate={()=>{}} onGiveaway={()=>{}}/></QueryClientProvider>);
   `, null);
@@ -215,39 +215,64 @@ test("a pending primary card offers its Steam recovery through the model's actio
     expect(model).toMatch(new RegExp(`async function ${name}\\([^)]*\\) \\{\\s*try \\{\\s*await post\\("${route}"`));
 });
 
-// Each of the card's combat lines writes its owner's field
-// through the settings route, and the settings owner's check refuses a value out of range with nothing saved. The
-// merchant's card has no heal line and no reflect lists.
-test("the card's combat lines write their owners' fields and stay inside 11's checks", async ({ page, app }) => {
+// Each combat line of a character's Combat section in the settings menu writes its owner's field
+// through the settings route, and the settings owner's check refuses a value out of range with
+// nothing saved. The merchant's section has no heal line and no reflect lists, and the card face
+// holds none of them.
+test("the Combat section's lines write their owners' fields and stay inside 11's checks", async ({ page, app }) => {
   const value = async (field: string) => {
     const page_ = await (await page.request.get(app.url + "/party-api/settings")).json();
     return (page_.settings as { field: string; value: any }[]).find((entry) => entry.field === field)?.value?.W;
   };
   await page.goto(app.url);
   const card = page.locator("article").filter({ has: page.getByRole("heading", { name: "W", exact: true }) });
+  await expect(card.getByLabel("Heal first below (% HP) for W", { exact: true })).toHaveCount(0);
+  // The card's Farming settings gear opens W's tab; Combat is its next section.
+  await card.getByRole("button", { name: "Farming settings", exact: true }).click();
+  const menu = page.getByRole("dialog", { name: "Settings", exact: true });
+  await menu.getByRole("tab", { name: "Combat", exact: true }).click();
   for (const [label, field, typed, saved] of [
     ["Heal first below (% HP)", "healFirstBelow", "65", 65],
     ["HP potion below (% HP)", "hpPotionBelow", "40", 40],
     ["MP potion below (% MP)", "mpPotionBelow", "25", 25],
-    // A reflect list holds only monsters game data rates for it, reflection or dreturn above 0
-    // (runtime/characters/targeting/reflect.ts `reflectCheck`, d9edc4b6e).
-    ["Don't hit with magic (monster ids)", "reflectMagicByCharacter", "slenderman", ["slenderman"]],
-    ["Don't hit with physical (monster ids)", "reflectPhysicalByCharacter", "porcupine", ["porcupine"]],
   ] as const) {
-    const box = card.getByLabel(`${label} for W`, { exact: true });
+    const box = menu.getByLabel(`${label} for W`, { exact: true });
     await expect(box).toBeEnabled();
     await box.fill(typed);
     await box.press("Enter");
     await expect.poll(() => value(field), { message: field }).toEqual(saved);
   }
+  // A reflect list offers only the monsters game data rates for it, reflection or dreturn above 0
+  // (runtime/characters/targeting/reflect.ts `reflectCheck`, d9edc4b6e). With no entry it shows the
+  // owner's default list; each change saves the whole list.
+  for (const [label, field, monster, rejected, defaults] of [
+    ["Don't hit with magic", "reflectMagicByCharacter", "slenderman", "porcupine", ["slenderman", "tiger", "goblin"]],
+    ["Don't hit with physical", "reflectPhysicalByCharacter", "porcupine", "slenderman", ["porcupine"]],
+  ] as const) {
+    const list = menu.getByRole("group", { name: label, exact: true });
+    await expect(list).toContainText("(default)");
+    await list.getByRole("button", { name: new RegExp(`^Remove .+ from ${label}$`) }).first().click();
+    const kept = defaults.slice(1);
+    await expect.poll(() => value(field), { message: field }).toEqual(kept);
+    await list.getByRole("button", { name: `Add a monster to ${label}`, exact: true }).click();
+    const search = page.getByRole("textbox", { name: `Search monsters for ${label}`, exact: true });
+    await search.fill(rejected);
+    await expect(page.getByText("No matching monsters.", { exact: true })).toBeVisible();
+    await search.fill(monster);
+    // The search results are their own group, apart from the "Add a monster to" trigger.
+    await page.getByRole("group", { name: `Monsters for ${label}`, exact: true }).getByRole("button", { name: new RegExp(`^Add .+ to ${label}$`) }).first().click();
+    await expect.poll(() => value(field), { message: field }).toEqual([...kept, monster]);
+    await page.keyboard.press("Escape");
+  }
   // The settings owner's check: 1 to 100 for a line; the refusal shows and the saved value stays.
-  const heal = card.getByLabel("Heal first below (% HP) for W", { exact: true });
+  const heal = menu.getByLabel("Heal first below (% HP) for W", { exact: true });
   await heal.fill("150");
   await heal.press("Enter");
-  await expect(card.getByRole("alert").filter({ hasText: /./ })).toBeVisible();
+  await expect(menu.getByRole("alert").filter({ hasText: /./ })).toBeVisible();
   expect(await value("healFirstBelow")).toBe(65);
-  const merchant = page.locator("article").filter({ has: page.getByRole("heading", { name: "M", exact: true }) });
-  await expect(merchant.getByLabel("Heal first below (% HP) for M", { exact: true })).toHaveCount(0);
-  await expect(merchant.getByLabel("Don't hit with magic (monster ids) for M", { exact: true })).toHaveCount(0);
-  await expect(merchant.getByLabel("HP potion below (% HP) for M", { exact: true })).toBeVisible();
+  await menu.getByRole("tab", { name: "M", exact: true }).click();
+  await menu.getByRole("tab", { name: "Combat", exact: true }).click();
+  await expect(menu.getByLabel("Heal first below (% HP) for M", { exact: true })).toHaveCount(0);
+  await expect(menu.getByRole("group", { name: "Don't hit with magic", exact: true })).toHaveCount(0);
+  await expect(menu.getByLabel("HP potion below (% HP) for M", { exact: true })).toBeVisible();
 });

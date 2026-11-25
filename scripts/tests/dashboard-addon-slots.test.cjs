@@ -42,7 +42,7 @@ const headerStubs = {
   './hand-control': tags, './mail-count': tags, './party-gold': tags,
 };
 const model = { state: { realmControl: {} }, coordinatorLoading: false, coordinatorUnavailable: false };
-for (const setter of ['setMailOpen', 'setCatalogOpen', 'setBestiaryOpen', 'setSkillsOpen', 'setStandOpen', 'setMarketOpen', 'setBankOpen', 'setSettingsOpen', 'setRealmDestination', 'aldataAction'])
+for (const setter of ['setMailOpen', 'setCatalogOpen', 'setBestiaryOpen', 'setSkillsOpen', 'setStandOpen', 'setMarketOpen', 'setBankOpen', 'openSettings', 'setRealmDestination', 'aldataAction'])
   model[setter] = () => {};
 const header = (pieces) => draw(React.createElement(load('party-header.tsx', { ...headerStubs, ...installed(pieces) }).PartyHeader,
   { model, onLogs() {}, metricsActive: false, onMetrics() {} }));
@@ -64,8 +64,8 @@ test("top-bar: the add-on's button follows Bank, its view follows Logs and its s
 });
 
 const entry = (mode, color) => ({ mode, addon: '', button: { label: mode, description: mode, color } });
-const farmingProps = { policy: 'default', effectiveMode: 'default', blacklist: {}, catalog: [], onClearBlacklist: async () => {}, onSelect() {}, onRareChange: async () => {},
-  settingsOpen: false, onSettingsOpenChange() {}, combatEntries: [entry('default', 'emerald')], targetEntries: [entry('farming', 'sky')],
+const farmingProps = { policy: 'default', effectiveMode: 'default', blacklist: {}, onSelect() {},
+  onSettings() {}, combatEntries: [entry('default', 'emerald')], targetEntries: [entry('farming', 'sky')],
   combatMode: 'default', targetMode: 'farming', effectiveTarget: 'farming', addonCard: { character: 'W', reports: { fixture: { worn: 'hat' } } } };
 // The Farming settings line of W's card, opened.
 async function farmingLine(pieces, props = {}) {
@@ -115,7 +115,7 @@ async function market(pieces) {
   return draw(React.createElement(sheet, { open: false, onOpenChange: none, marketOpen: true, onMarketOpenChange: none, stand: { used: 0, slots: 0 }, listings: [], catalog: [],
     buyable: [], bids: {}, priceHistory: {}, blacklist: {}, marketIgnoredItems: [], autoStandBuys: false, autoBlacklistMerchants: false,
     aldata: { listings: [listing('Alpha', 'US', 'I', 200), listing('Beta', 'EU', 'I', 100)], buyOrders: [], trades: [], tradesUpdatedAt: Date.now() },
-    onAutoStandBuys: async () => {}, onEdit: none, onEditBuy: none, onRemove: async () => {}, onBuyALData: async () => {}, onBuyPonty: async () => {},
+    onMarketplaceSettings() {}, onEdit: none, onEditBuy: none, onRemove: async () => {}, onBuyALData: async () => {}, onBuyPonty: async () => {},
     onSellALData: async () => {}, onBid: async () => {}, onListForWTB: none, onInspect: none }));
 }
 // The sellers the tab shows, in the order it draws them.
@@ -210,19 +210,20 @@ test("rare-list: the add-on's rows follow the passive hunting menu's monster row
   bare.unmount(); view.unmount();
 });
 
-const routines = (pieces, kinds) => draw(React.createElement(load('routine-priorities-dialog.tsx', { '@/components/ui/*': tags, 'lucide-react': tags, ...installed(pieces),
-  '@/lib/use-reorder-list': { useReorderList: () => ({ listRef: { current: null }, remember() {}, rowAt: () => null }) } }).RoutinePrioritiesDialog,
-  { open: true, onOpenChange() {}, priorities: {}, enabled: {}, kinds, onSave: async () => {} }));
+const routines = (pieces, kinds) => draw(React.createElement(load('routine-priorities-section.tsx', { '@/components/ui/*': tags, 'lucide-react': tags, ...installed(pieces),
+  '@/lib/use-reorder-list': { useReorderList: () => ({ listRef: { current: null }, remember() {}, rowAt: () => null }) } }).RoutinePrioritiesSection,
+  { priorities: {}, enabled: {}, kinds, onSave: async () => {} }));
 
 test("merchant-routines: the add-on's routine row follows the routine priorities", async () => {
   const bare = await routines(null);
-  const content = (view) => view.root.findByType('DialogContent');
+  const content = (view) => view.root.findByType('section');
   const core = names(content(bare));
   const view = await routines({ 'merchant-routines': { routines: piece('merchant-routines') } });
   const drawn = names(content(view));
   assert.deepEqual(drawn.filter(name => name !== 'piece merchant-routines:routines'), core);
   const at = drawn.indexOf('piece merchant-routines:routines');
-  assert.ok(at >= 0 && at < drawn.indexOf('DialogFooter'), drawn.join(', '));
+  // The piece sits above the Cancel and Save row, the section's last child.
+  assert.ok(at >= 0 && at < drawn.length - 1, drawn.join(', '));
   bare.unmount(); view.unmount();
 });
 test("merchant-routines: the add-on's row gets the merchant's add-on job kinds with their label and priority", async () => {

@@ -1,7 +1,7 @@
 "use client";
-// "Pin top bar" in Interface settings. It is off by default, so nothing sticks, as in v1.5.0.
-// On, the party header sticks to the top and each card's name strip sticks under it
-// (card-name-strip.tsx). It is a display choice per browser, kept with the dashboard's other
+// "Pin top bar" in the settings menu's Account > Display section. It is off by default, so
+// nothing sticks, as in v1.5.0. On, the party header sticks to the top and each card's name strip
+// sticks under it (card-name-strip.tsx). It is a display choice per browser, kept with the dashboard's other
 // browser preferences (use-stored-boolean.ts).
 import { useStoredBoolean } from "@/hooks/use-stored-boolean";
 

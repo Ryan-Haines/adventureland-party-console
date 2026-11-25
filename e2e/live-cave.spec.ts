@@ -48,7 +48,7 @@ async ({ live, page }, info) => {
   }, { timeout: 90_000 }).toBe(true);
   await page.getByRole('article').filter({ has: page.getByRole('heading', { name: 'E2EWarrior', exact: true }) }).getByRole('button', { name: /^Events/ }).click();
   await page.getByRole('button', { name: 'Cave of Many Dreams settings' }).click();
-  const settings = page.getByRole('dialog', { name: 'Cave of Many Dreams', exact: true });
+  const settings = page.getByRole('region', { name: 'Cave of Many Dreams', exact: true });
   await expect(settings).toBeVisible();
   const entryResponses:any[]=[];
   let entryAccepted=false;

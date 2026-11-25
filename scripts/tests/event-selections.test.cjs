@@ -133,7 +133,7 @@ test('the clock stages the selected K1 staged events from the lead until a later
 // hook reads the browser's motion setting, and no row here drags.
 const tags = new Proxy({}, {get: (_, key) => String(key)});
 const eventControl = () => load('event-selection-control.tsx', {'@/components/ui/*': tags, 'lucide-react': tags,
-  '@/hooks/use-clock': {useClock: () => 0}, './dungeon-settings': tags, './event-limits-dialog': tags,
+  '@/hooks/use-clock': {useClock: () => 0}, './dungeon-settings': tags, './event-limits-form': tags,
   '@/lib/use-reorder-list': {useReorderList: () => ({listRef: {current: null}, remember() {}, rowAt: () => null})}});
 
 test('browser timezone formats the event instant without changing its countdown', () => {
@@ -149,10 +149,10 @@ test('browser timezone formats the event instant without changing its countdown'
 });
 
 test('dropdown disables inherited and unsupported selections and permits independent choices', async () => {
-  const {EventSelectionControl} = eventControl(), {wrap, client} = queryRoot();
+  const {EventSelectionSection} = eventControl(), {wrap, client} = queryRoot();
   let state={leader:'L',followers:{F:true},eventSelectionsByCharacter:{L:['anniversary'],F:['snowman']},eventSchedules:[{id:'anniversary',name:'Anniversary'},{id:'egghunt',name:'Egg Hunt'}]};
   let saved, view;
-  const element=()=>wrap(React.createElement(EventSelectionControl,{state,name:'F',onChange:ids=>saved=ids,onPriorityChange(){},onLimitsChange(){},onAnniversary(){}}));
+  const element=()=>wrap(React.createElement(EventSelectionSection,{state,name:'F',onChange:ids=>saved=ids,onPriorityChange(){},onLimitsChange(){},onAnniversary(){},onCave(){}}));
   const update=async next=>{state={...state,...next};await act(async()=>view.update(element()));};
   const inputFor=id=>view.root.find(n=>n.props['data-event']===id).findByType('input');
   try {

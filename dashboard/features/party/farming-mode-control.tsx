@@ -1,28 +1,12 @@
 "use client";
 import { Button } from "@/components/ui/button";
-import { PassiveHuntingMenu, type PassivePatch } from "./passive-hunting-menu";
-import { defaultSearchRadius, migratePassiveSettings, modePair } from "../../../runtime/hunting/api.ts";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogFooter,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { modePair } from "../../../runtime/hunting/api.ts";
 import { ChevronDown, ChevronRight, Settings } from "lucide-react";
-import { memo, useId, useState, type ComponentProps, type ReactNode } from "react";
+import { memo, useId, useState } from "react";
 import { durationLabel } from "./duration-label";
-import { SpriteCrop } from "./sprite-crop";
-import { MonsterChoice } from "./monster-choice";
 import { MonsterHuntState } from "./monster-hunt-state";
 import { MonsterHuntStatus } from "./monster-hunt-status";
 import { PartyState } from "./party-state";
-import { MonsterRadiusControl } from './monster-radius-control';
-import {HuntSettingsControl, RelocationControl} from "./hunt-settings-control";
-import { HuntSpawnSettings } from './hunt-spawn-settings';
-import { huntBlacklistLabel } from './hunt-blacklist-label';
-import { HuntBlacklistPicker } from './hunt-blacklist-picker';
 import type { SlotColor, SlotEntry } from "../../../runtime/hooks/registry";
 import { AddonSlot } from "../../../runtime/hooks/dashboard/slots";
 import type { AddonPlaceData } from "./addon-kit";
@@ -42,7 +26,7 @@ const SLOT_CLASSES: Record<SlotColor, { button: string; block: string; title: st
 export type SlotChoice = { combatMode: string } | { targetMode: string };
 
 export const FarmingModeControl = memo(function FarmingModeControl({
-  followingLeader, settingsOwner,
+  followingLeader,
   effectiveMode,
   hunt,
   huntLine,
@@ -50,14 +34,9 @@ export const FarmingModeControl = memo(function FarmingModeControl({
   combatEntries, targetEntries, slotsError, combatMode, targetMode, effectiveCombat = combatMode, effectiveTarget = targetMode,
   onSelect,
   blacklist,
-  catalog,
-  onClearBlacklist, onAddBlacklist, onInspectMonster, renderMonsterDetails,
-  huntSettings, onHuntSettingsSave, relocate, onRelocate,
-  passiveRareHunts, passiveHunting,
-  onRareChange,
-  radius, onRadiusSave, radiusContext, farmArea,
-  settingsOpen, onSettingsOpenChange: setSettingsOpen,
-  addonSettings, addonStatus = {}, addonCard,
+  farmArea,
+  onSettings,
+  addonStatus = {}, addonCard,
 }: {
   // The two rows' entries, each with its declared button (runtime/hooks/dashboard/slots.tsx), and the scope's pair:
   // the character's own saved values for the pressed buttons, the scope's effective target mode
@@ -70,30 +49,15 @@ export const FarmingModeControl = memo(function FarmingModeControl({
   targetMode: string;
   effectiveCombat?: string;
   effectiveTarget?: string;
-  // The enabled add-ons' settings sections and status lines (runtime/hooks/dashboard/slots.tsx `addonSections`).
-  addonSettings?: ReactNode;
+  // The enabled add-ons' status lines (runtime/hooks/dashboard/slots.tsx `addonSections`).
   addonStatus?: Record<string, { title: string; message: string; color: SlotColor }>;
   // What the Farming settings line's add-on pieces read (the `card-section` slot, part `farming-line`).
   addonCard: AddonPlaceData["card-section"];
-  settingsOpen: boolean;
-  onSettingsOpenChange: (open: boolean) => void;
+  // Opens the settings menu at this character's Farming section.
+  onSettings: () => void;
   farmArea?: PartyState["farmAreaState"];
-  followingLeader?: string; settingsOwner?: string;
-  huntSettings?: PartyState["huntSettings"];
-  onHuntSettingsSave?: (patch: Partial<NonNullable<PartyState["huntSettings"]>>) => Promise<void>;
-  // The root relocation switch and its write.
-  relocate?: boolean;
-  onRelocate?: (on: boolean) => Promise<void>;
-  radius?:number;onRadiusSave?:(radius:number)=>Promise<void>;radiusContext?:string;
-  passiveHunting?: PartyState["passiveHunting"];
-  passiveRareHunts?: PartyState["passiveRareHunts"];
-  onRareChange?: (settings: PassivePatch) => Promise<void>;
+  followingLeader?: string;
   blacklist: NonNullable<PartyState["huntBlacklist"]>;
-  catalog: MonsterChoice[];
-  onInspectMonster?: (id: string) => void;
-  renderMonsterDetails?: ComponentProps<typeof PassiveHuntingMenu>["renderMonsterDetails"];
-  onClearBlacklist: (monsterId?: string) => Promise<void>;
-  onAddBlacklist?: (monsterId: string) => Promise<void>;
   // The hunting owner's calculated combat mode (`calculateFarmingMode`), which Auto shows beside its name.
   effectiveMode: string;
   hunt?: MonsterHuntState | null;
@@ -105,21 +69,6 @@ export const FarmingModeControl = memo(function FarmingModeControl({
   const followDescription = useId();
   const inherited = !!followingLeader;
   const [open, setOpen] = useState(false);
-  const [confirmBlacklistClear, setConfirmBlacklistClear] = useState(false);
-  const [blacklistBusy, setBlacklistBusy] = useState(false),
-    [blacklistError, setBlacklistError] = useState<string | null>(null);
-  async function clearBlacklist(monsterId?: string) {
-    setBlacklistBusy(true);
-    setBlacklistError(null);
-    try {
-      await onClearBlacklist(monsterId);
-      if (!monsterId) setConfirmBlacklistClear(false);
-    } catch (error) {
-      setBlacklistError(error instanceof Error ? error.message : "Could not update Hunt blacklist");
-    } finally {
-      setBlacklistBusy(false);
-    }
-  }
   // Row 1 sends the combat mode only and row 2 the target mode only, so one button is pressed in
   // each row.
   const rows: { name: string; entries: readonly SlotEntry[]; pressed: string; choose(mode: string): SlotChoice }[] = [
@@ -154,103 +103,13 @@ export const FarmingModeControl = memo(function FarmingModeControl({
           size="icon"
           aria-label="Farming settings"
           title="Farming settings"
-          onClick={() => setSettingsOpen(true)}
+          onClick={onSettings}
           className="h-9 w-9 shrink-0 border border-emerald-700 bg-[#07110f] text-emerald-100 hover:border-cyan-300 hover:bg-emerald-950"
         >
           <Settings className="h-4 w-4" />
         </Button>
       </div>
       {inherited && <p id={followDescription} className="sr-only">Settings inherited from the leader</p>}
-      <Dialog open={settingsOpen} onOpenChange={setSettingsOpen}>
-        <DialogContent data-area="farming-settings" data-addon-slot="settings-section" className="border-emerald-700 bg-[#081713] text-emerald-50 sm:max-w-lg max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Farming settings{settingsOwner ? ` · ${settingsOwner}` : ""}</DialogTitle>
-            <DialogDescription className="text-emerald-100/80">
-              Configure relocation away from competing farmers and automatic Hunt blacklisting. Blacklisted quests are skipped until you clear the entry. Normal farming selections are unaffected.
-            </DialogDescription>
-          </DialogHeader>
-          {onRelocate && <RelocationControl value={relocate} onSave={onRelocate}/>}
-          <fieldset disabled={inherited} aria-describedby={inherited ? followDescription : undefined}>
-          <HuntSettingsControl value={huntSettings} onSave={inherited ? undefined : onHuntSettingsSave}/>
-          </fieldset>
-          {onRadiusSave && <MonsterRadiusControl radius={radius||defaultSearchRadius} onSave={onRadiusSave} context={radiusContext}/>}
-          <HuntSpawnSettings catalog={catalog} value={huntSettings} onSave={onHuntSettingsSave} disabled={inherited}/>
-          {addonSettings}
-          <PassiveHuntingMenu settings={migratePassiveSettings(passiveHunting,passiveRareHunts)} catalog={catalog} disabled={inherited} onSave={onRareChange} renderMonsterDetails={renderMonsterDetails}/>
-          <section aria-label="Hunt blacklist" className="space-y-3 rounded border border-emerald-700 bg-[#07110f] p-3">
-          <div className="flex items-center gap-3">
-            <h3 className="flex-1 font-semibold text-emerald-50">Hunt blacklist</h3>
-            <Button
-              type="button"
-              size="sm"
-              disabled={inherited || blacklistBusy || !Object.keys(blacklist).length} aria-describedby={inherited ? followDescription : undefined}
-              onClick={() => { setBlacklistError(null); setConfirmBlacklistClear(true); }}
-              className="border border-rose-700 bg-[#301219] text-rose-100 hover:bg-rose-950 hover:text-white"
-            >
-              Clear all
-            </Button>
-            <HuntBlacklistPicker catalog={catalog} blacklist={blacklist} disabled={inherited||blacklistBusy} onAdd={onAddBlacklist} renderMonsterDetails={renderMonsterDetails}/>
-          </div>
-          <div className="max-h-[55vh] space-y-2 overflow-y-auto">
-            {Object.entries(blacklist).length === 0 && (
-              <p className="text-sm text-emerald-100">No monsters blacklisted.</p>
-            )}
-            {Object.entries(blacklist)
-              .sort(([a], [b]) => a.localeCompare(b))
-              .map(([id, entry]) => {
-                const monster = catalog.find((m) => m.id === id);
-                return (
-                  <div
-                    key={id}
-                    className="flex items-center gap-3 rounded border border-emerald-800 bg-[#07110f] p-3"
-                  >
-                    <button type="button" aria-label={`Inspect ${monster?.name || id}`}
-                      onClick={() => {setSettingsOpen(false);onInspectMonster?.(id);}}
-                      className="flex min-w-0 flex-1 items-center gap-3 rounded border border-transparent bg-[#07110f] text-left text-emerald-50 hover:border-cyan-600 hover:bg-emerald-950 hover:text-white">
-                    <span className="relative h-10 w-10 shrink-0">
-                      {monster?.sprite && <SpriteCrop sprite={monster.sprite} />}
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      <p className="font-semibold text-emerald-50">{monster?.name || id}</p>
-                      <p className="text-xs text-emerald-200">
-                        {huntBlacklistLabel(entry) ? `${huntBlacklistLabel(entry)} · ` : ""}
-                        {new Date(entry.at).toLocaleString()}
-                      </p>
-                    </div>
-                    </button>
-                    <Button
-                      type="button"
-                      disabled={inherited || blacklistBusy} aria-describedby={inherited ? followDescription : undefined}
-                      onClick={() => void clearBlacklist(id)}
-                      className="border border-cyan-700 bg-black text-cyan-100 hover:bg-cyan-950"
-                    >
-                      Clear
-                    </Button>
-                  </div>
-                );
-              })}
-          </div>
-          {blacklistError && (
-            <p role="alert" className="text-rose-200">
-              {blacklistError}
-            </p>
-          )}
-          </section>
-        </DialogContent>
-      </Dialog>
-      <Dialog open={confirmBlacklistClear && settingsOpen} onOpenChange={value => {if (!blacklistBusy) setConfirmBlacklistClear(value);}}>
-        <DialogContent data-area="clear-blacklist" className="border border-rose-700 bg-black text-emerald-50 sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Clear Hunt blacklist?</DialogTitle>
-            <DialogDescription className="text-emerald-100">Remove all {Object.keys(blacklist).length} blacklisted monsters{settingsOwner ? ` for ${settingsOwner}` : ''}? Hunt can accept quests for these monsters again.</DialogDescription>
-          </DialogHeader>
-          {blacklistError && <p role="alert" className="text-rose-200">{blacklistError}</p>}
-          <DialogFooter className="border-rose-900 bg-[#081713]">
-            <Button type="button" variant="outline" disabled={blacklistBusy} onClick={() => setConfirmBlacklistClear(false)} className="border-slate-600 bg-black text-slate-100 hover:bg-slate-800 hover:text-white">Cancel</Button>
-            <Button type="button" disabled={inherited || blacklistBusy} onClick={() => void clearBlacklist()} className="border border-rose-600 bg-rose-950 text-rose-100 hover:bg-rose-900 hover:text-white">{blacklistBusy ? 'Clearing...' : 'Clear all'}</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
       {open ? (
         <div data-addon-slot="mode-row combat-mode target-mode" className="mt-2 rounded border border-emerald-900 bg-[#050b0a] p-2">
           {inherited && <p className="mb-2 text-xs text-cyan-100">Used when Follow is off.</p>}

@@ -112,7 +112,7 @@ test('market ignores preserve exact levels across tabs, refresh and coordinator 
 
   await market.getByRole('button',{name:'Marketplace settings',exact:true}).click();
 
-  const settings=page.getByRole('dialog',{name:'Marketplace settings',exact:true});
+  const settings=page.getByRole('dialog', { name: 'Settings', exact: true });
 
   const ignored=settings.getByRole('button',{name:'Ignored items',exact:true});
 

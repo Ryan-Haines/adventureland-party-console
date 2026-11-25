@@ -29,7 +29,7 @@ test('DF43: ids and Copy key work on a plain-HTTP origin', () => {
   const callers = execFileSync('git', ['grep', '-l', 'randomUUID', '--', 'dashboard/features', 'dashboard/app', 'dashboard/lib'], { encoding: 'utf8' })
     .split('\n').filter(file => file && file !== 'dashboard/lib/request-id.ts');
   assert.deepEqual(callers, [], 'every id site uses the one helper');
-  const panel = fs.readFileSync('dashboard/features/party/party-inventory-panels.tsx', 'utf8');
+  const panel = fs.readFileSync('dashboard/features/party/account-sections.tsx', 'utf8');
   assert.match(panel, /if \(secureOrigin\) navigator\.clipboard\.writeText\(aldataKey\)\.catch\(select\);\s*else select\(\);/);
   assert.match(panel, /press Ctrl\+C to copy it/);
 });
@@ -95,7 +95,7 @@ test('DF20: the D2 dashboard bug fixes hold', async () => {
   assert.match(fs.readFileSync('dashboard/hooks/use-stored-boolean.ts', 'utf8'), /try \{\s*localStorage\.setItem\(key, text\);\s*\} catch \{/);
   // The two trip toggles are one control.
   const settings = read('merchant-collection-settings.tsx');
-  assert.match(settings, /<MerchantTripSetting routine="deliveries" enabled=\{deliveryTripsEnabled\} \/>/);
-  assert.match(settings, /<MerchantTripSetting routine="withdrawals" enabled=\{withdrawalTripsEnabled\} \/>/);
+  assert.match(settings, /<MerchantTripSetting routine="deliveries" enabled=\{state\.merchantAutomations\?\.deliveries !== false\} \/>/);
+  assert.match(settings, /<MerchantTripSetting routine="withdrawals" enabled=\{state\.merchantAutomations\?\.withdrawals !== false\} \/>/);
   assert.equal(fs.existsSync('dashboard/features/party/withdrawal-trip-setting.tsx'), false);
 });

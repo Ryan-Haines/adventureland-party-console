@@ -58,17 +58,17 @@ test('recipe +7 cape keeps its level through inspection, WTB, Ponty price and sa
 });
 
 test('merchant routines show gathering modes, include mail, count enabled routines and save keyboard priority changes',async()=>{
- const {RoutinePrioritiesDialog}=load('routine-priorities-dialog');let view,saved;
+ const {RoutinePrioritiesSection}=load('routine-priorities-section');let view,saved;
  const previousWindow=global.window;global.window={matchMedia:()=>({matches:true})};
  try {
-  await act(async()=>{view=create(React.createElement(RoutinePrioritiesDialog,{open:true,onOpenChange(){},priorities:{fishing:60,mining:50,'send mail':90},enabled:{fishing:false,mining:true},onSave:async(...args)=>{saved=args;}}));});
+  await act(async()=>{view=create(React.createElement(RoutinePrioritiesSection,{priorities:{fishing:60,mining:50,'send mail':90},enabled:{fishing:false,mining:true},onSave:async(...args)=>{saved=args;}}));});
   const control=label=>view.root.findAllByType('Checkbox').find(node=>node.props['aria-label']===label);
   assert.equal(control('Enable Fishing').props.checked,false);assert.equal(control('Enable Mining').props.checked,true);
   assert.ok(view.root.findAllByType('Input').some(node=>node.props['aria-label']==='Send mail priority'));
   await act(async()=>control('Enable Fishing').props.onCheckedChange(true));
   const fishing=view.root.findAllByType('button').find(node=>node.props['aria-label']==='Move Fishing');
   const rows=view.root.findAll(node=>Boolean(node.props['data-routine']));
-  const total=rows.length;assert.match(text(view.root.findByType('DialogTitle')),new RegExp(`${total}/${total} enabled`));
+  const total=rows.length;assert.match(text(view.root.findByType('h3')),new RegExp(`${total}/${total} enabled`));
   for(let i=0;i<total;i++)await act(async()=>fishing.props.onKeyDown({key:'ArrowDown',preventDefault(){}}));
   await act(async()=>view.root.findAllByType('button').find(node=>text(node)==='Save routines').props.onClick());
   assert.equal(saved[1].fishing,true);assert.equal(saved[1].mining,true);assert.ok(saved[0].fishing<saved[0].mining);
