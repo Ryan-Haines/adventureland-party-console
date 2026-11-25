@@ -9,12 +9,12 @@ const test = require('node:test'), assert = require('node:assert/strict');
 require('../../runtime/events/character/reply.ts');
 const { installEventReply } = globalThis;
 
-function reply(live) {
+function reply(live, groupWalk = false) {
   const stops = [], posts = [];
   const attend = { selected: () => false, joined: () => 'goobrawl', traveling: () => null, leave() {}, poll: async () => {}, targets() {} };
   const r = installEventReply({
     attend: () => attend, anniversary: () => ({ disabled: async () => {}, receive() {}, kiss() {} }),
-    strategy() {}, turnIn: () => false, live: () => live, eventWalk: () => ({ kind: 'task-walk', owner: 'lone-walk:event', tier: 'event-attendance' }),
+    strategy() {}, turnIn: () => false, live: () => live, eventWalk: () => ({ kind: 'task-walk', owner: 'lone-walk:event', tier: 'event-attendance' }), groupWalk: () => groupWalk,
     returnHolds: () => false, reunion: () => false, stop: async kind => { stops.push(kind ?? 'move'); },
     name: () => 'Ranger', request: async (path, options) => { posts.push([path, options.body.event]); }, later() {},
   });
@@ -35,4 +35,13 @@ test('a disabled event stops its own lone walk and leaves a convoy walk running'
   await convoy.r.selectionsReply({ eventSelections: [] });
   assert.deepEqual(convoy.stops, []);
   assert.deepEqual(convoy.posts, [['/event-disabled', 'goobrawl']]);
+
+  // A group walk holds the member between its commands with no request of the walk live, as
+  // b9b5c91e's `convoyTraveling` held the disable's stop.
+  globalThis.__partyPendingEventDisables = [];
+  const between = reply(null, true);
+  await between.r.selectionsReply({ eventSelections: ['goobrawl'] });
+  await between.r.selectionsReply({ eventSelections: [] });
+  assert.deepEqual(between.stops, []);
+  assert.deepEqual(between.posts, [['/event-disabled', 'goobrawl']]);
 });

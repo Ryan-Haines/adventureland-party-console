@@ -88,6 +88,8 @@ export interface ReunionMovement {
   reunionWait(token: unknown): void;
   reunionEnded(token: { id: string }): void;
   sharedWalkActivity(): string | null;
+  // Whether a group walk holds this member (walk-client.ts `convoyActive`).
+  groupWalkActive(): boolean;
   reunionStarts(): void;
 }
 

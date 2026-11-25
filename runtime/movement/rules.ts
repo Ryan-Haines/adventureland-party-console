@@ -350,13 +350,17 @@ export function defensePauses(walk: WalkFlags): boolean {
   return !unpaused(walk.purpose);
 }
 
-// The farm walk after a death (appendix A2 RANK `farmWalkHeld`, design 13.1 G11): a request other
-// than the death recovery's own holds the character at a rank the farm walk does not take over, so
-// the reunion leaves it alone. The convoy, the shared walk and the event return all hold ranked
-// requests, so the live request stands for their flags.
+// Whether another walk holds the member against the farm walk (appendix A2 RANK `farmWalkHeld`,
+// design 13.1 G11), so the reunion, the death recovery's farm return and the event disable's stop
+// leave it alone. A group walk holds it (`groupWalkActive`, b9b5c91e's `partyConvoyActive`) also
+// while no request of the walk is live: after the walk's own journey arrives, and between two of
+// its commands. Otherwise a live request other than the caller's own holds it at a rank the farm
+// walk does not take over. The shared walk and the event return hold ranked requests, so the live
+// request stands for their flags.
 const FARM_RETURN: Requester = { kind: 'task-walk', owner: 'reunion:after-death', tier: 'farming' };
-export function farmWalkHeld(live: Requester | null | undefined, recoveryOwner: string): boolean {
-  return !!live && live.owner !== recoveryOwner && decide(live, FARM_RETURN).decision !== 'granted';
+export function farmWalkHeld(live: Requester | null | undefined, ownOwner: string, groupWalk: boolean): boolean {
+  if (groupWalk) return true;
+  return !!live && live.owner !== ownOwner && decide(live, FARM_RETURN).decision !== 'granted';
 }
 
 // The request table's `departure` column for walk rows: every walk waits for its chests except the escape, which

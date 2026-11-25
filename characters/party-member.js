@@ -12362,8 +12362,9 @@ ${hook}`, was = errors.get(key3);
     return !unpaused(walk2.purpose);
   }
   var FARM_RETURN = { kind: "task-walk", owner: "reunion:after-death", tier: "farming" };
-  function farmWalkHeld(live2, recoveryOwner) {
-    return !!live2 && live2.owner !== recoveryOwner && decide(live2, FARM_RETURN).decision !== "granted";
+  function farmWalkHeld(live2, ownOwner, groupWalk) {
+    if (groupWalk) return true;
+    return !!live2 && live2.owner !== ownOwner && decide(live2, FARM_RETURN).decision !== "granted";
   }
   function walkDeparture(walk2) {
     if (walk2.purpose === "escape-recovery") return "now";
@@ -34405,11 +34406,11 @@ ${hook}`, was = errors.get(key3);
       ports.root.__partyRecoveredDeathAt = ports.parent.__partyRecoveredDeathAt = at4;
     };
     function walkHeld() {
-      const live2 = ports.movement.live();
-      if (!live2 || live2.owner === ports.deathRecoveryRequest().owner) return false;
+      let live2 = ports.movement.live();
+      if (live2?.owner === ports.deathRecoveryRequest().owner) live2 = null;
       const cycle = reunion?.command?.type === "event-resume-travel" && reunion.command.cycleId;
-      if (cycle && !live2.journey && live2.owner === "event-return:" + cycle) return false;
-      return farmWalkHeld(live2, reunion ? "reunion:" + reunion.id : "");
+      if (cycle && live2 && !live2.journey && live2.owner === "event-return:" + cycle) live2 = null;
+      return farmWalkHeld(live2, reunion ? "reunion:" + reunion.id : "", ports.walks().groupWalkActive());
     }
     function reunionBlocked() {
       if (!assignment.reunionAssigned(!!reunion?.command)) return true;
@@ -34432,7 +34433,7 @@ ${hook}`, was = errors.get(key3);
       const death = ports.lastDeath();
       if (death) recovered(death.at);
       if (!assignment.reunionAssigned(!!command)) return;
-      if (!command && farmWalkHeld(ports.movement.live(), ports.deathRecoveryRequest().owner)) return;
+      if (!command && farmWalkHeld(ports.movement.live(), ports.deathRecoveryRequest().owner, ports.walks().groupWalkActive())) return;
       const travel = ports.farmTravel();
       if (travel) travel.cancelled = true;
       set({
@@ -34449,7 +34450,7 @@ ${hook}`, was = errors.get(key3);
     }
     function deathRecoveryFarmReturn() {
       if (!reunion) beginFarmReunion();
-      return !!reunion || farmWalkHeld(ports.movement.live(), ports.deathRecoveryRequest().owner);
+      return !!reunion || farmWalkHeld(ports.movement.live(), ports.deathRecoveryRequest().owner, ports.walks().groupWalkActive());
     }
     function reunionCurrent(token) {
       return ports.current() && reunion === token && !token.cancelled && token.revision === ports.walkState.intent.revision && !ports.walkState.intent.cancelled;
@@ -35230,7 +35231,7 @@ ${hook}`, was = errors.get(key3);
         if (event === "anniversary") {
           await ports.anniversary().disabled();
         } else if (event === attend.joined() || event === hint || event === attend.traveling() || state.eventTrip && !state.eventTrip.endedAt && state.eventTrip.event === event) {
-          if (!farmWalkHeld(ports.live(), String(ports.eventWalk().owner)) && !ports.returnHolds() && !ports.reunion()) {
+          if (!farmWalkHeld(ports.live(), String(ports.eventWalk().owner), ports.groupWalk()) && !ports.returnHolds() && !ports.reunion()) {
             try {
               await ports.stop("smart");
               await ports.stop();
@@ -44031,6 +44032,7 @@ ${hook}`, was = errors.get(key3);
       reunionWait: (token) => crossings.reunionWait(token),
       reunionEnded: (token) => crossings.reunionEnded(token),
       sharedWalkActivity: () => walkClient.sharedWalkActivity(),
+      groupWalkActive: () => walkClient.convoyActive(),
       reunionStarts() {
         state.following = false;
         kite.targetId = null;

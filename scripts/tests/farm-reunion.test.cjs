@@ -74,6 +74,30 @@ scenarioTable('a farm reunion yields to a holder, climbs the round of a failed w
   assert.equal(calls.some(call => call.destination || call.data), false);
   assert.equal(r.reunion.phase, 'waiting-for-movement-owner');
  }],
+ // Observed live on 2026-11-22 (Hunt target cgoo, arena and level2s): the merchant handoff and the
+ // tick started a reunion in the moment between two of the Hunt walk's commands, when no request of
+ // the walk was live. The reunion walked the member to the target map's spawn at the walk's tier, the
+ // walk's next journey waited behind it, and the walk failed "Shared route ownership lost".
+ ['a group walk the coordinator runs for this member holds the reunion between its commands', async ({ r, calls })=>{
+  r.partyConvoyActive = true; r.movement.live = () => null;
+  r.beginFarmReunion();
+  assert.equal(r.reunion, null, 'the merchant handoff starts no reunion');
+  await r.farmReunionTick();
+  assert.equal(r.reunion, null, 'the tick starts none');
+  assert.equal(calls.some(call => call.destination || call.data), false);
+  r.partyConvoyActive = false;
+  await r.farmReunionTick();
+  assert.ok(r.reunion, 'the reunion starts once the walk lets the member go');
+ }],
+ // Live 2026-11-22 (Recharged, 17:07-17:10 UTC): the Hunt walk's assembly leg arrived at the
+ // leader in main, and the member's farm reunion started toward halloween before the walk's next
+ // report renewed its hold. The member's own walk client still ran the walk.
+ ['the walk this member runs holds the reunion after the walk\'s rally journey arrives', async ({ r, calls })=>{
+  r.groupWalk.travel = { id: 'convoy-1', phase: 'assembled' }; r.movement.live = () => null;
+  await r.farmReunionTick();
+  assert.equal(r.reunion, null);
+  assert.equal(calls.some(call => call.destination || call.data), false);
+ }],
  ['failed travel is stopped and climbs the task round when it ends, with no retry delay', async ({ r, calls })=>{
   positionsOf(r)[0].ctype = 'warrior';
   r.smart_move = async () => { throw Error('route failed'); };

@@ -25,11 +25,13 @@ export interface EventReplyPorts {
   strategy(next: unknown): void;
   // The tasks owner's Hunt turn-in priority (assignment.ts `huntTurnInPriority`).
   turnIn(): boolean;
-  // Movement's live request (`movement.live()`) and this character's lone event walk request: a live
-  // request other than the event's own walk that the farm walk does not take over (movement's
-  // `farmWalkHeld`) is left running by the disable, as b9b5c91e left the convoy, forced and Town walks.
+  // Movement's live request (`movement.live()`), this character's lone event walk request and
+  // whether a group walk holds the member (movement's `groupWalkActive`): a walk that holds the
+  // member against the farm walk (movement's `farmWalkHeld`) is left running by the disable, as
+  // b9b5c91e left the convoy, forced and Town walks.
   live(): Requester | null;
   eventWalk(): Requester;
+  groupWalk(): boolean;
   // The tasks owner's event return hold and farm reunion, which the disable's stop also leaves running.
   returnHolds(): boolean;
   reunion(): boolean;
@@ -83,7 +85,7 @@ export function installEventReply(ports: EventReplyPorts) {
         await ports.anniversary().disabled();
       } else if (event === attend.joined() || event === hint || event === attend.traveling() ||
           state.eventTrip && !state.eventTrip.endedAt && state.eventTrip.event === event) {
-        if (!farmWalkHeld(ports.live(), String(ports.eventWalk().owner)) && !ports.returnHolds() && !ports.reunion()) {
+        if (!farmWalkHeld(ports.live(), String(ports.eventWalk().owner), ports.groupWalk()) && !ports.returnHolds() && !ports.reunion()) {
           try { await ports.stop('smart'); await ports.stop(); } catch { /* The disable goes on. */ }
         }
         await ports.request('/event-disabled', { method: 'POST', body: { character: ports.name(), event } });

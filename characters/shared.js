@@ -276,6 +276,7 @@
   var eventReply = root.installEventReply({ attend: function () { return eventAttend; }, anniversary: function () { return eventAnniversary; },
     strategy: function (next) { characterEvents.receiveStrategy(next); }, turnIn: huntTurnInPriority,
     live: function () { return movement.live(); }, eventWalk: function () { return loneWalkRequest("event"); },
+    groupWalk: function () { return convoyActive(); },
     returnHolds: eventReturnHolds, reunion: function () { return !!currentReunion(); },
     stop: function (kind) { return stop(kind, undefined, loneWalkRequest("event")); },
     name: function () { return character.name; }, request: request, later: function (action) { scopes.act06.setTimeout(action, 0); } });

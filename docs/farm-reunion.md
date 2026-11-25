@@ -5,7 +5,12 @@ An eligible survivor must be alive, on the same realm and farm map, within 800
 units of the authorized farm waypoint, and have a status less than 10 seconds old.
 This is independent of the monster search radius. Merchants and bankbois are excluded.
 
-Event re-entry, anniversary staging, Town overrides and convoys keep priority.
+Event re-entry, anniversary staging, Town overrides and convoys keep priority. A
+group walk the coordinator or the member runs holds the reunion whenever no request
+of the walk is live, after the walk's own journey arrives and between the walk's
+commands (`runtime/movement/rules.ts` `farmWalkHeld`, which reads movement's
+`groupWalkActive`), so neither the tick nor a
+merchant handoff starts a reunion the walk's next journey would wait behind.
 New navigation commands cancel the old recovery. Pending recovery survives shared
 code hot reloads; `farmReunion` in character status reports its phase and last error.
 

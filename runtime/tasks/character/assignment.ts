@@ -136,17 +136,16 @@ export function installFarmReunion(ports: ReunionPorts, assignment: Assignment) 
   const stop = (token: Value): Promise<void> => Promise.resolve(ports.movement.stop("smart", undefined, ports.walks().reunionRequest(token)))
     .then(() => undefined, (error: Value) => { token.lastError = "stop failed: " + String(error?.message || error); });
   const recovered = (at: number) => { ports.root.__partyRecoveredDeathAt = ports.parent.__partyRecoveredDeathAt = at; };
-  // A reunion does not start over another walk. A live request other than this reunion's own
-  // and the death recovery's holds the character at a rank the farm walk does not take over
-  // (movement's `farmWalkHeld` over `movement.live()`), in place of b9b5c91e's nine walk flags.
+  // A reunion does not start over another walk (movement's `farmWalkHeld`, in place of b9b5c91e's
+  // walk flags). The death recovery's own request does not hold it.
   function walkHeld(): boolean {
-    const live = ports.movement.live();
-    if (!live || live.owner === ports.deathRecoveryRequest().owner) return false;
+    let live = ports.movement.live();
+    if (live?.owner === ports.deathRecoveryRequest().owner) live = null;
     // The event return holds its member in Town under the return's identity (owner.ts
     // `holdForTask`). That standing hold gives way to the walk of the return's own resume command.
     const cycle = reunion?.command?.type === "event-resume-travel" && reunion.command.cycleId;
-    if (cycle && !live.journey && live.owner === "event-return:" + cycle) return false;
-    return farmWalkHeld(live, reunion ? "reunion:" + reunion.id : "");
+    if (cycle && live && !live.journey && live.owner === "event-return:" + cycle) live = null;
+    return farmWalkHeld(live, reunion ? "reunion:" + reunion.id : "", ports.walks().groupWalkActive());
   }
   // `reunion` (the group task allows it), the attackers, death, the merchant, the bag's own
   // work (b9b5c91e shared.js:13471), a navigation the player cancelled and another live walk each
@@ -190,7 +189,7 @@ export function installFarmReunion(ports: ReunionPorts, assignment: Assignment) 
     if (!assignment.reunionAssigned(!!command)) return;
     // A delayed respawn fallback leaves a journey admitted meanwhile alone: the owner's report
     // names its holder. An explicit reunion command keeps its ownership handoff.
-    if (!command && farmWalkHeld(ports.movement.live(), ports.deathRecoveryRequest().owner)) return;
+    if (!command && farmWalkHeld(ports.movement.live(), ports.deathRecoveryRequest().owner, ports.walks().groupWalkActive())) return;
     const travel = ports.farmTravel();
     if (travel) travel.cancelled = true;
     set({ id: c.name + "-" + ports.now(), revision: ports.walkState.intent.revision, phase: "waiting", retryAt: 0,
@@ -200,11 +199,11 @@ export function installFarmReunion(ports: ReunionPorts, assignment: Assignment) 
     void stop(reunion);
   }
   // Steps 7 and 8a: the respawned member's farm or Hunt return. True when the return runs, or
-  // another owner already holds the member's movement at a rank the farm walk does not take over
-  // (rules.ts `farmWalkHeld`); false when nothing can move it yet, so death recovery asks again.
+  // another walk already holds the member's movement (rules.ts `farmWalkHeld`); false when nothing
+  // can move it yet, so death recovery asks again.
   function deathRecoveryFarmReturn(): boolean {
     if (!reunion) beginFarmReunion();
-    return !!reunion || farmWalkHeld(ports.movement.live(), ports.deathRecoveryRequest().owner);
+    return !!reunion || farmWalkHeld(ports.movement.live(), ports.deathRecoveryRequest().owner, ports.walks().groupWalkActive());
   }
   function reunionCurrent(token: Value): boolean {
     return ports.current() && reunion === token && !token.cancelled &&

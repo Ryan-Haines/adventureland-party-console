@@ -357,16 +357,17 @@ export function errandPorts(state: WalkState, parts: MovementParts, realm: () =>
     nextReport: () => parts.requesters().nextReport(), nextPass: holder => parts.requesters().nextPass(holder), reportGap: () => parts.requesters().reportGap() };
 }
 // The farm reunion's movement (ReunionMovement): its request and crossings, the shared walk's
-// activity, and its start, where the reunion's walk takes over, so the follow ends and the kite
-// drops its target.
+// activity, whether a group walk holds the member, and its start, where the reunion's walk takes
+// over, so the follow ends and the kite drops its target.
 export function reunionMovement(state: WalkState, parts: { requesters: Pick<Requesters, 'reunionRequest'>;
-    crossings: Omit<ReunionMovement, 'reunionRequest' | 'sharedWalkActivity' | 'reunionStarts'>; walkClient: Pick<WalkClient, 'sharedWalkActivity'>;
+    crossings: Omit<ReunionMovement, 'reunionRequest' | 'sharedWalkActivity' | 'groupWalkActive' | 'reunionStarts'>; walkClient: Pick<WalkClient, 'sharedWalkActivity' | 'convoyActive'>;
     kite: { targetId: unknown } }): ReunionMovement {
   const { requesters, crossings, walkClient, kite } = parts;
   return { reunionRequest: token => requesters.reunionRequest(token), reunionRealm: () => crossings.reunionRealm(), reunionCrossing: crossings.reunionCrossing,
     reunionAt: (c, location) => crossings.reunionAt(c, location), reunionArrived: walk => crossings.reunionArrived(walk),
     reunionTravel: (token, walk) => crossings.reunionTravel(token, walk), reunionWait: token => crossings.reunionWait(token),
     reunionEnded: token => crossings.reunionEnded(token), sharedWalkActivity: () => walkClient.sharedWalkActivity(),
+    groupWalkActive: () => walkClient.convoyActive(),
     reunionStarts() { state.following = false; kite.targetId = null; } };
 }
 

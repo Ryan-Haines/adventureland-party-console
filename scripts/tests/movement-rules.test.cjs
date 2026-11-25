@@ -221,11 +221,14 @@ scenarioTable('the rule table ranks each request by the tier it names', ()=>unde
  // `farmWalkHeld`: the death recovery's farm walk ranks as a farming task walk.
  ['the farm walk after a death is held only by another request it does not outrank, as farmWalkHeld did (appendix A2 RANK)', ()=>{
   const {farmWalkHeld}=require('../../runtime/movement/rules.ts'),own='death:R:0';
-  assert.equal(farmWalkHeld(null,own),false,'nothing holds the character');
-  assert.equal(farmWalkHeld({kind:'death-recovery',owner:own},own),false,"the recovery's own hold");
+  assert.equal(farmWalkHeld(null,own,false),false,'nothing holds the character');
+  assert.equal(farmWalkHeld({kind:'death-recovery',owner:own},own,false),false,"the recovery's own hold");
   for(const live of [r('group-walk','walk:1','farming'),r('task-walk','event-return:1','event-return'),r('manual')])
-   assert.equal(farmWalkHeld(live,own),true,live.kind+' '+live.tier);
-  for(const live of [r('follow'),r('formation'),r('approach')])assert.equal(farmWalkHeld(live,own),false,live.kind);
+   assert.equal(farmWalkHeld(live,own,false),true,live.kind+' '+live.tier);
+  for(const live of [r('follow'),r('formation'),r('approach')])assert.equal(farmWalkHeld(live,own,false),false,live.kind);
+  // A group walk holds the member with no request of the walk live, and over a follow.
+  assert.equal(farmWalkHeld(null,own,true),true,'the group walk between its commands');
+  assert.equal(farmWalkHeld(r('follow'),own,true),true,'the group walk over a follow');
  }],
  // The three new columns, each typed by hand from the design's table, and T5's
  // rungs by name. Each replaces a copy the rework removed.
